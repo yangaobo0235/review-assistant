@@ -1,0 +1,163 @@
+from app.agent.field_routing import normalize_document_type, route_fields
+
+
+def test_routes_transfer_documents_without_reusing_new_vehicle_fields() -> None:
+    invoice, invoice_limitation = route_fields(
+        "transfer",
+        "invoice",
+        {
+            "vehicle.plate_no": "冀A34870",
+            "vehicle.vin": "VIN-1",
+            "invoice.buyer_name": "买方公司",
+            "invoice.seller_name": "卖方公司",
+            "invoice.invoice_date": "2026-08-15",
+            "invoice.code": "DROP",
+        },
+    )
+    registration, registration_limitation = route_fields(
+        "transfer",
+        "registration_certificate",
+        {
+            "vehicle.vin": "VIN-1",
+            "registration.covered_pages": [1, 2],
+            "registration.initial_owner": "原始所有人",
+            "registration.transfer_records": [{"owner": "买方公司", "page": 2, "order": 1}],
+        },
+    )
+
+    assert invoice == {
+        "transfer.plate_no": "冀A34870",
+        "transfer.vin": "VIN-1",
+        "transfer.buyer_name": "买方公司",
+        "transfer.seller_name": "卖方公司",
+        "transfer.invoice_date": "2026-08-15",
+    }
+    assert registration == {
+        "transfer.vin": "VIN-1",
+        "transfer.registration.covered_pages": [1, 2],
+        "transfer.registration.initial_owner": "原始所有人",
+        "transfer.registration.transfer_records": [{"owner": "买方公司", "page": 2, "order": 1}],
+    }
+    assert invoice_limitation is None
+    assert registration_limitation is None
+
+
+def test_vehicle_fields_are_mapped_by_business_scope() -> None:
+    fields = {"vehicle.vin": "VIN-1", "vehicle.plate_no": "PLATE-1", "vehicle.owner": "OWNER-1"}
+
+    old_fields, old_limitation = route_fields("old_vehicle", "vehicle_license", fields)
+    new_fields, new_limitation = route_fields("new_vehicle", "vehicle_license", fields)
+
+    assert old_fields == {
+        "old_vehicle.vin": "VIN-1",
+        "old_vehicle.plate_no": "PLATE-1",
+        "old_vehicle.owner": "OWNER-1",
+    }
+    assert new_fields == {
+        "new_vehicle.vin": "VIN-1",
+        "new_vehicle.plate_no": "PLATE-1",
+        "new_vehicle.owner": "OWNER-1",
+    }
+    assert old_limitation is None
+    assert new_limitation is None
+
+
+def test_legacy_vehicle_prefix_is_remapped_to_authoritative_scope() -> None:
+    routed, limitation = route_fields(
+        "new_vehicle",
+        "old_vehicle",
+        {"old_vehicle.vin": "NEW-VIN", "old_vehicle.plate_no": "NEW-PLATE"},
+    )
+
+    assert normalize_document_type("old_vehicle") == "vehicle_license"
+    assert routed == {
+        "new_vehicle.vin": "NEW-VIN",
+        "new_vehicle.plate_no": "NEW-PLATE",
+    }
+    assert limitation is None
+
+
+def test_unknown_scope_does_not_route_vehicle_fields() -> None:
+    routed, limitation = route_fields(
+        "unknown",
+        "vehicle_license",
+        {"vehicle.vin": "VIN-1"},
+    )
+
+    assert routed == {}
+    assert limitation == "图片业务归属无法确定，请人工复核"
+
+
+def test_document_type_must_be_compatible_with_business_scope() -> None:
+    scrap_fields, scrap_limitation = route_fields(
+        "new_vehicle",
+        "scrap_certificate",
+        {"old_vehicle.vin": "VIN-1"},
+    )
+    invoice_fields, invoice_limitation = route_fields(
+        "old_vehicle",
+        "invoice",
+        {"invoice.code": "CODE-1"},
+    )
+
+    assert scrap_fields == {}
+    assert "回收证明" in str(scrap_limitation)
+    assert invoice_fields == {}
+    assert "发票" in str(invoice_limitation)
+
+
+def test_old_registration_certificate_routes_owner_vin_and_engine_model() -> None:
+    routed, limitation = route_fields(
+        "old_vehicle",
+        "registration_certificate",
+        {
+            "vehicle.owner": "OWNER",
+            "vehicle.vin": "VIN",
+            "vehicle.engine_model": "ENGINE",
+        },
+    )
+
+    assert routed == {
+        "old_vehicle.owner": "OWNER",
+        "old_vehicle.vin": "VIN",
+        "old_vehicle.engine_model": "ENGINE",
+    }
+    assert limitation is None
+
+
+def test_new_registration_certificate_routes_owner_and_vin_only() -> None:
+    routed, limitation = route_fields(
+        "new_vehicle",
+        "registration_certificate",
+        {
+            "vehicle.owner": "OWNER",
+            "vehicle.vin": "VIN",
+            "vehicle.engine_model": "MUST-BE-DROPPED",
+        },
+    )
+
+    assert routed == {
+        "new_vehicle.owner": "OWNER",
+        "new_vehicle.vin": "VIN",
+    }
+    assert limitation is None
+
+
+def test_registration_certificate_drops_fields_outside_exact_allowlist() -> None:
+    routed, limitation = route_fields(
+        "new_vehicle",
+        "registration_certificate",
+        {
+            "vehicle.owner": "OWNER",
+            "vehicle.vin": "VIN",
+            "vehicle.plate_no": "MUST-BE-DROPPED",
+            "old_vehicle.owner": "MUST-BE-DROPPED",
+            "new_vehicle.vin": "MUST-BE-DROPPED",
+        },
+    )
+
+    assert routed == {
+        "new_vehicle.owner": "OWNER",
+        "new_vehicle.vin": "VIN",
+    }
+    assert limitation is None

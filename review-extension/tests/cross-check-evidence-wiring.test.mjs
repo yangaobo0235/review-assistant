@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+test("cross-document checks show conclusions without image evidence", () => {
+  const source = readFileSync(
+    new URL("../src/components/ReviewAdvice.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /function ReviewAdvice/);
+  assert.doesNotMatch(source, /(?:imagesById|onFocusImage)/s);
+  assert.match(source, /跨资料校验[\s\S]*<CheckValues check=\{check\} \/>/);
+  assert.doesNotMatch(source, /check\.evidence/);
+});
+
+test("review check evidence uses the shared evidence contract", () => {
+  const source = readFileSync(new URL("../src/types/review.ts", import.meta.url), "utf8");
+
+  assert.match(source, /interface ReviewCheck[\s\S]*evidence\?: Evidence\[\]/);
+  assert.doesNotMatch(source, /evidence\?: unknown\[\]/);
+});

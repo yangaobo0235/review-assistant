@@ -1,0 +1,250 @@
+/**
+ * 功能：协调页面采集、图片标准化和原图定位消息。
+ * 职责边界：复杂识别逻辑委托给独立公共脚本。
+ * 修改日期：2026-08-26
+ * 修改人：wuyi
+ */
+
+// Keep collection orchestration here; field, image, normalization, and focus rules live in dedicated scripts.
+const reviewImageElements = new Map();
+const MAX_REVIEW_IMAGES = 10;
+const MESSAGE_TYPES = Object.freeze({
+  collectPageData: "COLLECT_PAGE_DATA",
+  focusReviewImage: "FOCUS_REVIEW_IMAGE",
+});
+
+const focusReviewImage = (message) => {
+  const image = reviewImageElements.get(message.imageId);
+  return globalThis.ReviewImageFocus.focus(image);
+};
+
+const isCollectionMessage = (message) =>
+  message?.type === MESSAGE_TYPES.collectPageData;
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === MESSAGE_TYPES.focusReviewImage) {
+    sendResponse(focusReviewImage(message));
+    return;
+  }
+  if (!isCollectionMessage(message)) {
+    return;
+  }
+
+  const log = (event, details = {}) => {
+    console.info("[ReviewAgent][collect]", event, details);
+  };
+  log("start", { url: window.location.href, title: document.title });
+
+  const allText = document.body.innerText || "";
+  const automaticBusiness = globalThis.ReviewBusinessDetector.detect(
+    window.location.href,
+    allText
+  );
+  const business = message.businessSelection
+    ? {
+        businessType: message.businessSelection.businessType,
+        region: message.businessSelection.region,
+        profileVersion: message.businessSelection.profileVersion,
+        workflowStage: message.businessSelection.workflowStage,
+        selectionMode: "MANUAL",
+        detectionStatus: "CONFIRMED"
+      }
+    : automaticBusiness;
+  const fieldCollection = globalThis.ReviewPageFieldCollector.collect(
+    document,
+    business?.businessType ?? null,
+  );
+  const pageFields = fieldCollection.pageFields;
+  const unmatchedLabels = fieldCollection.unmatchedLabels;
+  log("fields", {
+    scannedControls: fieldCollection.scannedControls,
+    matchedFields: Object.keys(pageFields).length,
+    unmatchedLabels,
+    candidateCount: fieldCollection.candidateCount,
+    ambiguousFields: fieldCollection.ambiguousFields
+  });
+
+  // 图片分组是启发式信息，最终文档类型仍由 OCR/多模态工具确认。
+  const classifyImage = (hint) => {
+    const text = hint.toLowerCase();
+    if (text.includes("身份证")) return "id_card";
+    if (text.includes("登记证书") || text.includes("机动车登记证")) return "registration_certificate";
+    if (text.includes("回收证明") || text.includes("报废证明")) return "scrap_certificate";
+    if (text.includes("发票")) return "invoice";
+    if (text.includes("报废车辆资料") || text.includes("旧车资料")) return "old_vehicle";
+    if (text.includes("新车资料")) return "new_vehicle";
+    return "unknown";
+  };
+
+  const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("图片转换失败"));
+    reader.readAsDataURL(blob);
+  });
+
+  const readImageAsset = async (candidate) => {
+    const { image, index } = candidate;
+    const src = image.currentSrc || image.src;
+    const hint = image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
+    const imageAsset = {
+      imageId: candidate.imageId,
+      index,
+      src,
+      alt: image.alt || "",
+      group: hint.slice(0, 80) || "未分类",
+      categoryHint: classifyImage(hint),
+      documentTypeHint: candidate.categoryHint,
+      businessScope: candidate.businessScope,
+      groupTitle: candidate.groupTitle,
+      groupOrder: candidate.groupOrder,
+      pagePosition: `${Math.round(image.getBoundingClientRect().left)},${Math.round(image.getBoundingClientRect().top)}`,
+      naturalWidth: image.naturalWidth || 0,
+      naturalHeight: image.naturalHeight || 0,
+      mimeType: image.naturalWidth ? "image/jpeg" : null,
+      sizeBytes: null,
+      dataUrl: null,
+      collectionError: null
+    };
+    if (!src) {
+      imageAsset.collectionError = "图片地址为空";
+      return imageAsset;
+    }
+    try {
+      if (src.startsWith("blob:") || src.startsWith("data:")) {
+        const response = await fetch(src);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const normalizedBlob = await globalThis.ReviewImageNormalization.normalizeBlob(blob);
+        imageAsset.mimeType = normalizedBlob.type;
+        imageAsset.sizeBytes = normalizedBlob.size;
+        imageAsset.dataUrl = await blobToDataUrl(normalizedBlob);
+      } else {
+        const result = await chrome.runtime.sendMessage({ type: "FETCH_IMAGE_ASSET", url: src });
+        if (!result?.ok) throw new Error(result?.error || "后台图片读取失败");
+        imageAsset.mimeType = result.mimeType;
+        imageAsset.sizeBytes = result.sizeBytes;
+        imageAsset.dataUrl = result.dataUrl;
+      }
+    } catch (error) {
+      imageAsset.collectionError = error instanceof Error ? error.message : "图片读取失败";
+    }
+    return imageAsset;
+  };
+
+  const pageImages = Array.from(document.images);
+  const imageIndexes = new Map(pageImages.map((image, index) => [image, index]));
+  const scopeItems = [];
+  document.body.querySelectorAll("*").forEach((element) => {
+    const directText = Array.from(element.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent || "")
+      .join(" ")
+      .trim();
+    if (globalThis.ReviewBusinessScope.scopeForLabel(directText)) {
+      scopeItems.push({ kind: "label", text: directText });
+    }
+    if (element instanceof HTMLImageElement) {
+      scopeItems.push({ kind: "image", index: imageIndexes.get(element) });
+    }
+  });
+  const scopeByIndex = new Map(
+    globalThis.ReviewBusinessScope.assign(scopeItems).map((item) => [item.index, item])
+  );
+
+  const imageCandidates = pageImages.map((image, index) => {
+    const rect = image.getBoundingClientRect();
+    const style = window.getComputedStyle(image);
+    const hint = image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
+    const scope = scopeByIndex.get(index) || {
+      businessScope: "unknown",
+      groupTitle: "未分类资料",
+      groupOrder: index + 1,
+      imageId: `unknown-${String(index + 1).padStart(2, "0")}`,
+    };
+    return {
+      image,
+      index,
+      ...scope,
+      src: image.currentSrc || image.src,
+      visible: rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+      naturalWidth: image.naturalWidth || 0,
+      naturalHeight: image.naturalHeight || 0,
+      className: typeof image.className === "string" ? image.className : "",
+      role: image.getAttribute("role") || "",
+      ariaHidden: image.getAttribute("aria-hidden") === "true",
+      hint,
+      categoryHint: classifyImage(hint)
+    };
+  });
+  const selection = globalThis.ReviewImageCandidates.select(imageCandidates, MAX_REVIEW_IMAGES);
+  const images = selection.selected;
+  // Stable IDs preserve the link to the collected DOM node even when candidate
+  // ordering changes; the focus helper still rejects nodes detached by rerendering.
+  reviewImageElements.clear();
+  images.forEach((candidate) => reviewImageElements.set(candidate.imageId, candidate.image));
+
+  Promise.all(images.map((candidate) => readImageAsset(candidate)))
+    .then((imageAssets) => {
+      const imageFailureCount = imageAssets.filter((image) => image.collectionError).length;
+      const collectionDiagnostics = {
+        scannedControls: fieldCollection.scannedControls,
+        matchedFields: Object.keys(pageFields).length,
+        unmatchedLabels,
+        candidateCount: fieldCollection.candidateCount,
+        ambiguousFields: fieldCollection.ambiguousFields,
+        imageSuccessCount: imageAssets.length - imageFailureCount,
+        imageFailureCount,
+        scannedImages: selection.scannedCount,
+        selectedImages: imageAssets.length,
+        imageOverflow: selection.overflow,
+        collectionIssues: selection.overflow
+          ? [`候选资料超过 ${MAX_REVIEW_IMAGES} 张，请确认是否漏审`]
+          : []
+      };
+      log("complete", {
+        imageCount: imageAssets.length,
+        imageFailureCount,
+        fieldCount: Object.keys(pageFields).length,
+        scannedImages: selection.scannedCount,
+        selectedImages: imageAssets.length,
+        imageOverflow: selection.overflow
+      });
+      sendResponse({
+      ...(business || {}),
+      pageUrl: window.location.href,
+      pageTitle: document.title,
+      pageFields,
+      pageText: allText,
+      images: imageAssets,
+      businessDetectionError: business ? null : "无法识别当前审核业务，请人工选择",
+      collectionIssues: selection.overflow
+        ? [`候选资料超过 ${MAX_REVIEW_IMAGES} 张，请确认是否漏审`]
+        : [],
+      collectionDiagnostics
+      });
+    })
+    .catch((error) => {
+      log("failed", { message: error instanceof Error ? error.message : "unknown" });
+      sendResponse({
+      ...(business || {}),
+      pageUrl: window.location.href,
+      pageTitle: document.title,
+      pageFields,
+      pageText: allText,
+      images: [],
+      businessDetectionError: business ? null : "无法识别当前审核业务，请人工选择",
+      collectionIssues: [error instanceof Error ? error.message : "图片采集失败"],
+      collectionDiagnostics: {
+        scannedControls: fieldCollection.scannedControls,
+        matchedFields: Object.keys(pageFields).length,
+        unmatchedLabels,
+        candidateCount: fieldCollection.candidateCount,
+        ambiguousFields: fieldCollection.ambiguousFields,
+        imageSuccessCount: 0,
+        imageFailureCount: 0
+      }
+      });
+    });
+  return true;
+});

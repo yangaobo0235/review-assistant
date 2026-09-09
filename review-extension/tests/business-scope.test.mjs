@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import vm from "node:vm";
+
+function loadBusinessScope() {
+  const source = readFileSync(new URL("../public/business-scope.js", import.meta.url), "utf8");
+  const context = { globalThis: {} };
+  vm.runInNewContext(source, context);
+  return context.globalThis.ReviewBusinessScope;
+}
+
+test("assigns old and new images from page order with independent group numbering", () => {
+  const { assign } = loadBusinessScope();
+  const assigned = assign([
+    { kind: "label", text: "营业执照" },
+    { kind: "image", index: 1 },
+    { kind: "label", text: "报废车辆资料" },
+    { kind: "image", index: 3 },
+    { kind: "image", index: 4 },
+    { kind: "label", text: "新车资料" },
+    { kind: "image", index: 6 },
+  ]);
+
+  assert.deepEqual(Array.from(assigned, (item) => ({ ...item })), [
+    { index: 1, businessScope: "other", groupTitle: "营业执照", groupOrder: 1, imageId: "other-01" },
+    { index: 3, businessScope: "old_vehicle", groupTitle: "报废车辆资料", groupOrder: 1, imageId: "old_vehicle-01" },
+    { index: 4, businessScope: "old_vehicle", groupTitle: "报废车辆资料", groupOrder: 2, imageId: "old_vehicle-02" },
+    { index: 6, businessScope: "new_vehicle", groupTitle: "新车资料", groupOrder: 1, imageId: "new_vehicle-01" },
+  ]);
+});
+
+test("recognizes identity headings as non-review scope and ignores container text", () => {
+  const { scopeForLabel } = loadBusinessScope();
+
+  assert.deepEqual({ ...scopeForLabel("身份证正面") }, { scope: "other", title: "身份证正面" });
+  assert.equal(scopeForLabel("报废车辆资料 新车资料"), null);
+});
+
+test("assigns transfer documents to an isolated transfer scope", () => {
+  const assigned = loadBusinessScope().assign([
+    { kind: "label", text: "过户资料" },
+    { kind: "image", index: 2 },
+    { kind: "image", index: 3 },
+  ]);
+
+  assert.deepEqual(Array.from(assigned, (item) => ({ ...item })), [
+    { index: 2, businessScope: "transfer", groupTitle: "过户资料", groupOrder: 1, imageId: "transfer-01" },
+    { index: 3, businessScope: "transfer", groupTitle: "过户资料", groupOrder: 2, imageId: "transfer-02" },
+  ]);
+});

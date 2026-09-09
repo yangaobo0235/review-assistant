@@ -1,0 +1,549 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import vm from "node:vm";
+
+function loadCollector() {
+  const source = readFileSync(
+    new URL("../public/page-field-collector.js", import.meta.url),
+    "utf8",
+  );
+  const context = { globalThis: {} };
+  vm.runInNewContext(source, context);
+  return context.globalThis.ReviewPageFieldCollector;
+}
+
+function element({
+  tag = "div",
+  text = "",
+  directText = text,
+  value,
+  section = "unknown",
+  label = "",
+  source = "adjacent",
+} = {}) {
+  return {
+    tagName: tag.toUpperCase(),
+    textContent: text,
+    innerText: text,
+    value,
+    dataset: { reviewSection: section },
+    getAttribute(name) {
+      if (name === "data-review-label") return label || null;
+      if (name === "data-review-source") return source || null;
+      if (name === "data-direct-text") return directText || null;
+      return null;
+    },
+  };
+}
+
+function fixture(candidates) {
+  return { candidates };
+}
+
+function collect(collector, root) {
+  if (root.candidates) {
+    return collector.collectCandidates(root.candidates.map((candidate) => ({
+      label: candidate.getAttribute("data-review-label"),
+      value: candidate.value ?? candidate.textContent,
+      section: candidate.dataset.reviewSection,
+      source: candidate.getAttribute("data-review-source"),
+    })));
+  }
+  return collector.collect(root);
+}
+
+test("recognizes the actual scrap date label", () => {
+  const collector = loadCollector();
+
+  assert.equal(
+    collector.definitionForLabel("报废车日期").field,
+    "old_vehicle.recycle_date",
+  );
+});
+
+test("requires a known section for repeated vehicle fields", () => {
+  const collector = loadCollector();
+
+  assert.equal(collector.isSectionRequired("old_vehicle.vin"), true);
+  assert.equal(collector.isSectionRequired("new_vehicle.vin"), true);
+  assert.equal(collector.isSectionRequired("old_vehicle.owner"), true);
+  assert.equal(collector.isSectionRequired("new_vehicle.owner"), true);
+  assert.equal(collector.isSectionRequired("old_vehicle.recycle_date"), false);
+});
+
+test("collects a labeled form control", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      tag: "input",
+      label: "报废车日期",
+      value: "2026-07-20",
+      source: "control",
+    }),
+  ]);
+
+  assert.equal(
+    collect(collector, root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("collects a form control whose label contains required text", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      tag: "input",
+      label: "报废车日期（必填）",
+      value: "2026-07-20",
+      source: "control",
+    }),
+  ]);
+
+  assert.equal(
+    collect(collector, root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("collects a readonly label and value pair", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车日期",
+      text: "2026-07-20",
+      source: "structured",
+    }),
+  ]);
+
+  assert.equal(
+    collect(collector, root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("collects adjacent table cells in the old vehicle section", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      tag: "tr",
+      label: "报废车辆车架号",
+      text: "LJVA39D84DW002198",
+      section: "old_vehicle",
+      source: "table",
+    }),
+  ]);
+
+  assert.equal(
+    collect(collector, root).pageFields["old_vehicle.vin"],
+    "LJVA39D84DW002198",
+  );
+});
+
+test("collects when label and value are separate sibling nodes", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车日期",
+      text: "2026-07-20",
+      source: "adjacent",
+    }),
+  ]);
+
+  assert.equal(
+    collect(collector, root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("does not collect a repeated vehicle field without a known section", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({ label: "车架号", text: "NEW-VIN", source: "adjacent" }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.equal(result.pageFields["new_vehicle.vin"], undefined);
+});
+
+test("collects an explicit old vehicle VIN label without a section", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车辆车架号",
+      text: "LJVA39D84DW002198",
+      source: "structured",
+    }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], "LJVA39D84DW002198");
+  assert.equal(result.pageFields["new_vehicle.vin"], undefined);
+});
+
+test("collects an explicit old vehicle plate label without a section", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车辆车牌号",
+      text: "青A07149",
+      source: "structured",
+    }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.plate_no"], "青A07149");
+  assert.equal(result.pageFields["new_vehicle.plate_no"], undefined);
+});
+
+test("does not collect a generic plate label without a known section", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({ label: "车牌号", text: "青A07149", source: "structured" }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.plate_no"], undefined);
+  assert.equal(result.pageFields["new_vehicle.plate_no"], undefined);
+});
+
+test("does not route a new vehicle VIN into the old vehicle field", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "车架号",
+      text: "NEW-VIN",
+      section: "new_vehicle",
+      source: "table",
+    }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.equal(result.pageFields["new_vehicle.vin"], "NEW-VIN");
+});
+
+test("routes an adjacent generic VIN label using its known section", () => {
+  const collector = loadCollector();
+  const value = element({ text: "NEW-VIN" });
+  const label = element({ text: "车架号", section: "new_vehicle" });
+  label.nextElementSibling = value;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector === "body *, *") return [label, value];
+      return [];
+    },
+  };
+
+  const result = collector.collect(root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.equal(result.pageFields["new_vehicle.vin"], "NEW-VIN");
+});
+
+test("does not infer a field section from the whole document body", () => {
+  const collector = loadCollector();
+  const body = element({ tag: "body", text: "新车及发票信息 其他区域 车架号 OLD-VIN" });
+  const value = element({ text: "OLD-VIN" });
+  const label = element({ text: "车架号" });
+  label.nextElementSibling = value;
+  label.parentElement = body;
+  value.parentElement = body;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector === "body *, *") return [label, value];
+      return [];
+    },
+  };
+
+  const result = collector.collect(root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.equal(result.pageFields["new_vehicle.vin"], undefined);
+});
+
+test("prefers an exact field label over a generic alias", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "车架号",
+      text: "OLD-GENERIC-VIN",
+      section: "old_vehicle",
+      source: "table",
+    }),
+    element({
+      label: "报废车辆车架号",
+      text: "OLD-EXACT-VIN",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+  ]);
+
+  assert.equal(
+    collect(collector, root).pageFields["old_vehicle.vin"],
+    "OLD-EXACT-VIN",
+  );
+});
+
+test("leaves conflicting top-ranked values ambiguous", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车辆车架号",
+      text: "VIN-A",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+    element({
+      label: "报废车辆车架号",
+      text: "VIN-B",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.deepEqual(Array.from(result.ambiguousFields), ["old_vehicle.vin"]);
+});
+
+test("does not use value length to break equally reliable conflicts", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车辆车架号",
+      text: "VIN-A",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+    element({
+      label: "报废车辆车架号",
+      text: "VIN-LONGER",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.deepEqual(Array.from(result.ambiguousFields), ["old_vehicle.vin"]);
+});
+
+test("treats specific synonymous labels as equally reliable", () => {
+  const collector = loadCollector();
+  const root = fixture([
+    element({
+      label: "报废车辆车架号",
+      text: "VIN-A",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+    element({
+      label: "旧车车架号",
+      text: "VIN-B",
+      section: "old_vehicle",
+      source: "structured",
+    }),
+  ]);
+
+  const result = collect(collector, root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], undefined);
+  assert.deepEqual(Array.from(result.ambiguousFields), ["old_vehicle.vin"]);
+});
+
+test("collects every label-value pair from a multi-pair table row", () => {
+  const collector = loadCollector();
+  const cells = [
+    element({ tag: "th", text: "车架号" }),
+    element({ tag: "td", text: "OLD-VIN" }),
+    element({ tag: "th", text: "所有人" }),
+    element({ tag: "td", text: "张三" }),
+  ];
+  const row = element({ tag: "tr", text: "车架号 OLD-VIN 所有人 张三", section: "old_vehicle" });
+  row.children = cells;
+  row.parentElement = null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.startsWith("tr,")) return [row];
+      return [];
+    },
+  };
+
+  const result = collector.collect(root);
+
+  assert.equal(result.pageFields["old_vehicle.vin"], "OLD-VIN");
+  assert.equal(result.pageFields["old_vehicle.owner"], "张三");
+});
+
+test("collects a control wrapped by a native label", () => {
+  const collector = loadCollector();
+  const wrappingLabel = element({ tag: "label", text: "报废车日期" });
+  const control = element({ tag: "input", value: "2026-07-20" });
+  control.id = "";
+  control.closest = (selector) => selector === "label" ? wrappingLabel : null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.includes("input")) return [control];
+      return [];
+    },
+  };
+
+  assert.equal(
+    collector.collect(root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("collects an input through an explicit label for association", () => {
+  const collector = loadCollector();
+  const label = element({ tag: "label", text: "报废车日期" });
+  const control = element({ tag: "input", value: "2026-07-20" });
+  control.id = "scrap-date";
+  control.closest = () => null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.includes("input")) return [control];
+      if (selector === 'label[for="scrap-date"]') return [label];
+      return [];
+    },
+  };
+
+  assert.equal(
+    collector.collect(root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("collects select and plaintext-only contenteditable controls", () => {
+  const collector = loadCollector();
+  const select = element({ tag: "select", label: "报废车辆类型" });
+  select.selectedOptions = [{ textContent: "燃油车" }];
+  select.closest = () => null;
+  select.getAttribute = (name) => name === "aria-label" ? "报废车辆类型" : null;
+  const editable = element({ tag: "div", text: "2026-07-20" });
+  editable.closest = () => null;
+  editable.getAttribute = (name) => name === "aria-label" ? "报废车日期" : null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return [select, editable];
+      return [];
+    },
+  };
+
+  const result = collector.collect(root);
+
+  assert.equal(result.pageFields["old_vehicle.type"], "燃油车");
+  assert.equal(result.pageFields["old_vehicle.recycle_date"], "2026-07-20");
+});
+
+test("collects a readonly two-node container through DOM extraction", () => {
+  const collector = loadCollector();
+  const label = element({ tag: "span", text: "报废车日期" });
+  const value = element({ tag: "span", text: "2026-07-20" });
+  const container = element({ text: "报废车日期 2026-07-20" });
+  container.children = [label, value];
+  container.querySelector = () => null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.startsWith("tr,")) return [container];
+      return [];
+    },
+  };
+
+  assert.equal(
+    collector.collect(root).pageFields["old_vehicle.recycle_date"],
+    "2026-07-20",
+  );
+});
+
+test("collects transfer fields only from the transfer voucher section", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "车牌号", value: "冀A34870", section: "transfer", source: "control", proximity: 10 },
+    { label: "识别车架号", value: "LFWSRX9LXPAC30354", section: "transfer", source: "control", proximity: 10 },
+    { label: "过户发票买家名称", value: "石家庄臻誉供应链管理有限公司", section: "transfer", source: "control", proximity: 10 },
+    { label: "卖方名称", value: "赞皇县顺红运输有限公司", section: "transfer", source: "control", proximity: 10 },
+    { label: "开票日期", value: "2026-08-15", section: "transfer", source: "control", proximity: 10 },
+    { label: "车源发布时间", value: "2026-08-13 17:01:31", section: "transfer", source: "structured", proximity: 10 },
+  ]);
+
+  assert.deepEqual({ ...result.pageFields }, {
+    "transfer.plate_no": "冀A34870",
+    "transfer.vin": "LFWSRX9LXPAC30354",
+    "transfer.buyer_name": "石家庄臻誉供应链管理有限公司",
+    "transfer.seller_name": "赞皇县顺红运输有限公司",
+    "transfer.invoice_date": "2026-08-15",
+    "transfer.source_publish_date": "2026-08-13 17:01:31",
+  });
+});
+
+test("collects transfer controls under a div section title", () => {
+  const collector = loadCollector();
+  const title = element({ tag: "div", text: "审核过户凭证" });
+  const label = element({ tag: "label", text: "开票日期" });
+  const formItem = element({ tag: "div", text: "开票日期 2026-08-03" });
+  const control = element({ tag: "input", value: "2026-08-03" });
+  const card = element({ tag: "div", text: "" });
+
+  card.children = [title, formItem];
+  title.parentElement = card;
+  formItem.children = [label, control];
+  formItem.parentElement = card;
+  formItem.querySelector = () => label;
+  control.parentElement = formItem;
+  control.closest = (selector) => selector.includes(".ant-form-item") ? formItem : null;
+
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return [control];
+      return [];
+    },
+  };
+
+  assert.equal(
+    collector.collect(root).pageFields["transfer.invoice_date"],
+    "2026-08-03",
+  );
+});
+
+test("collects transfer date outside the voucher section when business is confirmed", () => {
+  const collector = loadCollector();
+  const control = element({ tag: "input", value: "2026-08-03" });
+  control.closest = () => null;
+  control.getAttribute = (name) => name === "aria-label" ? "开票日期" : null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return [control];
+      return [];
+    },
+  };
+
+  assert.equal(
+    collector.collect(root, "transfer").pageFields["transfer.invoice_date"],
+    "2026-08-03",
+  );
+});
+
+test("collects an invoice date label with required marker and colon", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "* 开票日期：", value: "2026-01-28", section: "new_vehicle", source: "control", proximity: 10 },
+  ]);
+
+  assert.equal(result.pageFields["invoice.invoice_date"], "2026-01-28");
+});
+
+test("falls back to a date-like invoice candidate when section matching is ambiguous", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "开票日期", value: "2026-01-28", section: "unknown", source: "control", proximity: 10 },
+  ], 1, "scrap_replacement");
+
+  assert.equal(result.pageFields["invoice.invoice_date"], "2026-01-28");
+});

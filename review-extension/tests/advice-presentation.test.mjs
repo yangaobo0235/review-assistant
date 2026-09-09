@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  checkStatusLabel,
+  confidenceLabel,
+  orderedCrossChecks,
+  recommendationVisual,
+} from "../src/advicePresentation.ts";
+
+test("maps recommendations to accessible visual cues", () => {
+  assert.deepEqual(recommendationVisual("PASS"), {
+    symbol: "✓",
+    label: "审核建议：通过",
+  });
+  assert.deepEqual(recommendationVisual("REVIEW_REQUIRED"), {
+    symbol: "!",
+    label: "审核建议：需要人工复核",
+  });
+  assert.deepEqual(recommendationVisual("REJECT_SUGGESTED"), {
+    symbol: "×",
+    label: "审核建议：建议拒绝",
+  });
+});
+
+test("maps check statuses to reviewer-facing labels", () => {
+  assert.equal(checkStatusLabel("MATCH"), "满足");
+  assert.equal(checkStatusLabel("CONFLICT"), "不满足");
+  assert.equal(checkStatusLabel("INSUFFICIENT"), "无法校验");
+});
+
+test("labels confidence as image recognition confidence", () => {
+  assert.equal(confidenceLabel(0.967), "图片识别平均置信度：97%");
+  assert.equal(confidenceLabel(null), null);
+});
+
+test("always returns owner and date cross-check rows", () => {
+  const rows = orderedCrossChecks("scrap_replacement", []);
+
+  assert.deepEqual(rows.map((item) => item.check_id), ["CROSS-OWNER-001", "CROSS-DATE-001"]);
+  assert.ok(rows.every((item) => item.status === "INSUFFICIENT"));
+});
+
+test("preserves long source values without truncation", () => {
+  const longValue = "某某省某某市超长企业名称有限责任公司".repeat(4);
+  const [owner] = orderedCrossChecks("scrap_replacement", [{
+    check_id: "CROSS-OWNER-001",
+    label: "新旧车所有人一致性",
+    status: "CONFLICT",
+    reason: "不一致",
+    values: [{ source: "旧车资料", value: longValue }],
+  }]);
+
+  assert.equal(owner.values[0].value, longValue);
+});
+
+test("returns the three transfer cross-check rows in business order", () => {
+  const rows = orderedCrossChecks("transfer", []);
+
+  assert.deepEqual(rows.map((item) => item.check_id), [
+    "CROSS-TRANSFER-SELLER-001",
+    "CROSS-TRANSFER-BUYER-001",
+    "CROSS-TRANSFER-DATE-001",
+  ]);
+  assert.ok(rows.every((item) => item.status === "INSUFFICIENT"));
+});
