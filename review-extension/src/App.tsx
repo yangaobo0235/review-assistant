@@ -1,7 +1,8 @@
 /**
  * 功能：组合 Side Panel 页面并管理业务与异常筛选。
- * 职责边界：不管理任务轮询，不实现后端审核规则。
- * 修改日期：2026-08-26
+ * 职责边界：不管理任务轮询，不实现后端审核规则；
+ * 目标业务的字段优先会话由 useScrapReplacementReview 编排。
+ * 修改日期：2026-09-11
  * 修改人：wuyi
  */
 
@@ -12,6 +13,7 @@ import forjLogo from "./assets/forj-logo.png";
 import { ReviewProgress } from "./components/ReviewProgress";
 import { ReviewResults } from "./components/ReviewResults";
 import type { ExceptionFilter } from "./exceptionPresentation";
+import { useScrapReplacementReview } from "./hooks/useScrapReplacementReview";
 import { useReviewWorkflow } from "./hooks/useReviewWorkflow";
 import { businessLabels, type BusinessChoice } from "./reviewPanelConfig";
 
@@ -19,6 +21,7 @@ function App() {
   const [businessSelection, setBusinessSelection] = useState<BusinessChoice>("AUTO");
   const [exceptionFilter, setExceptionFilter] = useState<ExceptionFilter>("ALL");
   const workflow = useReviewWorkflow(businessSelection);
+  const scrapReview = useScrapReplacementReview(workflow);
 
   const changeBusinessSelection = (selection: BusinessChoice) => {
     workflow.reset();
@@ -70,6 +73,7 @@ function App() {
 
       {workflow.error ? <div className="error-message">{workflow.error}</div> : null}
       {workflow.notice ? <div className="notice-message">{workflow.notice}</div> : null}
+      {scrapReview.notice ? <div className="notice-message">{scrapReview.notice}</div> : null}
       {workflow.job ? <ReviewProgress job={workflow.job} /> : null}
       {workflow.review ? (
         <ReviewResults
@@ -80,6 +84,7 @@ function App() {
           onExceptionFilterChange={setExceptionFilter}
           onFocusImage={workflow.focusOriginalImage}
           pageFillResult={workflow.pageFillResult}
+          scrapReview={scrapReview}
         />
       ) : null}
 

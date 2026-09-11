@@ -1,7 +1,8 @@
 /**
- * 功能：展示二维码、异常字段和多源证据。
- * 职责边界：只执行展示转换和原图定位请求。
- * 修改日期：2026-08-26
+ * 功能：按业务 Profile 分流审核结果展示。
+ * 职责边界：目标报废置换 Profile 走字段优先助手；过户、车源和一致性
+ * 继续使用现有结果界面和行为（LegacyReviewResults，保持原样）。
+ * 修改日期：2026-09-11
  * 修改人：wuyi
  */
 
@@ -12,6 +13,10 @@ import {
   type EvidenceHighlightPlan,
 } from "../evidencePresentation";
 import { exceptionComparisons, exceptionSections, type ExceptionFilter } from "../exceptionPresentation";
+import {
+  isFieldFirstProfile,
+  type ScrapReplacementReviewController,
+} from "../hooks/useScrapReplacementReview";
 import { qrCheckPresentation } from "../qrPresentation";
 import { fieldLabel, groupStatusLabel, statusLabel } from "../reviewPanelConfig";
 import type { Evidence, FieldComparison, JobStatus, PageData, ReviewJobSnapshot, ReviewResponse } from "../types/review";
@@ -19,6 +24,7 @@ import { diffValue, diffValueByPosition } from "../valueDiff";
 import { ReviewAdvice } from "./ReviewAdvice";
 import { MaterialCompleteness } from "./MaterialCompleteness";
 import { ReviewFieldStepper } from "./ReviewFieldStepper";
+import { ScrapReplacementReview } from "./ScrapReplacementReview";
 import type { PageFillResult } from "../pageFillClient";
 
 interface ReviewResultsProps {
@@ -29,9 +35,26 @@ interface ReviewResultsProps {
   onExceptionFilterChange: (filter: ExceptionFilter) => void;
   onFocusImage: (imageId: string) => Promise<void>;
   pageFillResult: PageFillResult | null;
+  scrapReview: ScrapReplacementReviewController;
 }
 
-export function ReviewResults({ review, job, pageData, exceptionFilter, onExceptionFilterChange, onFocusImage, pageFillResult }: ReviewResultsProps) {
+export function ReviewResults(props: ReviewResultsProps) {
+  const { review, onFocusImage, scrapReview } = props;
+  if (isFieldFirstProfile(review)) {
+    // 目标业务：助手只保留当前一个需要人工处理的页面外事项。
+    return (
+      <ScrapReplacementReview
+        assistantStep={scrapReview.assistantStep}
+        blockingIssue={scrapReview.blockingIssue}
+        onDecide={scrapReview.decide}
+        onFocusImage={onFocusImage}
+      />
+    );
+  }
+  return <LegacyReviewResults {...props} />;
+}
+
+function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExceptionFilterChange, onFocusImage, pageFillResult }: ReviewResultsProps) {
   const imagesById = new Map(
     (pageData?.images || []).filter((image) => image.imageId).map((image) => [image.imageId as string, image]),
   );
