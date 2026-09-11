@@ -46,10 +46,10 @@ export function reviewStepTitle(step: ReviewStep): string {
   return step.category === "FIELD" ? fieldLabel(step.label) : step.label;
 }
 
+/** 只按后端结构化 step_id 识别主体关系结论；spec §5.1 禁止按中文 label 推断。 */
 export function isAffiliationRelationshipStep(step: ReviewStep): boolean {
   return step.step_id === "BUSINESS-AFFILIATION-SUBJECT-001"
-    || step.step_id === "AFFILIATION-SUBJECT-001"
-    || step.label === "新旧车挂靠主体关系";
+    || step.step_id === "AFFILIATION-SUBJECT-001";
 }
 
 export function reviewStepDecisionLabel(decision?: ReviewStepDecision): string | null {

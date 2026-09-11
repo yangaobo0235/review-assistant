@@ -71,9 +71,18 @@ test("uses the reviewer-facing field label while preserving business rule titles
   assert.equal(reviewStepTitle(steps[0]), "主体关系");
 });
 
-test("identifies only the affiliation relationship conclusion, not auxiliary safeguards", () => {
+test("identifies only the affiliation relationship conclusion by structured step id", () => {
   assert.equal(isAffiliationRelationshipStep(steps[0]), true);
+  assert.equal(
+    isAffiliationRelationshipStep({ ...steps[0], step_id: "AFFILIATION-SUBJECT-001" }),
+    true,
+  );
   assert.equal(isAffiliationRelationshipStep({ ...steps[0], step_id: "BUSINESS-AFFILIATION-AUX-NEW-VIN", label: "OCR新车车架号" }), false);
+  // spec §5.1：绝不通过中文 label 推断步骤身份。
+  assert.equal(
+    isAffiliationRelationshipStep({ ...steps[0], step_id: "BUSINESS-OTHER", label: "新旧车挂靠主体关系" }),
+    false,
+  );
 });
 
 test("keeps generic step evidence readable in a narrow panel", () => {
