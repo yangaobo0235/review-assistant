@@ -1,4 +1,4 @@
-/** Only fill the two backend-authorized, empty affiliation controls. */
+/** Only fill the two backend-authorized, empty affiliation controls; any write or readback failure rolls back every write made by the current invocation. */
 (() => {
   const ALLOWED_TARGETS = Object.freeze({ "old_vehicle.affiliation": "报废车挂靠", "new_vehicle.affiliation": "新车挂靠" });
   const OWNER_OPTIONS = Object.freeze({ PERSONAL: ["个人"], COMPANY: ["公司", "企业"] });
@@ -171,25 +171,104 @@
       if (!sameCollectedRecord(guard)) return { error: guardError };
       options[0].click?.();
       await settle();
-      if (!sameCollectedRecord(guard)) return { error: guardError };
+      if (!sameCollectedRecord(guard)) return { error: guardError, wrote: true };
     }
     const refreshed = resolveControl(root, action);
-    if (refreshed.error) return { error: `${action.target_label}控件已变化，页面已刷新` };
-    if (!OWNER_OPTIONS[action.owner_type].includes(normalize(currentValue(refreshed)))) return { error: `${action.target_label}写入后回读失败` };
+    if (refreshed.error) return { error: `${action.target_label}控件已变化，页面已刷新`, wrote: true };
+    if (!OWNER_OPTIONS[action.owner_type].includes(normalize(currentValue(refreshed)))) return { error: `${action.target_label}写入后回读失败`, wrote: true };
     return { status: "FILLED", field: action.field, label: action.target_label, value: normalize(currentValue(refreshed)) };
+  }
+
+  // 回滚只恢复本次调用写入过的两个挂靠字段的原值；同样走受控写入路径并遵守字段白名单。
+  const CLEAR_SELECTOR = ".ant-select-clear, .ant-select-clear-icon, .el-select__clear, .el-input__clear";
+
+  function snapshotValue(resolved) {
+    if (resolved.nativeSelect) {
+      return {
+        label: nativeCurrent(resolved.nativeSelect).label,
+        raw: String(resolved.nativeSelect.value ?? ""),
+        selected: Array.from(resolved.nativeSelect.options || []).filter((option) => option.selected === true),
+      };
+    }
+    return { label: currentValue(resolved) };
+  }
+
+  async function restoreCustomOption(root, resolved, targetLabel, label, guard) {
+    resolved.control.click?.();
+    let target = null;
+    for (let attempt = 0; attempt < 3 && !target; attempt += 1) {
+      await settle();
+      if (!sameCollectedRecord(guard)) return guardError;
+      const listbox = root?.getElementById?.(resolved.listboxId);
+      if (listbox && connected(listbox) && !hidden(listbox)) target = queryAll(listbox, OPTION_SELECTOR).find((item) => writable(item) && normalize(text(item)) === normalize(label)) || null;
+    }
+    if (!target) {
+      resolved.control.click?.();
+      await settle();
+      return `${targetLabel}无法恢复原值，回滚失败`;
+    }
+    target.click?.();
+    return null;
+  }
+
+  async function restoreControl(root, entry, guard) {
+    const { action, resolved, original } = entry;
+    if (!ALLOWED_TARGETS[action.field]) return `${action.field}不在允许写入的字段内`;
+    if (!sameCollectedRecord(guard)) return guardError;
+    const fresh = resolveControl(root, action);
+    if (fresh.error || fresh.item !== resolved.item || fresh.control !== resolved.control) return `${action.target_label}控件已变化，回滚失败`;
+    if (normalize(currentValue(fresh)) !== normalize(original.label)) {
+      if (fresh.nativeSelect) {
+        fresh.nativeSelect.value = original.raw;
+        for (const option of Array.from(fresh.nativeSelect.options || [])) option.selected = original.selected.includes(option);
+        dispatchNative(fresh.nativeSelect, root);
+      } else if (!original.label) {
+        const clear = fresh.item.querySelector?.(CLEAR_SELECTOR);
+        if (!clear || !writable(clear, true)) return `${action.target_label}无法自动清空，回滚失败`;
+        clear.click?.();
+      } else {
+        const restoreError = await restoreCustomOption(root, fresh, action.target_label, original.label, guard);
+        if (restoreError) return restoreError;
+      }
+    }
+    await settle();
+    if (!sameCollectedRecord(guard)) return guardError;
+    const after = resolveControl(root, action);
+    if (after.error || normalize(currentValue(after)) !== normalize(original.label)) return `${action.target_label}回滚后回读失败`;
+    return null;
   }
 
   async function execute(root, actions, guard) {
     const checked = await preflight(root, actions, guard);
     if (checked.error) return { ok: false, message: checked.error, actions: [] };
+    const originals = new Map(checked.prepared.map((item) => [item.action.field, item.resolved]));
+    const snapshot = new Map(checked.prepared.map((item) => [item.action.field, { action: item.action, resolved: item.resolved, original: snapshotValue(item.resolved) }]));
+    const written = [];
     const results = [];
+    // 全有或全无：任一写入或回读失败时回滚本次调用已写入的字段；身份失效则立即停止一切写入。
+    const fail = async (message) => {
+      if (!written.length) return { ok: false, message, actions: [] };
+      if (!sameCollectedRecord(guard)) return { ok: false, message: `${message}；页面身份已失效，已停止回滚写入`, actions: [] };
+      const errors = [];
+      for (const field of [...written].reverse()) {
+        const error = await restoreControl(root, snapshot.get(field), guard);
+        if (error) errors.push(error);
+      }
+      return errors.length
+        ? { ok: false, message: `${message}；自动回滚未完成（${errors.join("；")}），请人工核对页面`, actions: [] }
+        : { ok: false, message: `${message}；已回滚`, actions: [] };
+    };
     for (let index = 0; index < actions.length; index += 1) {
-      const originals = new Map(checked.prepared.map((item) => [item.action.field, item.resolved]));
       const pendingActions = actions.slice(index);
       const pending = await validatePending(root, pendingActions, originals, guard);
-      if (pending.error) return { ok: false, message: pending.error, actions: results };
-      const result = await fillOne(root, actions[index], originals.get(actions[index].field), pendingActions, originals, guard);
-      if (result.error) return { ok: false, message: result.error, actions: results };
+      if (pending.error) return await fail(pending.error);
+      const action = actions[index];
+      const result = await fillOne(root, action, originals.get(action.field), pendingActions, originals, guard);
+      if (result.error) {
+        if (result.wrote) written.push(action.field);
+        return await fail(result.error);
+      }
+      written.push(action.field);
       results.push(result);
     }
     return { ok: true, message: "挂靠字段已填写并回读", actions: results };

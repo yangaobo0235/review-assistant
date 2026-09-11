@@ -110,11 +110,11 @@ const clearReviewFieldMarkers = (message) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === MESSAGE_TYPES.applyPageFillIntent) {
-    if (!sameCollectedRecord(message)) {
+    if (!sameReviewIdentity(message)) {
       sendResponse({ ok: false, message: "页面已变化，请重新审核", actions: [] });
       return true;
     }
-    globalThis.ReviewPageFieldWriter.execute(document, message.actions, () => sameCollectedRecord(message))
+    globalThis.ReviewPageFieldWriter.execute(document, message.actions, () => sameReviewIdentity(message))
       .then(sendResponse)
       .catch((error) => sendResponse({
         ok: false,

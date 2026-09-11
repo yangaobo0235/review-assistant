@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { applyPageFillIntent } from "../src/pageFillClient.ts";
@@ -20,6 +21,7 @@ test("sends the final page fill intent only to the originally collected page ins
     pageUrl: "https://admin.forjtruck.com/scrap-replace-qingdao?showPageModel=1",
     pageInstanceId: "page-a",
     pageFingerprint: '[["application.id","case-a"]]',
+    collectionId: "page-a:3",
   };
 
   const result = await applyPageFillIntent(intent, target, chromeApi);
@@ -33,6 +35,7 @@ test("sends the final page fill intent only to the originally collected page ins
       expectedPageUrl: target.pageUrl,
       expectedPageInstanceId: target.pageInstanceId,
       expectedPageFingerprint: target.pageFingerprint,
+      expectedCollectionId: target.collectionId,
     },
   }]);
 });
@@ -50,13 +53,54 @@ test("skips browser messaging when the backend returned no fill intent", async (
 });
 
 test("refuses to send when the collected page identity is incomplete", async () => {
-  let sent = false;
-  const result = await applyPageFillIntent(
-    [{ field: "old_vehicle.affiliation", target_label: "报废车挂靠", owner_type: "PERSONAL" }],
+  for (const target of [
     { tabId: 42, pageUrl: "https://example.test", pageInstanceId: "" },
-    { tabs: { sendMessage: async () => { sent = true; } } },
+    {
+      tabId: 42,
+      pageUrl: "https://example.test",
+      pageInstanceId: "page-a",
+      pageFingerprint: '[["application.id","case-a"]]',
+      collectionId: "",
+    },
+  ]) {
+    let sent = false;
+    const result = await applyPageFillIntent(
+      [{ field: "old_vehicle.affiliation", target_label: "报废车挂靠", owner_type: "PERSONAL" }],
+      target,
+      { tabs: { sendMessage: async () => { sent = true; } } },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(sent, false);
+  }
+});
+
+test("startReview no longer auto-fills and the workflow exposes applyAffiliationFill", () => {
+  const workflowSource = readFileSync(
+    new URL("../src/hooks/useReviewWorkflow.ts", import.meta.url),
+    "utf8",
   );
 
-  assert.equal(result.ok, false);
-  assert.equal(sent, false);
+  assert.doesNotMatch(workflowSource,
+    /finalSnapshot\.result\?\.page_fill_intent[\s\S]*applyPageFillIntent/);
+  assert.match(workflowSource, /applyAffiliationFill/);
+
+  const startReviewSource = workflowSource.slice(
+    workflowSource.indexOf("const startReview"),
+    workflowSource.indexOf("const applyAffiliationFill"),
+  );
+  assert.ok(startReviewSource.length > 0);
+  assert.doesNotMatch(startReviewSource, /applyPageFillIntent|page_fill_intent/);
+});
+
+test("content script validates the active collection before applying a fill intent", () => {
+  const source = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
+  const branch = source.slice(
+    source.indexOf("MESSAGE_TYPES.applyPageFillIntent"),
+    source.indexOf("MESSAGE_TYPES.focusReviewImage"),
+  );
+
+  assert.ok(branch.length > 0);
+  assert.match(branch, /if \(!sameReviewIdentity\(message\)\)/);
+  assert.match(branch, /ReviewPageFieldWriter\.execute\(document, message\.actions, \(\) => sameReviewIdentity\(message\)\)/);
 });

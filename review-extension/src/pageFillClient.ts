@@ -18,6 +18,7 @@ export interface PageFillTarget {
   pageUrl: string;
   pageInstanceId: string;
   pageFingerprint: string;
+  collectionId: string;
 }
 
 export async function applyPageFillIntent(
@@ -26,11 +27,12 @@ export async function applyPageFillIntent(
   chromeApi: ChromeTabsLike = globalThis.chrome,
 ): Promise<PageFillResult> {
   if (!actions.length) return { ok: true, skipped: true, message: "本次审核没有页面填写动作" };
-  if (!Number.isInteger(target.tabId) || !target.pageUrl || !target.pageInstanceId || !target.pageFingerprint || !chromeApi.tabs.sendMessage) {
+  if (!Number.isInteger(target.tabId) || !target.pageUrl || !target.pageInstanceId || !target.pageFingerprint || !target.collectionId || !chromeApi.tabs.sendMessage) {
     return { ok: false, message: "原审核页面标识不完整，请重新审核" };
   }
   return chromeApi.tabs.sendMessage(target.tabId, {
     type: "APPLY_PAGE_FILL_INTENT", actions,
     expectedPageUrl: target.pageUrl, expectedPageInstanceId: target.pageInstanceId, expectedPageFingerprint: target.pageFingerprint,
+    expectedCollectionId: target.collectionId,
   });
 }

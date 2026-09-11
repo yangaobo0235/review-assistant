@@ -214,7 +214,7 @@ test("rejects every field and label outside the two affiliation allowlists", asy
   assert.equal(fields[0].select.value, "");
 });
 
-test("stops when a rerender invalidates the remaining target and reports the partial write", async () => {
+test("rolls back the first write when a rerender invalidates the remaining target", async () => {
   const oldField = nativeField("报废车挂靠", ["个人", "公司"]);
   const newField = nativeField("新车挂靠", ["个人", "企业"]);
   const root = nativeRoot([oldField, newField]);
@@ -227,12 +227,14 @@ test("stops when a rerender invalidates the remaining target and reports the par
   const result = await loadWriter().execute(root, actions);
 
   assert.equal(result.ok, false);
-  assert.equal(oldField.select.value, "个人");
+  assert.equal(oldField.select.value, "");
   assert.equal(newField.select.value, "");
+  assert.equal(result.actions.length, 0);
   assert.match(result.message, /页面已刷新|控件已变化/);
+  assert.match(result.message, /已回滚/);
 });
 
-test("never overwrites the second field when the first field triggers a linked value", async () => {
+test("rolls back the first write and never overwrites the second field when the first field triggers a linked value", async () => {
   const oldField = nativeField("报废车挂靠", ["个人", "公司"]);
   const newField = nativeField("新车挂靠", ["个人", "企业"]);
   oldField.select.dispatchEvent = () => {
@@ -242,12 +244,14 @@ test("never overwrites the second field when the first field triggers a linked v
   const result = await loadWriter().execute(nativeRoot([oldField, newField]), actions);
 
   assert.equal(result.ok, false);
-  assert.equal(oldField.select.value, "个人");
+  assert.equal(oldField.select.value, "");
   assert.equal(newField.select.value, "个人");
+  assert.equal(result.actions.length, 0);
   assert.match(result.message, /已有值|禁止覆盖/);
+  assert.match(result.message, /已回滚/);
 });
 
-test("stops before the second write when the first field adds an ambiguous owner option", async () => {
+test("rolls back the first write when it adds an ambiguous owner option to the second field", async () => {
   const oldField = nativeField("报废车挂靠", ["个人", "公司"]);
   const newField = nativeField("新车挂靠", ["个人", "企业"]);
   oldField.select.dispatchEvent = () => {
@@ -257,9 +261,11 @@ test("stops before the second write when the first field adds an ambiguous owner
   const result = await loadWriter().execute(nativeRoot([oldField, newField]), actions);
 
   assert.equal(result.ok, false);
-  assert.equal(oldField.select.value, "个人");
+  assert.equal(oldField.select.value, "");
   assert.equal(newField.select.value, "");
+  assert.equal(result.actions.length, 0);
   assert.match(result.message, /存在歧义|选项已变化/);
+  assert.match(result.message, /已回滚/);
 });
 
 test("does not click an unrelated dropdown option when a target has no associated listbox", async () => {
@@ -387,7 +393,7 @@ test("stops when a hidden form-item ancestor contains an otherwise empty native 
   assert.equal(oldField.select.value, "");
 });
 
-test("stops instead of filling a replacement control after preflight", async () => {
+test("rolls back the first write instead of filling a replacement control after preflight", async () => {
   const oldField = nativeField("报废车挂靠", ["个人", "公司"]);
   const originalNew = nativeField("新车挂靠", ["个人", "企业"]);
   const replacementNew = nativeField("新车挂靠", ["个人", "企业"]);
@@ -401,9 +407,11 @@ test("stops instead of filling a replacement control after preflight", async () 
   const result = await loadWriter().execute(root, actions);
 
   assert.equal(result.ok, false);
-  assert.equal(oldField.select.value, "个人");
+  assert.equal(oldField.select.value, "");
   assert.equal(replacementNew.select.value, "");
+  assert.equal(result.actions.length, 0);
   assert.match(result.message, /控件已变化|页面已刷新/);
+  assert.match(result.message, /已回滚/);
 });
 
 test("writes nothing when the collected record changes while opening the first custom control", async () => {
@@ -500,4 +508,111 @@ test("writes neither field when a pending custom control gains a value during na
   assert.equal(newField.value, "个人");
   assert.equal(result.actions.length, 0);
   assert.match(result.message, /已有值|禁止覆盖/);
+});
+
+test("a non-empty affiliation target prevents both writes", async () => {
+  const oldField = nativeField("报废车挂靠", ["个人", "公司"], "已有值");
+  const newField = nativeField("新车挂靠", ["个人", "企业"]);
+
+  const result = await loadWriter().execute(nativeRoot([oldField, newField]), actions);
+
+  assert.equal(result.ok, false);
+  assert.equal(oldField.select.value, "已有值");
+  assert.equal(newField.select.value, "");
+});
+
+test("writer rejects every field outside the two-field allowlist", async () => {
+  const vinField = nativeField("新车车架号", ["VIN-ORIGINAL"], "VIN-ORIGINAL");
+  const newField = nativeField("新车挂靠", ["个人", "企业"]);
+  const root = nativeRoot([vinField, newField]);
+
+  const single = await loadWriter().execute(root, [{ field: "new_vehicle.vin" }]);
+  assert.equal(single.ok, false);
+  assert.equal(vinField.select.value, "VIN-ORIGINAL");
+
+  const swapped = await loadWriter().execute(root, [
+    { field: "new_vehicle.vin", target_label: "新车车架号", owner_type: "PERSONAL" },
+    actions[1],
+  ]);
+  assert.equal(swapped.ok, false);
+  assert.match(swapped.message, /不允许自动填写/);
+  assert.equal(vinField.select.value, "VIN-ORIGINAL");
+  assert.equal(newField.select.value, "");
+});
+
+test("reports a failed readback and leaves no written value behind", async () => {
+  const oldField = nativeField("报废车挂靠", ["个人", "公司"]);
+  const newField = nativeField("新车挂靠", ["个人", "企业"]);
+  oldField.select.dispatchEvent = () => {
+    oldField.select.value = "";
+  };
+
+  const result = await loadWriter().execute(nativeRoot([oldField, newField]), actions);
+
+  assert.equal(result.ok, false);
+  assert.equal(oldField.select.value, "");
+  assert.equal(newField.select.value, "");
+  assert.equal(result.actions.length, 0);
+  assert.match(result.message, /回读失败/);
+  assert.match(result.message, /已回滚/);
+});
+
+test("reports rollback failure instead of a silent partial write when the written control is replaced", async () => {
+  const oldField = nativeField("报废车挂靠", ["个人", "公司"]);
+  const newField = nativeField("新车挂靠", ["个人", "企业"]);
+  const fields = [oldField, newField];
+  const root = nativeRoot(fields);
+  const replacementOld = nativeField("报废车挂靠", ["个人", "公司"]);
+  const originalDispatch = oldField.select.dispatchEvent;
+  oldField.select.dispatchEvent = (event) => {
+    originalDispatch(event);
+    newField.select.isConnected = false;
+    fields[0] = replacementOld;
+  };
+
+  const result = await loadWriter().execute(root, actions);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.actions.length, 0);
+  assert.match(result.message, /自动回滚未完成/);
+  assert.match(result.message, /请人工核对/);
+  assert.equal(oldField.select.value, "个人");
+  assert.equal(replacementOld.select.value, "");
+  assert.equal(newField.select.value, "");
+});
+
+test("rolls back a filled custom control through its clear affordance when the second field fails", async () => {
+  const definitions = [
+    { label: "报废车挂靠", values: ["个人", "公司"] },
+    { label: "新车挂靠", values: ["个人", "企业"] },
+  ];
+  const root = antRoot(definitions);
+  const oldField = definitions[0].field;
+  const newField = definitions[1].field;
+  const itemQuery = oldField.item.querySelector.bind(oldField.item);
+  oldField.item.querySelector = (selector) => {
+    if (selector.includes("ant-select-clear")) {
+      return {
+        isConnected: true,
+        getAttribute: () => null,
+        click() { oldField.value = ""; },
+      };
+    }
+    return itemQuery(selector);
+  };
+  const personalOption = oldField.options.find((item) => item.textContent === "个人");
+  const optionClick = personalOption.click.bind(personalOption);
+  personalOption.click = () => {
+    optionClick();
+    newField.value = "个人";
+  };
+
+  const result = await loadWriter().execute(root, actions);
+
+  assert.equal(result.ok, false);
+  assert.equal(oldField.value, "");
+  assert.equal(newField.value, "个人");
+  assert.equal(result.actions.length, 0);
+  assert.match(result.message, /已有值|禁止覆盖/);
+  assert.match(result.message, /已回滚/);
 });

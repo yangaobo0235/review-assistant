@@ -26,3 +26,16 @@ test("writer resolves custom options only from the combobox-owned listbox", () =
   assert.match(writer, /customOptions[\s\S]*queryAll\(listbox, OPTION_SELECTOR\)/);
   assert.doesNotMatch(writer, /queryAll\(root, OPTION_SELECTOR\)/);
 });
+
+test("writer keeps the exact two-field allowlist and rolls back failed invocations", () => {
+  assert.match(writer, /ALLOWED_TARGETS = Object\.freeze\(\{ "old_vehicle\.affiliation": "报废车挂靠", "new_vehicle\.affiliation": "新车挂靠" \}\)/);
+  assert.match(writer, /snapshotValue/);
+  assert.match(writer, /restoreControl/);
+  assert.match(writer, /已回滚/);
+  assert.match(writer, /自动回滚未完成/);
+});
+
+test("fixture keeps a pre-filled second affiliation control for the blocked-write scenario", () => {
+  assert.match(fixture, /<span class="ant-select-selection-item">企业<\/span>/);
+  assert.match(fixture, /aria-controls="affiliation-new-options"[^>]*value="企业"/);
+});

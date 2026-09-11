@@ -1,7 +1,7 @@
 /**
  * 功能：管理页面采集、任务轮询和部分结果生命周期。
- * 职责边界：不渲染审核结果，不解释后端规则。
- * 修改日期：2026-08-26
+ * 职责边界：不渲染审核结果，不解释后端规则；挂靠写入只通过受控动作触发。
+ * 修改日期：2026-09-11
  * 修改人：wuyi
  */
 
@@ -21,6 +21,7 @@ import {
 } from "../reviewPanelConfig";
 import type {
   PageData,
+  PageFillAction,
   ReviewJobSnapshot,
   ReviewResponse,
 } from "../types/review";
@@ -54,6 +55,7 @@ export interface ReviewWorkflow {
   pageFillResult: PageFillResult | null;
   reset: () => void;
   startReview: () => Promise<void>;
+  applyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   focusOriginalImage: (imageId: string) => Promise<void>;
 }
 
@@ -133,13 +135,6 @@ export function useReviewWorkflow(
       if (finalSnapshot.status === "FAILED") {
         throw new Error(finalSnapshot.message || "审核任务执行失败");
       }
-      if (finalSnapshot.result?.page_fill_intent?.length) {
-        const fillResult = await applyPageFillIntent(finalSnapshot.result.page_fill_intent, {
-          tabId: data.sourceTabId, pageUrl: data.pageUrl, pageInstanceId: data.pageInstanceId, pageFingerprint: data.pageFingerprint,
-        });
-        setPageFillResult(fillResult);
-        if (!fillResult.ok) setNotice(fillResult.message);
-      }
       // The client deadline is a presentation boundary: a running snapshot still
       // contains useful partial review results and is not a transport failure.
       setNotice((current) => current || completionNotice(finalSnapshot));
@@ -151,6 +146,17 @@ export function useReviewWorkflow(
       setLoading(false);
     }
   }, [businessSelection, loading]);
+
+  const applyAffiliationFill = useCallback(async (actions: PageFillAction[]) => {
+    if (!pageData) return { ok: false, message: "没有找到原审核页面" };
+    return applyPageFillIntent(actions, {
+      tabId: pageData.sourceTabId,
+      pageUrl: pageData.pageUrl,
+      pageInstanceId: pageData.pageInstanceId,
+      pageFingerprint: pageData.pageFingerprint,
+      collectionId: pageData.collectionId,
+    });
+  }, [pageData]);
 
   const focusOriginalImage = useCallback(async (imageId: string) => {
     if (!pageData) {
@@ -173,6 +179,7 @@ export function useReviewWorkflow(
     pageFillResult,
     reset,
     startReview,
+    applyAffiliationFill,
     focusOriginalImage,
   };
 }
