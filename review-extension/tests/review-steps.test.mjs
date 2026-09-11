@@ -76,28 +76,6 @@ test("identifies only the affiliation relationship conclusion, not auxiliary saf
   assert.equal(isAffiliationRelationshipStep({ ...steps[0], step_id: "BUSINESS-AFFILIATION-AUX-NEW-VIN", label: "OCR新车车架号" }), false);
 });
 
-test("renders traceable image evidence and focus controls for every review step category", () => {
-  const stepperSource = readFileSync(
-    new URL("../src/components/ReviewFieldStepper.tsx", import.meta.url),
-    "utf8",
-  );
-  const resultsSource = readFileSync(
-    new URL("../src/components/ReviewResults.tsx", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(stepperSource, /ReviewFieldStepper\(\{ reviewSteps, onFocusImage \}/);
-  assert.match(stepperSource, /<StepEvidence evidence=\{step\.evidence\} onFocusImage=\{onFocusImage\} \/>/);
-  assert.match(stepperSource, /function StepEvidence\(\{ evidence, onFocusImage \}/);
-  assert.match(stepperSource, /文档类型：/);
-  assert.match(stepperSource, /来源标识：/);
-  assert.match(stepperSource, /原图标识：/);
-  assert.match(stepperSource, /字段：/);
-  assert.match(stepperSource, /查看原图/);
-  assert.match(stepperSource, /onFocusImage\(item\.image_id\)/);
-  assert.match(resultsSource, /<ReviewFieldStepper[\s\S]*onFocusImage=\{onFocusImage\}/);
-});
-
 test("keeps generic step evidence readable in a narrow panel", () => {
   const stylesheet = readFileSync(new URL("../src/App.css", import.meta.url), "utf8");
 

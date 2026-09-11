@@ -31,7 +31,6 @@ npm run build
 - `src/pageReviewClient.ts` / `src/pageFillClient.ts`：带页面身份的标记消息和挂靠填写消息客户端。
 - `src/components/ScrapReplacementReview.tsx`：目标业务助手，只显示当前页面外待人工事项或阻塞问题。
 - `src/components/`：进度、完整性、建议和证据组件；`ReviewResults.tsx` 按业务 Profile 分流新旧界面。
-- `src/components/ReviewFieldStepper.tsx`：旧业务结果界面中按后端顺序展示全部核验步骤。
 - `src/reviewClient.ts`：Agent HTTP 客户端。
 - `src/*Presentation.ts`：后端结果到界面模型的转换。
 - `tests/`：Node.js 测试。

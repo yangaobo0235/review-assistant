@@ -23,7 +23,6 @@ import type { Evidence, FieldComparison, JobStatus, PageData, ReviewJobSnapshot,
 import { diffValue, diffValueByPosition } from "../valueDiff";
 import { ReviewAdvice } from "./ReviewAdvice";
 import { MaterialCompleteness } from "./MaterialCompleteness";
-import { ReviewFieldStepper } from "./ReviewFieldStepper";
 import { ScrapReplacementReview } from "./ScrapReplacementReview";
 import type { PageFillResult } from "../pageFillClient";
 
@@ -68,11 +67,6 @@ function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExcepti
 
   return (
     <section className="review-result">
-      <ReviewFieldStepper
-        key={(review.review_steps || []).map((step) => `${step.step_id}:${step.sequence}`).join("|")}
-        reviewSteps={review.review_steps}
-        onFocusImage={onFocusImage}
-      />
       {pageFillResult ? <PageFillStatus result={pageFillResult} /> : null}
       <ReviewAdvice review={review} />
       <MaterialCompleteness

@@ -611,9 +611,12 @@ test("ReviewResults routes only field-first profiles to the minimal assistant an
   assert.match(source, /<LegacyReviewResults/);
   // 过户、车源和一致性继续使用现有结果界面和行为。
   const legacy = source.slice(source.indexOf("function LegacyReviewResults"));
-  assert.match(legacy, /<ReviewFieldStepper/);
+  // 逐项审核 stepper 已整体退役：旧业务结果界面不得再出现它的任何痕迹。
+  assert.doesNotMatch(source, /ReviewFieldStepper/);
+  assert.doesNotMatch(legacy, /逐项审核|review_steps/);
   assert.match(legacy, /<ReviewAdvice review=\{review\} \/>/);
   assert.match(legacy, /<MaterialCompleteness/);
+  assert.ok(!existsSync(fileURLToPath(new URL("../src/components/ReviewFieldStepper.tsx", import.meta.url))));
 });
 
 test("the field-first assistant never renders legacy summary sections", () => {
