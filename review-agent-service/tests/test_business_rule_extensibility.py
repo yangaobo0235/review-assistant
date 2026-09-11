@@ -73,8 +73,10 @@ async def test_injected_single_field_rule_runs_through_the_unchanged_graph(
         for finding in response.agent_advice.findings
     ) == (status == "CONFLICT")
     if status == "CONFLICT":
-        assert response.risk_level == "HIGH"
         assert response.recommendation.value == "REVIEW_REQUIRED"
+        # 非目标 Profile 保持分支前风险语义：业务规则冲突不抬升 risk_level。
+        assert response.risk_level == "LOW"
+        assert response.summary == "字段检查通过"
     else:
         assert response.recommendation.value == "PASS"
         assert response.risk_level == "LOW"
