@@ -265,7 +265,8 @@ async def test_full_graph_marks_uncertain_representative_insufficient_and_keeps_
     assert all(item.cross_checks == [] for item in progress[:-1])
     checks = {item.check_id: item for item in response.cross_checks}
     assert checks["AFFILIATION-SUBJECT-001"].status == expected
-    assert checks["POLICY-NEW-ORIGIN"].status == expected
+    # 青岛没有产地规则，产地检查仅展示，不受识别不确定性影响。
+    assert checks["POLICY-NEW-ORIGIN"].status == "MATCH"
     assert bool(response.page_fill_intent) == (not uncertain)
     subject_step = next(
         step for step in response.review_steps if "AFFILIATION-SUBJECT" in step.step_id

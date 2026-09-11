@@ -122,12 +122,13 @@ def build_replacement_policy_checks(
     allowed = {
         normalize_value("new_vehicle.origin", item) for item in policy.allowed_origins
     }
-    if not normalized_origin:
-        status = "INSUFFICIENT"
-        reason = "未从新车销售发票取得唯一有效的产地"
-    elif not allowed:
+    if not allowed:
+        # 本地区没有产地规则：仅展示识别值，不对可读性提出要求。
         status = "MATCH"
         reason = "产地仅展示识别值，本地区不限制产地"
+    elif not normalized_origin:
+        status = "INSUFFICIENT"
+        reason = "未从新车销售发票取得唯一有效的产地"
     elif normalized_origin in allowed:
         status = "MATCH"
         reason = "新车销售发票产地符合长春政策"

@@ -1,11 +1,14 @@
 import pytest
 
+from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
 from app.businesses.replacement_policies import (
     CHANGCHUN_REPLACEMENT_POLICY,
     QINGDAO_REPLACEMENT_POLICY,
 )
-from app.models.review import FieldObservation
+from app.models.review import FieldObservation, ReviewRequest
+from app.rules.final_advice import build_final_advice
 from app.rules.replacement_policy_checks import build_replacement_policy_checks
+from app.rules.review_step_routing import build_review_steps
 
 
 def observation(field: str, value: str, document_type: str) -> FieldObservation:
@@ -60,6 +63,14 @@ def test_changchun_requires_origin_and_qingdao_does_not() -> None:
             observation("new_vehicle.origin", "青岛市", "invoice"),
         ],
     )
+    changchun_unreadable = build_replacement_policy_checks(
+        CHANGCHUN_REPLACEMENT_POLICY,
+        [
+            observation("invoice.invoice_date", "2026-08-01", "invoice"),
+            observation("old_vehicle.recycle_date", "2026-12-31", "scrap_certificate"),
+            observation("new_vehicle.origin", "无法识别", "invoice"),
+        ],
+    )
     qingdao = build_replacement_policy_checks(
         QINGDAO_REPLACEMENT_POLICY,
         [
@@ -71,9 +82,12 @@ def test_changchun_requires_origin_and_qingdao_does_not() -> None:
     assert {item.check_id: item.status for item in changchun}[
         "POLICY-NEW-ORIGIN"
     ] == "CONFLICT"
-    assert {item.check_id: item.status for item in qingdao}[
+    assert {item.check_id: item.status for item in changchun_unreadable}[
         "POLICY-NEW-ORIGIN"
     ] == "INSUFFICIENT"
+    assert {item.check_id: item.status for item in qingdao}[
+        "POLICY-NEW-ORIGIN"
+    ] == "MATCH"
 
 
 def test_policy_uses_image_evidence_and_reports_missing_as_insufficient() -> None:
@@ -93,7 +107,8 @@ def test_policy_uses_image_evidence_and_reports_missing_as_insufficient() -> Non
     assert statuses == {
         "POLICY-INVOICE-DATE": "INSUFFICIENT",
         "POLICY-DISPOSAL-DEADLINE": "INSUFFICIENT",
-        "POLICY-NEW-ORIGIN": "INSUFFICIENT",
+        # 青岛没有产地规则，产地检查始终仅展示为 MATCH。
+        "POLICY-NEW-ORIGIN": "MATCH",
     }
 
 
@@ -179,3 +194,55 @@ def test_policy_ignores_page_values_and_keeps_conflicting_image_sources():
         "invoice-1",
         "invoice-2",
     }
+
+
+@pytest.mark.parametrize(
+    "origin_observations",
+    [
+        [],
+        [observation("new_vehicle.origin", "无法识别", "invoice")],
+        [observation("new_vehicle.origin", "长*", "invoice")],
+        [
+            observation("new_vehicle.origin", "青岛市", "invoice"),
+            observation("new_vehicle.origin", "长春市", "invoice").model_copy(
+                update={"source_id": "invoice-2"}
+            ),
+        ],
+    ],
+)
+def test_qingdao_unreadable_origin_still_matches_and_can_reach_pass(
+    origin_observations,
+) -> None:
+    """青岛没有产地规则：产地不可读或冲突时不得产生人工步骤或建议 finding。"""
+    checks = build_replacement_policy_checks(
+        QINGDAO_REPLACEMENT_POLICY,
+        [
+            observation("invoice.invoice_date", "2026-09-10", "invoice"),
+            observation("old_vehicle.recycle_date", "2026-10-31", "scrap_certificate"),
+            *origin_observations,
+        ],
+    )
+
+    origin_check = next(
+        item for item in checks if item.check_id == "POLICY-NEW-ORIGIN"
+    )
+    assert origin_check.status == "MATCH"
+    assert all(item.status == "MATCH" for item in checks)
+
+    steps = build_review_steps(
+        request=ReviewRequest(
+            page_url="https://admin.forjtruck.com/scrap-replace-qingdao/review/1",
+            region="qingdao",
+        ),
+        profile=SCRAP_REPLACEMENT_QINGDAO,
+        comparisons=[],
+        external_checks=[],
+        business_checks=checks,
+        completeness=None,
+        limitations=[],
+    )
+    assert not any(step.requires_reviewer_action for step in steps)
+
+    decision, advice = build_final_advice([], checks, [], [], [], [])
+    assert decision == "PASS"
+    assert advice.findings == []
