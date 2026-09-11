@@ -146,6 +146,29 @@ def test_aggregate_requires_review_for_one_source() -> None:
     assert [item.conflicting for item in comparison.evidence] == [False]
 
 
+def test_uncertain_flag_veto_only_applies_when_explicitly_enabled() -> None:
+    """默认（既有业务）保持分支前语义；目标 Profile 显式启用一票否决。"""
+    observations = [
+        FieldObservation(
+            field="new_vehicle.vin",
+            source_type="image",
+            source_id="img-1",
+            value="VIN-1",
+            uncertain=True,
+        ),
+        observation("new_vehicle.vin", "VIN-1", "review_page", "page"),
+    ]
+
+    legacy = aggregate_field("new_vehicle.vin", observations)
+    assert legacy.status is FieldStatus.MATCH
+
+    target = aggregate_field(
+        "new_vehicle.vin", observations, uncertain_requires_review=True
+    )
+    assert target.status is FieldStatus.REVIEW_REQUIRED
+    assert target.message == "图片识别结果不确定，请核对原图"
+
+
 def test_aggregate_requires_review_when_all_sources_are_empty() -> None:
     comparison = aggregate_field(
         "invoice.code",

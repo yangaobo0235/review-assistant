@@ -296,6 +296,65 @@ def test_transfer_uncertainty_does_not_hide_an_explicit_conflict() -> None:
     assert vin.status.value == "CONFLICT"
 
 
+def test_transfer_uncertain_observation_keeps_pre_branch_aggregation() -> None:
+    """过户保持分支前语义：图片 uncertain 标记不触发同字段聚合一票否决。"""
+    batch = transfer_batch()
+    batch.observations = [
+        item.model_copy(update={"uncertain": True})
+        if item.field == "transfer.plate_no" and item.source_type == "image"
+        else item
+        for item in batch.observations
+    ]
+    result = ReviewService()._build_response(
+        transfer_request(
+            {
+                "transfer.plate_no": "冀A34870",
+                "transfer.vin": "VIN-1",
+                "transfer.buyer_name": "丙公司",
+                "transfer.seller_name": "乙公司",
+                "transfer.invoice_date": "2026-08-15",
+                "transfer.source_publish_date": "2026-08-13",
+            }
+        ),
+        batch,
+        include_tools=False,
+    )
+
+    plate = next(
+        item for item in result.comparisons if item.field == "transfer.plate_no"
+    )
+    assert plate.status.value == "MATCH"
+
+
+def test_scrap_target_profile_uncertain_observation_forces_review() -> None:
+    """目标 Profile 保留一票否决：图片 uncertain 时同字段比较强制人工复核。"""
+    batch = AgentBatchResult(
+        observations=[
+            FieldObservation(
+                field="new_vehicle.vin",
+                source_type="image",
+                source_id="new",
+                value="VIN-1",
+                uncertain=True,
+            )
+        ]
+    )
+    result = ReviewService()._build_response(
+        ReviewRequest(
+            page_url="https://example.test/review/1",
+            business_type="scrap_replacement",
+            region="qingdao",
+            page_fields={"new_vehicle.vin": "VIN-1"},
+        ),
+        batch,
+        include_tools=False,
+    )
+
+    vin = next(item for item in result.comparisons if item.field == "new_vehicle.vin")
+    assert vin.status.value == "REVIEW_REQUIRED"
+    assert vin.message == "图片识别结果不确定，请核对原图"
+
+
 def test_scrap_request_uses_scrap_fields_and_sections() -> None:
     result = ReviewService().assist(
         ReviewRequest(

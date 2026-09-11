@@ -36,6 +36,15 @@ PAGE_INTERACTION_PROFILES = frozenset(
     }
 )
 
+
+def is_page_interaction_profile(
+    business_type: BusinessType,
+    region: Region,
+    version: str,
+) -> bool:
+    """字段优先目标 Profile 的唯一判定；新增语义只允许对这两个 Profile 生效。"""
+    return (business_type, region, version) in PAGE_INTERACTION_PROFILES
+
 # 显式映射表：同字段比较的规范字段 -> 宿主页面采集字段键。
 PAGE_FIELD_BY_CANONICAL_FIELD: dict[str, str] = {
     field: field for field in PRIMARY_REVIEW_FIELDS
@@ -261,11 +270,11 @@ def build_review_steps(
     limitations: Sequence[str],
 ) -> list[ReviewStep]:
     """一次返回完整、有序、带展示目标的审核步骤列表。"""
-    page_interaction = (
+    page_interaction = is_page_interaction_profile(
         profile.business_type,
         profile.region,
         profile.version,
-    ) in PAGE_INTERACTION_PROFILES
+    )
     steps: list[ReviewStep] = []
     # PAGE_FIELD 只用于目标 Profile 且请求中存在该规范字段；
     # 缺失字段转为 ASSISTANT + INSUFFICIENT。

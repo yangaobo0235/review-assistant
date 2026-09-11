@@ -20,6 +20,7 @@ from app.models.review import (
 from app.rules.aggregate import aggregate_field
 from app.rules.check_results import unique_checks
 from app.rules.normalize import normalize_value
+from app.rules.review_step_routing import is_page_interaction_profile
 from app.rules.transfer_sources import (
     enforce_transfer_source_requirements,
     filter_transfer_observations,
@@ -89,6 +90,10 @@ def _build_comparisons(
     profile: BusinessProfile,
     observations: list[FieldObservation],
 ) -> list[FieldComparison]:
+    # 不确定标记的一票否决只对字段优先目标 Profile 生效，其余业务保持历史语义。
+    uncertain_requires_review = is_page_interaction_profile(
+        profile.business_type, profile.region, profile.version
+    )
     comparisons = [
         aggregate_field(
             field_name,
@@ -99,6 +104,7 @@ def _build_comparisons(
             ]
             if request.business_type.value == "transfer"
             else [item for item in observations if item.field == field_name],
+            uncertain_requires_review=uncertain_requires_review,
         )
         for field_name in profile.required_fields
     ]
