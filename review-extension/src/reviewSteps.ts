@@ -12,6 +12,11 @@ export function sortedReviewSteps(steps: readonly ReviewStep[] = []): ReviewStep
   return [...steps].sort((left, right) => left.sequence - right.sequence);
 }
 
+/** 后端契约守卫：只有 MATCH 且无需人工处理的步骤允许自动前进（spec §11 规则 1-4）。 */
+export function stepRequiresReviewerAction(step: ReviewStep): boolean {
+  return step.requires_reviewer_action === true || step.result_status !== "MATCH";
+}
+
 export function createReviewStepState(steps: readonly ReviewStep[]): ReviewStepState {
   return { index: Math.min(0, steps.length), decisions: {} };
 }

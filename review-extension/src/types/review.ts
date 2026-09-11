@@ -219,10 +219,15 @@ export interface ReviewResponse {
   review_steps?: ReviewStep[];
 }
 
+export type ReviewDisplayTarget = "PAGE_FIELD" | "ASSISTANT";
+
 export interface ReviewStep {
   step_id: string;
   sequence: number;
   category: "FIELD" | "EXTERNAL" | "BUSINESS_RULE" | "MATERIAL";
+  display_target: ReviewDisplayTarget;
+  page_field?: string | null;
+  requires_reviewer_action: boolean;
   label: string;
   result_status: ReviewCheckStatus;
   reason: string;
