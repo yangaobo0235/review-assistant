@@ -317,6 +317,12 @@ test("content keeps image focus bound to the latest completed collection token",
   assert.ok(expired?.collectionId);
   assert.ok(active?.collectionId);
   assert.notEqual(expired.collectionId, active.collectionId);
+  // 被取代的采集必须带回真实原因和已识别的业务，面板不得退化为“无法识别业务”。
+  assert.equal(expired.staleCollection, true);
+  assert.equal(expired.collectionIssues.length, 1);
+  assert.equal(expired.collectionIssues[0], "页面采集已过期，请重新采集");
+  assert.equal(expired.businessType, "scrap_replacement");
+  assert.equal(active.staleCollection, undefined);
 
   const identity = {
     type: "FOCUS_REVIEW_IMAGE",

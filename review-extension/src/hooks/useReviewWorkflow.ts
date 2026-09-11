@@ -110,6 +110,12 @@ export function useReviewWorkflow(
     setPageFillResult(null);
     try {
       const data = await collectPageData(businessSelection);
+      if (data.staleCollection) {
+        // 被取代的采集：透出真实的过期原因，而不是退化为业务识别失败。
+        throw new Error(
+          data.collectionIssues?.[0] || "页面采集已过期，请重新采集",
+        );
+      }
       if (!data.businessType) {
         throw new Error(
           data.businessDetectionError || "无法识别当前审核业务，请人工选择",

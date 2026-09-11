@@ -297,13 +297,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   Promise.all(images.map((candidate) => readImageAsset(candidate)))
     .then((imageAssets) => {
       if (latestCollectionId !== collectionId) {
+        // 被取代的采集也要带回业务识别结果和真实原因，面板不得退化为“无法识别业务”。
         sendResponse({
+          ...(business || {}),
           pageUrl: window.location.href,
           pageInstanceId,
           pageFingerprint: pageFingerprint(pageFields),
           collectionId,
           pageFields,
           images: [],
+          staleCollection: true,
+          businessDetectionError: businessResolution.error,
           collectionIssues: ["页面采集已过期，请重新采集"],
           collectionDiagnostics: { imageSuccessCount: 0, imageFailureCount: 0 },
         });

@@ -64,6 +64,8 @@ export interface PageData {
   workflowStage?: BusinessType;
   selectionMode?: SelectionMode;
   businessDetectionError?: string;
+  /** 该次采集已被更新的采集取代；面板应提示重新采集而不是继续提交。 */
+  staleCollection?: boolean;
   collectionDiagnostics?: {
     scannedControls: number;
     matchedFields: number;
