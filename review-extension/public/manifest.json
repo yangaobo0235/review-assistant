@@ -14,6 +14,7 @@
     "http://localhost:8010/*",
     "http://test.forjtruck.com/*",
     "https://test.forjtruck.com/*",
+    "https://admin.forjtruck.com/*",
     "http://192.168.2.23:8010/"
   ],
   "background": {
@@ -39,6 +40,7 @@
         "image-candidates.js",
         "image-focus.js",
         "image-normalization.js",
+        "page-field-writer.js",
         "content.js"
       ],
       "run_at": "document_idle"

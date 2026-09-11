@@ -5,6 +5,8 @@
 修改人：wuyi
 """
 
+from types import MappingProxyType
+
 from app.businesses.profiles import BUSINESS_PROFILES, BusinessProfile
 from app.models.review import BusinessType, Region
 
@@ -15,10 +17,16 @@ class BusinessProfileNotFound(LookupError):
 
 class BusinessRegistry:
     def __init__(self, profiles: tuple[BusinessProfile, ...]) -> None:
-        self._profiles = {
-            (profile.business_type, profile.region, profile.version): profile
-            for profile in profiles
-        }
+        self._profiles = MappingProxyType(
+            {
+                (profile.business_type, profile.region, profile.version): profile
+                for profile in profiles
+            }
+        )
+
+    @property
+    def profiles(self) -> tuple[BusinessProfile, ...]:
+        return tuple(self._profiles.values())
 
     def resolve(
         self,

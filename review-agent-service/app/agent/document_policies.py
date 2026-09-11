@@ -146,11 +146,12 @@ DOCUMENT_POLICIES: dict[str, DocumentPolicy] = {
         display_name="报废机动车回收证明",
         fields=(
             "old_vehicle.recycle_date",
+            "scrap_certificate.certificate_no",
             "vehicle.vin",
             "vehicle.plate_no",
             "vehicle.owner",
         ),
-        field_guidance="分别读取交车日期、车辆识别代号、号牌号码和车辆所有人。",
+        field_guidance="分别读取交车日期、回收证明编号、车辆识别代号、号牌号码和车辆所有人。",
     ),
     "vehicle_license": DocumentPolicy(
         document_type="vehicle_license",
@@ -182,16 +183,28 @@ DOCUMENT_POLICIES: dict[str, DocumentPolicy] = {
         display_name="机动车销售发票",
         fields=(
             "invoice.code",
+            "invoice.invoice_no",
             "invoice.amount",
             "invoice.invoice_date",
+            "new_vehicle.origin",
             "vehicle.vin",
             "vehicle.plate_no",
             "vehicle.owner",
         ),
         field_guidance=(
-            "读取发票代码、价税合计、开票日期、车辆识别代号、号牌号码和购买方名称。"
+            "读取发票代码、发票号码、价税合计、开票日期、产地、车辆识别代号、号牌号码和购买方名称。"
             "若发票为发票联，则读取数电发票号码作为发票代码。"
         ),
+    ),
+    "business_license": DocumentPolicy(
+        document_type="business_license",
+        display_name="营业执照",
+        fields=(
+            "business_license.company_name",
+            "business_license.legal_representative",
+            "business_license.unified_social_credit_code",
+        ),
+        field_guidance="只读取企业名称、法定代表人或负责人、统一社会信用代码。",
     ),
 }
 
@@ -200,7 +213,7 @@ def build_classification_prompt() -> str:
     """构建未知图片的首阶段分类提示词，不允许同时提取业务字段。"""
     return (
         "只判断这张图片的资料类型。document_type 只能是 scrap_certificate、vehicle_license、"
-        "registration_certificate、invoice 或 unsupported。"
+        "registration_certificate、invoice、business_license 或 unsupported。"
         "不要提取业务字段、身份证信息，不要给出审核结论。"
         "只输出 JSON 对象，包含 document_type、confidence、reason；confidence 取值为 0 到 1。"
     )
@@ -225,7 +238,7 @@ def build_unknown_extraction_prompt(
     prompt = (
         "请判断资料类型并提取图片中明确可见的审核字段。"
         "document_type 只能是 scrap_certificate、vehicle_license、registration_certificate、"
-        "invoice 或 unsupported。旧车和新车是页面业务归属，不是图片资料类型。"
+        "invoice、business_license 或 unsupported。旧车和新车是页面业务归属，不是图片资料类型。"
         f"各类型字段白名单：{json.dumps(policies, ensure_ascii=False)}。"
         "只能输出最终 document_type 对应白名单中的字段，不推测、不补全，不给出审核结论。"
         "看不清的字段写入 uncertain_fields；版面不存在的字段不要写入 uncertain_fields，"

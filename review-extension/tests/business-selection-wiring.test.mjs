@@ -6,9 +6,8 @@ test("content collection accepts a manual business override", () => {
   const source = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
 
   assert.match(source, /message\.businessSelection/);
-  assert.match(source, /ReviewBusinessDetector\.detect/);
+  assert.match(source, /ReviewBusinessDetector\.resolve/);
   assert.match(source, /businessType/);
-  assert.match(source, /selectionMode/);
 });
 
 test("side panel sends the selected business during collection", () => {
@@ -27,6 +26,17 @@ test("side panel sends the selected business during collection", () => {
   assert.match(configSource, /自动识别/);
   assert.match(workflowSource, /businessSelection/);
   assert.match(workflowSource, /setReview\(null\)/);
+});
+
+test("workflow focuses original images on the collected tab with collected page identity", () => {
+  const workflowSource = readFileSync(
+    new URL("../src/hooks/useReviewWorkflow.ts", import.meta.url),
+    "utf8",
+  );
+  const focusSource = workflowSource.slice(workflowSource.indexOf("const focusOriginalImage"));
+
+  assert.doesNotMatch(focusSource, /tabs\.query/);
+  assert.match(focusSource, /focusReviewImage\(imageId, pageData\)/);
 });
 
 test("side panel renders exception sections derived from the agent response", () => {

@@ -12,6 +12,7 @@ from app.agent.models import (
     ReviewCheckValue,
 )
 from app.models.review import FieldComparison, FieldStatus, QrCheck
+from app.rules.check_results import qr_review_checks, unique_checks
 
 FIELD_LABELS = {
     "old_vehicle.recycle_date": "报废交车日期",
@@ -42,7 +43,9 @@ def _field_finding(comparison: FieldComparison) -> ReviewCheck:
     return ReviewCheck(
         check_id=f"FIELD-{comparison.field}",
         label=FIELD_LABELS.get(comparison.field, comparison.field),
-        status="CONFLICT" if comparison.status is FieldStatus.CONFLICT else "INSUFFICIENT",
+        status="CONFLICT"
+        if comparison.status is FieldStatus.CONFLICT
+        else "INSUFFICIENT",
         reason=comparison.message,
         values=values,
         evidence=[item.model_dump() for item in comparison.evidence],
@@ -57,39 +60,27 @@ def build_final_advice(
     limitations: list[str],
     confidences: list[float],
     *,
-    qr_required: bool = True,
     completeness: MaterialCompletenessReport | None = None,
 ) -> tuple[str, AgentAdvice]:
-    findings = [_field_finding(item) for item in comparisons if item.status is not FieldStatus.MATCH]
+    findings = [
+        _field_finding(item)
+        for item in comparisons
+        if item.status is not FieldStatus.MATCH
+    ]
     findings.extend(item for item in cross_checks if item.status != "MATCH")
     if completeness is not None and completeness.enforced:
         findings.extend(
             ReviewCheck(
-                check_id=f"MATERIAL-{item.code}",
+                check_id=f"MATERIAL-{item.code}-{index}",
                 label="资料完整性",
                 status="INSUFFICIENT",
                 reason=f"{item.message}；{item.suggested_action}",
             )
-            for item in completeness.issues
+            for index, item in enumerate(completeness.issues, start=1)
         )
-    if qr_required and not qr_checks:
-        findings.append(
-            ReviewCheck(
-                check_id="QR-0",
-                label="二维码官网核验",
-                status="INSUFFICIENT",
-                reason="未取得二维码核验结果",
-            )
-        )
+    # 缺少外部结果由声明 REQUIRED 的能力生成。
     findings.extend(
-        ReviewCheck(
-            check_id=f"QR-{index}",
-            label="二维码官网核验",
-            status="CONFLICT" if item.status is FieldStatus.CONFLICT else "INSUFFICIENT",
-            reason=item.message or "二维码核验未通过",
-        )
-        for index, item in enumerate(qr_checks, start=1)
-        if item.status is not FieldStatus.MATCH
+        item for item in qr_review_checks(qr_checks) if item.status != "MATCH"
     )
     findings.extend(
         ReviewCheck(
@@ -110,23 +101,43 @@ def build_final_advice(
         for index, limitation in enumerate(dict.fromkeys(limitations), start=1)
     )
 
+    findings = unique_checks(findings)
     decision = "REVIEW_REQUIRED" if findings else "PASS"
     confidence = sum(confidences) / len(confidences) if confidences else None
     basis = {"确定性审核规则"}
-    if any(item.source == "申请页面字段" for comparison in comparisons for item in comparison.evidence):
+    if any(
+        item.source == "申请页面字段"
+        for comparison in comparisons
+        for item in comparison.evidence
+    ):
         basis.add("页面申请信息")
-    if any(item.source == "图片识别" for comparison in comparisons for item in comparison.evidence):
+    if any(
+        item.source == "图片识别"
+        for comparison in comparisons
+        for item in comparison.evidence
+    ):
         basis.add("资料图片识别")
     if qr_checks:
         basis.add("二维码官网核验")
     advice = AgentAdvice(
         decision=decision,
         title="建议人工复核" if findings else "建议通过",
-        summary=f"发现 {len(findings)} 项需要审核人员确认" if findings else "全部必检项目满足要求",
+        summary=f"发现 {len(findings)} 项需要审核人员确认"
+        if findings
+        else "全部必检项目满足要求",
         findings=findings,
         recognition_confidence=confidence,
         confidence=confidence,
-        basis=[item for item in ("页面申请信息", "资料图片识别", "二维码官网核验", "确定性审核规则") if item in basis],
+        basis=[
+            item
+            for item in (
+                "页面申请信息",
+                "资料图片识别",
+                "二维码官网核验",
+                "确定性审核规则",
+            )
+            if item in basis
+        ],
         limitations=list(dict.fromkeys(limitations)),
     )
     return decision, advice

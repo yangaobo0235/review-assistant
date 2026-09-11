@@ -45,6 +45,7 @@ def test_transfer_invoice_prompt_requests_only_transfer_fields() -> None:
 def test_each_supported_document_has_a_specific_allowlist() -> None:
     assert DOCUMENT_POLICIES["scrap_certificate"].fields == (
         "old_vehicle.recycle_date",
+        "scrap_certificate.certificate_no",
         "vehicle.vin",
         "vehicle.plate_no",
         "vehicle.owner",
@@ -61,11 +62,18 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
     )
     assert DOCUMENT_POLICIES["invoice"].fields == (
         "invoice.code",
+        "invoice.invoice_no",
         "invoice.amount",
         "invoice.invoice_date",
+        "new_vehicle.origin",
         "vehicle.vin",
         "vehicle.plate_no",
         "vehicle.owner",
+    )
+    assert DOCUMENT_POLICIES["business_license"].fields == (
+        "business_license.company_name",
+        "business_license.legal_representative",
+        "business_license.unified_social_credit_code",
     )
 
 

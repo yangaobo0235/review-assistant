@@ -34,11 +34,10 @@ test("labels confidence as image recognition confidence", () => {
   assert.equal(confidenceLabel(null), null);
 });
 
-test("always returns owner and date cross-check rows", () => {
+test("returns only the cross-checks provided by the backend", () => {
   const rows = orderedCrossChecks("scrap_replacement", []);
 
-  assert.deepEqual(rows.map((item) => item.check_id), ["CROSS-OWNER-001", "CROSS-DATE-001"]);
-  assert.ok(rows.every((item) => item.status === "INSUFFICIENT"));
+  assert.deepEqual(rows, []);
 });
 
 test("preserves long source values without truncation", () => {
@@ -54,13 +53,8 @@ test("preserves long source values without truncation", () => {
   assert.equal(owner.values[0].value, longValue);
 });
 
-test("returns the three transfer cross-check rows in business order", () => {
+test("does not add transfer cross-check placeholders", () => {
   const rows = orderedCrossChecks("transfer", []);
 
-  assert.deepEqual(rows.map((item) => item.check_id), [
-    "CROSS-TRANSFER-SELLER-001",
-    "CROSS-TRANSFER-BUYER-001",
-    "CROSS-TRANSFER-DATE-001",
-  ]);
-  assert.ok(rows.every((item) => item.status === "INSUFFICIENT"));
+  assert.deepEqual(rows, []);
 });

@@ -123,11 +123,11 @@ def test_review_request_accepts_business_identity_from_extension() -> None:
     assert request.workflow_stage == "vehicle_source"
 
 
-def test_legacy_request_defaults_to_scrap_replacement() -> None:
+def test_legacy_request_keeps_business_but_requires_an_explicit_scrap_region() -> None:
     request = ReviewRequest(page_url="https://example.test/scrap-replace-qingdao")
 
     assert request.business_type is BusinessType.SCRAP_REPLACEMENT
-    assert request.region is Region.QINGDAO
+    assert request.region is Region.DEFAULT
     assert request.profile_version == "1.0"
     assert request.selection_mode is SelectionMode.AUTO
 
@@ -161,6 +161,7 @@ def test_field_status_and_recommendation_are_restricted() -> None:
     )
 
     assert response.recommendation is Recommendation.REVIEW_REQUIRED
+    assert response.region is Region.DEFAULT
     assert FieldStatus.MATCH.value == "MATCH"
 
     with pytest.raises(ValidationError):

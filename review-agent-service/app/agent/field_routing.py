@@ -36,6 +36,17 @@ def route_fields(
 ) -> tuple[dict[str, Any], str | None]:
     """按页面确定的业务范围路由字段，并返回需要人工复核的限制说明。"""
     normalized_type = normalize_document_type(document_type)
+    if normalized_type == "business_license":
+        allowed = {
+            "business_license.company_name",
+            "business_license.legal_representative",
+            "business_license.unified_social_credit_code",
+        }
+        return {
+            field: value
+            for field, value in fields.items()
+            if field in allowed and value not in (None, "", [], {})
+        }, None
     if business_scope == "transfer":
         # 过户材料使用独立命名空间，防止与报废置换的新旧车字段混合比较。
         if normalized_type == "invoice":
@@ -91,11 +102,16 @@ def route_fields(
             normalized_type == "scrap_certificate"
             and field_name == "old_vehicle.recycle_date"
         ) or (
+            normalized_type == "scrap_certificate"
+            and field_name == "scrap_certificate.certificate_no"
+        ) or (
             normalized_type == "invoice"
             and field_name in {
                 "invoice.code",
+                "invoice.invoice_no",
                 "invoice.amount",
                 "invoice.invoice_date",
+                "new_vehicle.origin",
             }
         )
         if is_allowed_passthrough:

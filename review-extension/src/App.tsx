@@ -51,7 +51,11 @@ function App() {
         </select>
         {workflow.pageData?.businessType ? (
           <small>
-            当前：{businessLabels[workflow.pageData.businessType]} ·{" "}
+            当前：{workflow.pageData.businessType === "scrap_replacement"
+              ? `${workflow.pageData.region === "changchun" ? "长春" : "青岛"}报废置换审核`
+              : workflow.pageData.businessType === "consistency"
+                ? `${workflow.pageData.region === "changchun" ? "长春" : "青岛"}一致性审核`
+                : businessLabels[workflow.pageData.businessType]} ·{" "}
             {workflow.pageData.selectionMode === "MANUAL" ? "人工选择" : "自动识别"}
           </small>
         ) : null}
@@ -75,6 +79,7 @@ function App() {
           exceptionFilter={exceptionFilter}
           onExceptionFilterChange={setExceptionFilter}
           onFocusImage={workflow.focusOriginalImage}
+          pageFillResult={workflow.pageFillResult}
         />
       ) : null}
 

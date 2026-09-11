@@ -32,11 +32,23 @@ export interface PageImage {
   naturalHeight?: number;
 }
 
+export interface WritableTargetSnapshot {
+  field: "old_vehicle.affiliation" | "new_vehicle.affiliation";
+  label: string;
+  present: boolean;
+  currentValue: string | null;
+}
+
 export interface PageData {
   pageUrl: string;
+  sourceTabId: number;
+  pageInstanceId: string;
+  pageFingerprint: string;
+  collectionId: string;
   pageTitle: string;
   applicationId?: string;
   pageFields: Record<string, string>;
+  writableTargets?: WritableTargetSnapshot[];
   pageText: string;
   images: PageImage[];
   businessType?: BusinessType;
@@ -107,7 +119,7 @@ export type ReviewCheckStatus = "MATCH" | "CONFLICT" | "INSUFFICIENT";
 
 export interface ReviewCheckValue {
   source: string;
-  value?: string | number | null;
+  value?: unknown;
 }
 
 export interface ReviewCheck {
@@ -121,6 +133,9 @@ export interface ReviewCheck {
 
 export interface Evidence {
   source: string;
+  uncertain?: boolean;
+  field?: string | null;
+  source_id?: string | null;
   image_index?: number;
   detail?: string;
   image_id?: string | null;
@@ -128,7 +143,7 @@ export interface Evidence {
   group_title?: string | null;
   group_order?: number | null;
   document_type?: string | null;
-  value?: string | number | null;
+  value?: unknown;
   conflicting?: boolean;
 }
 
@@ -193,6 +208,25 @@ export interface ReviewResponse {
   } | null;
   material_completeness?: MaterialCompletenessReport | null;
   retry_summary?: RetrySummary | null;
+  page_fill_intent?: PageFillAction[];
+  review_steps?: ReviewStep[];
+}
+
+export interface ReviewStep {
+  step_id: string;
+  sequence: number;
+  category: "FIELD" | "EXTERNAL" | "BUSINESS_RULE" | "MATERIAL";
+  label: string;
+  result_status: ReviewCheckStatus;
+  reason: string;
+  values: ReviewCheckValue[];
+  evidence: Evidence[];
+}
+
+export interface PageFillAction {
+  field: "old_vehicle.affiliation" | "new_vehicle.affiliation";
+  target_label: string;
+  owner_type: "PERSONAL" | "COMPANY";
 }
 
 export interface ResultSection {

@@ -7,7 +7,7 @@
 
 import asyncio
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.agent.config import load_qwen_config
@@ -15,6 +15,7 @@ from app.agent.models import AgentBatchResult, MaterialCompletenessReport
 from app.agent.qwen_client import QwenClient
 from app.agent.service import AgentService
 from app.agent.workflow import ReviewWorkflow
+from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
 from app.businesses.registry import BusinessRegistry, build_business_registry
 from app.models.review import (
@@ -24,6 +25,8 @@ from app.models.review import (
     ReviewRequest,
     ReviewResponse,
 )
+from app.rules.capabilities import BusinessRuleHandler, ExternalCheckHandler
+from app.rules.evidence_values import batch_observations
 from app.services.qr import QrCodeService, QrWebVerifier
 from app.services.review_response import (
     build_review_response,
@@ -43,6 +46,8 @@ class ReviewService:
         vision: object | None = None,
         qr: object | None = None,
         registry: BusinessRegistry | None = None,
+        external_check_handlers: Mapping[str, ExternalCheckHandler] | None = None,
+        business_rule_handlers: Mapping[str, BusinessRuleHandler] | None = None,
     ) -> None:
         self.ocr = ocr or MockOcrTool()
         self.vision = vision or MockVisionTool()
@@ -51,7 +56,11 @@ class ReviewService:
         self.registry = registry or build_business_registry()
         config = load_qwen_config()
         self.agent = AgentService(QwenClient(config)) if config.available else None
-        self.workflow = ReviewWorkflow(self)
+        self.workflow = ReviewWorkflow(
+            self,
+            external_check_handlers=external_check_handlers,
+            business_rule_handlers=business_rule_handlers,
+        )
 
     def assist(self, request: ReviewRequest) -> ReviewResponse:
         return asyncio.run(self.assist_async(request))
@@ -105,8 +114,14 @@ class ReviewService:
         profile: BusinessProfile | None = None,
         initial_report: MaterialCompletenessReport | None = None,
     ) -> AgentBatchResult:
+        resolved_profile = profile or self.resolve_profile(request)
+        if (
+            not request.images
+            and resolved_profile.material_policy is None
+            and not resolved_profile.required_fields
+        ):
+            return AgentBatchResult()
         if self.agent:
-            resolved_profile = profile or self.resolve_profile(request)
             return await self.agent.extract_async(
                 request.images,
                 batch_callback,
@@ -127,6 +142,7 @@ class ReviewService:
         )
 
     def resolve_profile(self, request: ReviewRequest) -> BusinessProfile:
+        validate_request_route(request)
         return self.registry.resolve(
             request.business_type,
             request.region,
@@ -141,9 +157,12 @@ class ReviewService:
         *,
         include_tools: bool,
         qr_checks: list[QrCheck] | None = None,
+        business_checks: list | None = None,
+        page_fill_intent: list | None = None,
+        defer_advice: bool = False,
     ) -> ReviewResponse:
         resolved_profile = profile or self.resolve_profile(request)
-        observations = list(batch.observations)
+        observations = batch_observations(batch)
         issues: list[str] = []
 
         for field_name in resolved_profile.required_fields:
@@ -158,9 +177,12 @@ class ReviewService:
                     )
                 )
 
-        if not request.images:
+        if not request.images and (
+            resolved_profile.material_policy is not None
+            or resolved_profile.required_fields
+        ):
             issues.append("未采集到审核图片")
-        if not request.page_fields:
+        if not request.page_fields and resolved_profile.required_fields:
             issues.append("未采集到右侧申请字段")
 
         for image in request.images:
@@ -199,6 +221,9 @@ class ReviewService:
             observations,
             issues,
             qr_checks,
+            business_checks,
+            page_fill_intent,
+            defer_advice,
         )
 
     @staticmethod
@@ -215,24 +240,34 @@ class ReviewService:
         profile: BusinessProfile | None = None,
     ) -> list[QrCheck]:
         resolved_profile = profile or self.resolve_profile(request)
-        if not resolved_profile.qr_required:
-            return []
-
         checks: list[QrCheck] = []
         scrap_indices = {
             item.image_index
             for item in batch.observations
             if getattr(item, "document_type", None) == "scrap_certificate"
         }
+        scrap_indices.update(
+            document.image_index
+            for document in batch.recognized_documents
+            if document.document_type == "scrap_certificate"
+        )
+        scrap_ids = {
+            document.target_id
+            for document in batch.recognized_documents
+            if document.document_type == "scrap_certificate"
+        }
         for image in request.images:
             if image.collection_error or (
                 image.category_hint != "scrap_certificate"
+                and image.document_type_hint != "scrap_certificate"
                 and image.index not in scrap_indices
+                and str(image.image_id or image.index) not in scrap_ids
             ):
                 continue
             if hasattr(self.qr, "decode_data_url_with_rounds"):
                 decoded, attempts = self.qr.decode_data_url_with_rounds(
-                    image.data_url or "", image.index,
+                    image.data_url or "",
+                    image.index,
                     max_rounds=resolved_profile.retry_policy.qr_decode_max_rounds,
                 )
                 batch.retry_summary.attempts.extend(attempts)
@@ -249,7 +284,11 @@ class ReviewService:
                 continue
             for item in decoded:
                 if hasattr(self.qr_web, "verify_with_retry"):
-                    verified, attempts = await self.qr_web.verify_with_retry(item.raw_value, image.index, retry_count=resolved_profile.retry_policy.qr_web_retry_count)
+                    verified, attempts = await self.qr_web.verify_with_retry(
+                        item.raw_value,
+                        image.index,
+                        retry_count=resolved_profile.retry_policy.qr_web_retry_count,
+                    )
                     batch.retry_summary.attempts.extend(attempts)
                 else:
                     verified = await self.qr_web.verify(item.raw_value, image.index)

@@ -9,6 +9,7 @@ import logging
 
 from fastapi import FastAPI, HTTPException, status
 
+from app.businesses.context_validation import BusinessContextMismatch
 from app.businesses.registry import BusinessProfileNotFound
 from app.models.review import (
     ReviewJobCreated,
@@ -29,6 +30,8 @@ logger = logging.getLogger("uvicorn.error")
 def validate_business_profile(request: ReviewRequest) -> None:
     try:
         review_service.resolve_profile(request)
+    except BusinessContextMismatch as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except BusinessProfileNotFound as exc:
         raise HTTPException(
             status_code=422,

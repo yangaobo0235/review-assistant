@@ -547,3 +547,34 @@ test("falls back to a date-like invoice candidate when section matching is ambig
 
   assert.equal(result.pageFields["invoice.invoice_date"], "2026-01-28");
 });
+
+test("collects auxiliary page fields and preserves empty affiliation targets", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "车辆所有人类型", value: "公司", section: "unknown", source: "control" },
+    { label: "OCR新车车架号", value: "VIN-NEW", section: "unknown", source: "control" },
+    { label: "客户名称", value: "甲运输有限公司", section: "unknown", source: "control" },
+    { label: "报废车挂靠", value: "", section: "old_vehicle", source: "control" },
+    { label: "新车挂靠", value: "", section: "new_vehicle", source: "control" },
+  ]);
+
+  assert.equal(result.pageFields["application.owner_type"], "公司");
+  assert.equal(result.pageFields["page_ocr.new_vehicle_vin"], "VIN-NEW");
+  assert.equal(result.pageFields["application.customer_name"], "甲运输有限公司");
+  assert.deepEqual(Array.from(result.writableTargets, (item) => ({ ...item })), [
+    { field: "old_vehicle.affiliation", label: "报废车挂靠", present: true, currentValue: null },
+    { field: "new_vehicle.affiliation", label: "新车挂靠", present: true, currentValue: null },
+  ]);
+});
+
+test("marks duplicate affiliation controls as ambiguous instead of writable", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "报废车挂靠", value: "", section: "old_vehicle", source: "control" },
+    { label: "新车挂靠", value: "", section: "new_vehicle", source: "control" },
+    { label: "新车挂靠", value: "", section: "new_vehicle", source: "control" },
+  ]);
+
+  assert.deepEqual(Array.from(result.writableTargets, (item) => ({ ...item })), [
+    { field: "old_vehicle.affiliation", label: "报废车挂靠", present: true, currentValue: null },
+  ]);
+  assert.ok(Array.from(result.ambiguousFields).includes("new_vehicle.affiliation"));
+});

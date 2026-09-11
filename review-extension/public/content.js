@@ -8,13 +8,43 @@
 // Keep collection orchestration here; field, image, normalization, and focus rules live in dedicated scripts.
 const reviewImageElements = new Map();
 const MAX_REVIEW_IMAGES = 10;
+const pageInstanceId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+let activeCollectionId = "";
+let latestCollectionId = "";
+let collectionSequence = 0;
+const nextCollectionId = () => `${pageInstanceId}:${++collectionSequence}`;
+const pageFingerprint = (fields) => {
+  const anchors = ["application.id", "old_vehicle.vin", "new_vehicle.vin", "old_vehicle.owner", "new_vehicle.owner"]
+    .map((field) => [field, String(fields?.[field] || "").trim()])
+    .filter(([, value]) => value);
+  const hasStrongAnchor = anchors.some(([field]) => field === "application.id" || field.endsWith(".vin"));
+  return hasStrongAnchor ? JSON.stringify(anchors) : "";
+};
 const MESSAGE_TYPES = Object.freeze({
   collectPageData: "COLLECT_PAGE_DATA",
   focusReviewImage: "FOCUS_REVIEW_IMAGE",
+  applyPageFillIntent: "APPLY_PAGE_FILL_INTENT",
 });
 
+const sameCollectedRecord = (message) => {
+  const currentFields = globalThis.ReviewPageFieldCollector.collect(document, null).pageFields;
+  return (
+    message.expectedPageUrl === window.location.href &&
+    message.expectedPageInstanceId === pageInstanceId &&
+    Boolean(message.expectedPageFingerprint) &&
+    message.expectedPageFingerprint === pageFingerprint(currentFields)
+  );
+};
+
 const focusReviewImage = (message) => {
-  const image = reviewImageElements.get(message.imageId);
+  if (!sameCollectedRecord(message) || !message.expectedCollectionId || message.expectedCollectionId !== activeCollectionId) {
+    return { ok: false, error: "页面已变化，请重新采集" };
+  }
+  const snapshot = reviewImageElements.get(message.imageId);
+  const image = snapshot?.image;
+  if (!image?.isConnected || (image.currentSrc || image.src) !== snapshot.src) {
+    return { ok: false, error: "原图已变化，请重新采集" };
+  }
   return globalThis.ReviewImageFocus.focus(image);
 };
 
@@ -22,6 +52,20 @@ const isCollectionMessage = (message) =>
   message?.type === MESSAGE_TYPES.collectPageData;
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === MESSAGE_TYPES.applyPageFillIntent) {
+    if (!sameCollectedRecord(message)) {
+      sendResponse({ ok: false, message: "页面已变化，请重新审核", actions: [] });
+      return true;
+    }
+    globalThis.ReviewPageFieldWriter.execute(document, message.actions, () => sameCollectedRecord(message))
+      .then(sendResponse)
+      .catch((error) => sendResponse({
+        ok: false,
+        message: error instanceof Error ? error.message : "挂靠字段填写失败",
+        actions: [],
+      }));
+    return true;
+  }
   if (message.type === MESSAGE_TYPES.focusReviewImage) {
     sendResponse(focusReviewImage(message));
     return;
@@ -30,31 +74,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
+  const collectionId = nextCollectionId();
+  latestCollectionId = collectionId;
+
   const log = (event, details = {}) => {
     console.info("[ReviewAgent][collect]", event, details);
   };
   log("start", { url: window.location.href, title: document.title });
 
   const allText = document.body.innerText || "";
-  const automaticBusiness = globalThis.ReviewBusinessDetector.detect(
+  const businessResolution = globalThis.ReviewBusinessDetector.resolve(
     window.location.href,
-    allText
+    allText,
+    message.businessSelection,
   );
-  const business = message.businessSelection
-    ? {
-        businessType: message.businessSelection.businessType,
-        region: message.businessSelection.region,
-        profileVersion: message.businessSelection.profileVersion,
-        workflowStage: message.businessSelection.workflowStage,
-        selectionMode: "MANUAL",
-        detectionStatus: "CONFIRMED"
-      }
-    : automaticBusiness;
+  const business = businessResolution.business;
   const fieldCollection = globalThis.ReviewPageFieldCollector.collect(
     document,
     business?.businessType ?? null,
   );
   const pageFields = fieldCollection.pageFields;
+  const writableTargets = fieldCollection.writableTargets;
   const unmatchedLabels = fieldCollection.unmatchedLabels;
   log("fields", {
     scannedControls: fieldCollection.scannedControls,
@@ -68,6 +108,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const classifyImage = (hint) => {
     const text = hint.toLowerCase();
     if (text.includes("身份证")) return "id_card";
+    if (text.includes("营业执照")) return "business_license";
     if (text.includes("登记证书") || text.includes("机动车登记证")) return "registration_certificate";
     if (text.includes("回收证明") || text.includes("报废证明")) return "scrap_certificate";
     if (text.includes("发票")) return "invoice";
@@ -179,13 +220,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   });
   const selection = globalThis.ReviewImageCandidates.select(imageCandidates, MAX_REVIEW_IMAGES);
   const images = selection.selected;
-  // Stable IDs preserve the link to the collected DOM node even when candidate
-  // ordering changes; the focus helper still rejects nodes detached by rerendering.
-  reviewImageElements.clear();
-  images.forEach((candidate) => reviewImageElements.set(candidate.imageId, candidate.image));
-
   Promise.all(images.map((candidate) => readImageAsset(candidate)))
     .then((imageAssets) => {
+      if (latestCollectionId !== collectionId) {
+        sendResponse({
+          pageUrl: window.location.href,
+          pageInstanceId,
+          pageFingerprint: pageFingerprint(pageFields),
+          collectionId,
+          pageFields,
+          images: [],
+          collectionIssues: ["页面采集已过期，请重新采集"],
+          collectionDiagnostics: { imageSuccessCount: 0, imageFailureCount: 0 },
+        });
+        return;
+      }
+      // The active map changes only with the response that owns this token.
+      reviewImageElements.clear();
+      images.forEach((candidate, index) => {
+        const imageAsset = imageAssets[index];
+        if (imageAsset?.src) reviewImageElements.set(candidate.imageId, { image: candidate.image, src: imageAsset.src });
+      });
+      activeCollectionId = collectionId;
       const imageFailureCount = imageAssets.filter((image) => image.collectionError).length;
       const collectionDiagnostics = {
         scannedControls: fieldCollection.scannedControls,
@@ -213,11 +269,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
       ...(business || {}),
       pageUrl: window.location.href,
+      pageInstanceId,
+      pageFingerprint: pageFingerprint(pageFields),
+      collectionId,
       pageTitle: document.title,
       pageFields,
+      writableTargets,
       pageText: allText,
       images: imageAssets,
-      businessDetectionError: business ? null : "无法识别当前审核业务，请人工选择",
+      businessDetectionError: businessResolution.error,
       collectionIssues: selection.overflow
         ? [`候选资料超过 ${MAX_REVIEW_IMAGES} 张，请确认是否漏审`]
         : [],
@@ -229,11 +289,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
       ...(business || {}),
       pageUrl: window.location.href,
+      pageInstanceId,
+      pageFingerprint: pageFingerprint(pageFields),
+      collectionId,
       pageTitle: document.title,
       pageFields,
+      writableTargets,
       pageText: allText,
       images: [],
-      businessDetectionError: business ? null : "无法识别当前审核业务，请人工选择",
+      businessDetectionError: businessResolution.error,
       collectionIssues: [error instanceof Error ? error.message : "图片采集失败"],
       collectionDiagnostics: {
         scannedControls: fieldCollection.scannedControls,

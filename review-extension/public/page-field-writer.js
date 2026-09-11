@@ -1,0 +1,199 @@
+/** Only fill the two backend-authorized, empty affiliation controls. */
+(() => {
+  const ALLOWED_TARGETS = Object.freeze({ "old_vehicle.affiliation": "报废车挂靠", "new_vehicle.affiliation": "新车挂靠" });
+  const OWNER_OPTIONS = Object.freeze({ PERSONAL: ["个人"], COMPANY: ["公司", "企业"] });
+  const ITEM_SELECTOR = ".ant-form-item, .el-form-item, .form-item";
+  const LABEL_SELECTOR = ".ant-form-item-label label, .el-form-item__label, label";
+  const COMBOBOX_SELECTOR = "[role='combobox'], input[aria-controls], input[aria-owns]";
+  const OPTION_SELECTOR = ".ant-select-item-option, .el-select-dropdown__item, [role='option']";
+  const normalize = (value) => String(value || "").replace(/[＊*]/g, "").replace(/\s+/g, "").replace(/[：:]$/, "");
+  const text = (element) => String(element?.innerText ?? element?.textContent ?? "").trim();
+  const queryAll = (root, selector) => Array.from(root?.querySelectorAll?.(selector) || []);
+  const connected = (element) => element?.isConnected !== false;
+  const hidden = (element) => {
+    for (let node = element; node; node = node.parentElement) {
+      if (node.hidden === true || node.getAttribute?.("aria-hidden") === "true" || node.style?.display === "none" || node.style?.visibility === "hidden") return true;
+      const getComputedStyle = node.ownerDocument?.defaultView?.getComputedStyle;
+      if (typeof getComputedStyle === "function") {
+        const style = getComputedStyle.call(node.ownerDocument.defaultView, node);
+        if (style?.display === "none" || style?.visibility === "hidden" || style?.visibility === "collapse") return true;
+      }
+    }
+    return false;
+  };
+  const disabled = (element) => {
+    for (let node = element; node; node = node.parentElement) {
+      if (node.disabled === true || node.getAttribute?.("aria-disabled") === "true") return true;
+    }
+    return false;
+  };
+  const writable = (element, custom = false) => connected(element) && !hidden(element) && !disabled(element) && (custom || (element?.readOnly !== true && element?.getAttribute?.("readonly") == null));
+
+  function fieldItems(root, label) {
+    return queryAll(root, ITEM_SELECTOR).filter((item) => normalize(text(item.querySelector?.(LABEL_SELECTOR))) === normalize(label));
+  }
+
+  function resolveControl(root, action) {
+    const items = fieldItems(root, action.target_label);
+    if (items.length !== 1) return { error: items.length ? `${action.target_label}存在重复控件，已停止填写` : `未找到${action.target_label}控件` };
+    const item = items[0];
+    if (!writable(item, true)) return { error: `${action.target_label}控件不可写或已变化，页面已刷新` };
+    const nativeControls = queryAll(item, "select");
+    const combos = queryAll(item, COMBOBOX_SELECTOR);
+    if (nativeControls.length + combos.length > 1) return { error: `${action.target_label}存在多个逻辑控件，已停止填写` };
+    if (nativeControls.length === 1) {
+      const nativeSelect = nativeControls[0];
+      if (!writable(nativeSelect)) return { error: `${action.target_label}控件不可写或已变化，页面已刷新` };
+      return { item, control: nativeSelect, nativeSelect };
+    }
+    if (combos.length !== 1) return { error: combos.length ? `${action.target_label}存在多个逻辑控件，已停止填写` : `未找到${action.target_label}可写控件` };
+    const control = combos[0];
+    if (!writable(control, true)) return { error: `${action.target_label}控件不可写或已变化，页面已刷新` };
+    const listboxId = control.getAttribute?.("aria-controls") || control.getAttribute?.("aria-owns");
+    if (!listboxId || /\s/.test(listboxId)) return { error: `${action.target_label}下拉选项无法可靠关联` };
+    return { item, control, listboxId };
+  }
+
+  function nativeCurrent(select) {
+    const value = String(select.value ?? "");
+    if (!value) return { value: "", label: "" };
+    const selected = Array.from(select.options || []).find((option) => String(option.value ?? text(option)) === value);
+    return { value, label: text(selected) || value };
+  }
+
+  function currentValue(resolved) {
+    if (resolved.nativeSelect) return nativeCurrent(resolved.nativeSelect).label;
+    return String(resolved.control?.value ?? "").trim() || text(resolved.item.querySelector?.(".ant-select-selection-item, .el-select__selected-item, .el-input__inner"));
+  }
+
+  function matchingOptions(options, ownerType) {
+    const aliases = OWNER_OPTIONS[ownerType] || [];
+    return options.filter((item) => writable(item) && aliases.includes(normalize(text(item))));
+  }
+
+  function nativeOptions(resolved, ownerType) { return matchingOptions(Array.from(resolved.nativeSelect?.options || []), ownerType); }
+  const settle = () => globalThis.setTimeout ? new Promise((resolve) => globalThis.setTimeout(resolve, 0)) : Promise.resolve();
+
+  const guardError = "页面已变化，请重新审核";
+  const sameCollectedRecord = (guard) => typeof guard !== "function" || guard();
+
+  async function customOptions(root, resolved, ownerType, closeAfter, guard) {
+    if (!sameCollectedRecord(guard)) return { error: guardError };
+    let listbox = root?.getElementById?.(resolved.listboxId);
+    resolved.control.click?.();
+    let matches = [];
+    for (let attempt = 0; attempt < 3 && matches.length === 0; attempt += 1) {
+      await settle();
+      if (!sameCollectedRecord(guard)) return { error: guardError };
+      listbox = root?.getElementById?.(resolved.listboxId);
+      if (listbox && connected(listbox) && !hidden(listbox)) matches = matchingOptions(queryAll(listbox, OPTION_SELECTOR), ownerType);
+    }
+    if (closeAfter) {
+      resolved.control.click?.();
+      await settle();
+      if (!sameCollectedRecord(guard)) return { error: guardError };
+    }
+    return { options: matches };
+  }
+
+  function validateActions(actions) {
+    if (!Array.isArray(actions) || actions.length !== 2) return "挂靠填写意图不完整，已停止填写";
+    const fields = new Set();
+    for (const action of actions) {
+      if (!action || ALLOWED_TARGETS[action.field] !== action.target_label || !OWNER_OPTIONS[action.owner_type] || fields.has(action.field)) return "检测到不允许自动填写的页面字段";
+      fields.add(action.field);
+    }
+    return fields.size === Object.keys(ALLOWED_TARGETS).length ? null : "挂靠填写意图不完整，已停止填写";
+  }
+
+  function validatePendingState(root, actions, expected = new Map(), guard) {
+    if (!sameCollectedRecord(guard)) return { error: guardError };
+    for (const action of actions) {
+      const resolved = resolveControl(root, action);
+      if (resolved.error) return { error: resolved.error };
+      const original = expected.get(action.field);
+      if (original && (original.item !== resolved.item || original.control !== resolved.control)) return { error: `${action.target_label}控件已变化，页面已刷新` };
+      if (currentValue(resolved)) return { error: `${action.target_label}已有值，禁止覆盖` };
+    }
+    return {};
+  }
+
+  async function validatePending(root, actions, expected = new Map(), guard) {
+    const currentState = validatePendingState(root, actions, expected, guard);
+    if (currentState.error) return currentState;
+    const prepared = [];
+    for (const action of actions) {
+      const resolved = resolveControl(root, action);
+      const result = resolved.nativeSelect
+        ? { options: nativeOptions(resolved, action.owner_type) }
+        : await customOptions(root, resolved, action.owner_type, true, guard);
+      if (result.error) return result;
+      const options = result.options;
+      if (options.length !== 1) return { error: `${action.target_label}的个人/公司选项${options.length ? "存在歧义" : "不存在"}` };
+      prepared.push({ action, resolved });
+    }
+    return { prepared };
+  }
+
+  async function preflight(root, actions, guard) {
+    const validationError = validateActions(actions);
+    return validationError ? { error: validationError } : validatePending(root, actions, new Map(), guard);
+  }
+
+  function dispatchNative(select, root) {
+    const EventClass = root?.defaultView?.Event || globalThis.Event;
+    if (!EventClass) return;
+    select.dispatchEvent?.(new EventClass("input", { bubbles: true }));
+    select.dispatchEvent?.(new EventClass("change", { bubbles: true }));
+  }
+
+  async function fillOne(root, action, expected, pendingActions, expectedControls, guard) {
+    if (!sameCollectedRecord(guard)) return { error: guardError };
+    const resolved = resolveControl(root, action);
+    if (resolved.error || expected.item !== resolved.item || expected.control !== resolved.control || currentValue(resolved)) return { error: resolved.error || `${action.target_label}控件已变化或已有值，禁止覆盖` };
+    if (resolved.nativeSelect) {
+      const options = nativeOptions(resolved, action.owner_type);
+      if (options.length !== 1) return { error: `${action.target_label}选项已变化` };
+      const pendingState = validatePendingState(root, pendingActions, expectedControls, guard);
+      if (pendingState.error) return pendingState;
+      const choice = options[0];
+      resolved.nativeSelect.value = String(choice.value ?? text(choice));
+      choice.selected = true;
+      dispatchNative(resolved.nativeSelect, root);
+    } else {
+      const optionResult = await customOptions(root, resolved, action.owner_type, false, guard);
+      if (optionResult.error) return optionResult;
+      const pendingState = validatePendingState(root, pendingActions, expectedControls, guard);
+      if (pendingState.error) return pendingState;
+      const options = optionResult.options;
+      const fresh = resolveControl(root, action);
+      if (fresh.error || fresh.item !== expected.item || fresh.control !== expected.control || currentValue(fresh) || options.length !== 1 || !writable(options[0])) return { error: `${action.target_label}选项或控件已变化，禁止覆盖` };
+      if (!sameCollectedRecord(guard)) return { error: guardError };
+      options[0].click?.();
+      await settle();
+      if (!sameCollectedRecord(guard)) return { error: guardError };
+    }
+    const refreshed = resolveControl(root, action);
+    if (refreshed.error) return { error: `${action.target_label}控件已变化，页面已刷新` };
+    if (!OWNER_OPTIONS[action.owner_type].includes(normalize(currentValue(refreshed)))) return { error: `${action.target_label}写入后回读失败` };
+    return { status: "FILLED", field: action.field, label: action.target_label, value: normalize(currentValue(refreshed)) };
+  }
+
+  async function execute(root, actions, guard) {
+    const checked = await preflight(root, actions, guard);
+    if (checked.error) return { ok: false, message: checked.error, actions: [] };
+    const results = [];
+    for (let index = 0; index < actions.length; index += 1) {
+      const originals = new Map(checked.prepared.map((item) => [item.action.field, item.resolved]));
+      const pendingActions = actions.slice(index);
+      const pending = await validatePending(root, pendingActions, originals, guard);
+      if (pending.error) return { ok: false, message: pending.error, actions: results };
+      const result = await fillOne(root, actions[index], originals.get(actions[index].field), pendingActions, originals, guard);
+      if (result.error) return { ok: false, message: result.error, actions: results };
+      results.push(result);
+    }
+    return { ok: true, message: "挂靠字段已填写并回读", actions: results };
+  }
+
+  globalThis.ReviewPageFieldWriter = { execute, preflight };
+})();

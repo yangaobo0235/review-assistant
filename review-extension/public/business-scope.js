@@ -14,7 +14,7 @@
     ["新车资料", { scope: "new_vehicle", title: "新车资料" }],
     ["发票资料", { scope: "new_vehicle", title: "发票资料" }],
     ["过户资料", { scope: "transfer", title: "过户资料" }],
-    ["营业执照", { scope: "other", title: "营业执照" }],
+    ["营业执照", { scope: "business_license", title: "营业执照" }],
     ["身份证正面", { scope: "other", title: "身份证正面" }],
     ["身份证反面", { scope: "other", title: "身份证反面" }],
     ["身份证", { scope: "other", title: "身份证" }],

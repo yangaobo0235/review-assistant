@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agent.models import AgentBatchResult
+from app.agent.models import AgentBatchResult, RecognizedDocument
 from app.main import app
 from app.models.review import FieldObservation, ImageInput, ReviewRequest
 from app.rules.review_fields import TRANSFER_REVIEW_FIELDS
@@ -121,8 +121,34 @@ def transfer_request(page_fields: dict[str, str] | None = None) -> ReviewRequest
     )
 
 
-def test_transfer_response_passes_without_qr_when_all_rules_match() -> None:
-    result = ReviewService()._build_response(
+@pytest.mark.asyncio
+async def test_transfer_response_passes_without_qr_when_all_rules_match(
+    monkeypatch,
+) -> None:
+    service = ReviewService()
+    batch = transfer_batch().model_copy(
+        update={
+            "recognized_documents": [
+                RecognizedDocument(
+                    target_id="invoice",
+                    document_type="invoice",
+                    business_scope="transfer",
+                ),
+                RecognizedDocument(
+                    target_id="reg",
+                    document_type="registration_certificate",
+                    business_scope="transfer",
+                    covered_pages=[1, 2, 3, 4],
+                ),
+            ]
+        }
+    )
+
+    async def extract(*args):
+        return batch
+
+    monkeypatch.setattr(service, "_extract_documents", extract)
+    result = await service.assist_async(
         transfer_request(
             {
                 "transfer.plate_no": "冀A34870",
@@ -133,8 +159,6 @@ def test_transfer_response_passes_without_qr_when_all_rules_match() -> None:
                 "transfer.source_publish_date": "2026-08-13 17:01:31",
             }
         ),
-        transfer_batch(),
-        include_tools=False,
     )
 
     assert result.recommendation.value == "PASS"
@@ -147,6 +171,13 @@ def test_transfer_response_passes_without_qr_when_all_rules_match() -> None:
     }
     assert not any(
         item.label == "二维码官网核验" for item in result.agent_advice.findings
+    )
+    assert result.page_fill_intent == []
+    assert not any(
+        step.category == "EXTERNAL"
+        or "POLICY" in step.step_id
+        or "AFFILIATION" in step.step_id
+        for step in result.review_steps
     )
 
 

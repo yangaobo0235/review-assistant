@@ -19,6 +19,7 @@ def test_assist_returns_review_structure_for_page_data() -> None:
         "/api/review/assist",
         json={
             "page_url": "https://example.test/review/1",
+            "region": "qingdao",
             "application_id": "APP-1",
             "page_fields": {"old_vehicle.vin": "ABC123"},
             "images": [],
@@ -36,7 +37,7 @@ def test_assist_returns_review_structure_for_page_data() -> None:
 def test_job_api_creates_and_polls_review() -> None:
     created = client.post(
         "/api/review/jobs",
-        json={"page_url": "https://example.test/review/1", "images": []},
+        json={"page_url": "https://example.test/review/1", "region": "qingdao", "images": []},
     )
 
     assert created.status_code == 202
@@ -53,6 +54,7 @@ def test_assist_marks_page_fields_for_manual_review_until_images_are_recognized(
         "/api/review/assist",
         json={
             "page_url": "https://example.test/review/1",
+            "region": "qingdao",
             "page_fields": {"old_vehicle.vin": "ABC123"},
             "images": [],
         },
@@ -77,6 +79,7 @@ def test_review_service_compares_recognized_image_fields_to_page_fields() -> Non
     result = service.assist(
         ReviewRequest(
             page_url="https://example.test/review/1",
+            region="qingdao",
             page_fields={"old_vehicle.vin": "ABC123"},
             images=[{"index": 0, "src": "image", "group": "回收证明"}],
         )
@@ -93,6 +96,7 @@ def test_review_service_continues_when_one_image_tool_fails() -> None:
     result = service.assist(
         ReviewRequest(
             page_url="https://example.test/review/1",
+            region="qingdao",
             page_fields={"old_vehicle.vin": "ABC123"},
             images=[{"index": 0, "src": "image", "group": "回收证明"}],
         )
@@ -107,6 +111,7 @@ def test_review_service_reports_context_image_summary_and_collection_errors() ->
     result = service.assist(
         ReviewRequest(
             page_url="https://example.test/review/1",
+            region="qingdao",
             images=[
                 {
                     "index": 0,
@@ -136,6 +141,7 @@ def test_review_service_only_compares_configured_business_fields() -> None:
     result = service.assist(
         ReviewRequest(
             page_url="https://example.test/review/1",
+            region="qingdao",
             page_fields={
                 "old_vehicle.vin": "OLD-VIN",
                 "old_vehicle.engine_model": "ENGINE-1",
@@ -157,7 +163,7 @@ def test_review_service_only_compares_configured_business_fields() -> None:
 
 def test_review_service_includes_missing_required_business_fields() -> None:
     result = ReviewService().assist(
-        ReviewRequest(page_url="https://example.test/review/1", page_fields={}, images=[])
+        ReviewRequest(page_url="https://example.test/review/1", region="qingdao", page_fields={}, images=[])
     )
 
     compared_fields = {comparison.field for comparison in result.comparisons}

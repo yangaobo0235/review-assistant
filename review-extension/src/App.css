@@ -153,7 +153,7 @@ button:disabled {
   overflow: hidden;
   border: 1px solid #dfe7f2;
   border-left: 4px solid var(--recommendation-accent);
-  border-radius: 12px;
+  border-radius: 8px;
   background: #fff;
   box-shadow: 0 4px 14px rgb(16 42 86 / 7%);
 }
@@ -764,6 +764,207 @@ pre {
   background: #fffbeb;
 }
 
+/* Local-only review-step workflow. Values originate from the backend and must remain readable in a narrow side panel. */
+.review-stepper {
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.stepper-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stepper-heading h2,
+.stepper-title,
+.stepper-evidence h3,
+.affiliation-review h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepper-heading small,
+.stepper-category {
+  color: #667085;
+  font-size: 12px;
+}
+
+.stepper-heading > strong {
+  flex: none;
+  font-size: 13px;
+}
+
+.review-step-match .stepper-heading > strong {
+  color: #067647;
+}
+
+.review-step-conflict .stepper-heading > strong {
+  color: #b42318;
+}
+
+.review-step-insufficient .stepper-heading > strong {
+  color: #b54708;
+}
+
+.stepper-category,
+.stepper-reason,
+.stepper-decision,
+.stepper-empty,
+.affiliation-evidence p,
+.affiliation-conclusion {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #475467;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.stepper-title {
+  color: #1d2939;
+  font-size: 16px;
+}
+
+.stepper-values,
+.affiliation-subjects {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+
+.stepper-values > div,
+.affiliation-subjects > div {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.stepper-values dd,
+.affiliation-subjects dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepper-evidence,
+.affiliation-evidence,
+.affiliation-review {
+  display: grid;
+  gap: 8px;
+}
+
+.stepper-evidence ul,
+.affiliation-evidence ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 18px;
+  color: #475467;
+  font-size: 12px;
+}
+
+.stepper-evidence li,
+.affiliation-evidence li {
+  overflow-wrap: anywhere;
+}
+
+.stepper-evidence li {
+  display: grid;
+  gap: 5px;
+}
+
+.stepper-evidence li p {
+  margin: 0;
+}
+
+.stepper-evidence-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: #667085;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.stepper-evidence-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepper-evidence .evidence-focus {
+  justify-self: start;
+}
+
+.affiliation-review {
+  padding: 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fcfcfd;
+}
+
+.affiliation-evidence > strong,
+.affiliation-conclusion > strong {
+  color: #344054;
+  font-size: 13px;
+}
+
+.affiliation-conclusion {
+  display: grid;
+  gap: 4px;
+}
+
+.stepper-actions,
+.stepper-decision-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.stepper-actions {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.stepper-decision-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stepper-actions button {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepper-secondary {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #344054;
+}
+
+.stepper-manual {
+  background: #a15c00;
+}
+
+.review-step-summary p,
+.page-fill-status p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #475467;
+}
+
+.page-fill-success {
+  border-color: #abefc6;
+  background: #f6fef9;
+}
+
+.page-fill-failure {
+  border-color: #fecdca;
+  background: #fff6f5;
+}
+
 .group-heading {
   display: flex;
   justify-content: space-between;
@@ -791,5 +992,24 @@ footer {
   .qr-fields > div {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
+  }
+
+  .review-panel {
+    padding: 14px;
+  }
+
+  .stepper-heading,
+  .stepper-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stepper-heading {
+    display: grid;
+  }
+
+  .stepper-decision-actions,
+  .stepper-values > div,
+  .affiliation-subjects > div {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

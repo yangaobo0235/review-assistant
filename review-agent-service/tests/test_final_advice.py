@@ -4,13 +4,19 @@ from app.rules.final_advice import build_final_advice
 
 
 def matched(field: str) -> FieldComparison:
-    return FieldComparison(field=field, left_value="A", right_value="A", status=FieldStatus.MATCH)
+    return FieldComparison(
+        field=field, left_value="A", right_value="A", status=FieldStatus.MATCH
+    )
 
 
 def test_all_matching_checks_produce_pass_advice() -> None:
     cross_checks = [
-        ReviewCheck(check_id="CROSS-OWNER-001", label="所有人", status="MATCH", reason="一致"),
-        ReviewCheck(check_id="CROSS-DATE-001", label="日期", status="MATCH", reason="同年"),
+        ReviewCheck(
+            check_id="CROSS-OWNER-001", label="所有人", status="MATCH", reason="一致"
+        ),
+        ReviewCheck(
+            check_id="CROSS-DATE-001", label="日期", status="MATCH", reason="同年"
+        ),
     ]
 
     recommendation, advice = build_final_advice(
@@ -50,23 +56,32 @@ def test_field_conflict_produces_review_finding_with_original_sources() -> None:
     ]
 
 
-def test_missing_qr_result_requires_manual_review() -> None:
+def test_missing_qr_result_is_not_invented_without_an_executed_external_check() -> None:
     recommendation, advice = build_final_advice(
         [matched("old_vehicle.vin")],
-        [ReviewCheck(check_id="CROSS-OWNER-001", label="所有人", status="MATCH", reason="一致"),
-         ReviewCheck(check_id="CROSS-DATE-001", label="日期", status="MATCH", reason="同年")],
+        [
+            ReviewCheck(
+                check_id="CROSS-OWNER-001",
+                label="所有人",
+                status="MATCH",
+                reason="一致",
+            ),
+            ReviewCheck(
+                check_id="CROSS-DATE-001", label="日期", status="MATCH", reason="同年"
+            ),
+        ],
         [],
         [],
         [],
         [],
     )
 
-    assert recommendation == "REVIEW_REQUIRED"
-    assert any(item.check_id == "QR-0" for item in advice.findings)
+    assert recommendation == "PASS"
+    assert advice.findings == []
 
 
 def test_final_advice_does_not_require_qr_for_transfer() -> None:
-    decision, advice = build_final_advice([], [], [], [], [], [], qr_required=False)
+    decision, advice = build_final_advice([], [], [], [], [], [])
 
     assert decision == "PASS"
     assert advice.findings == []
@@ -79,10 +94,19 @@ def test_insufficient_cross_check_and_qr_failure_are_all_findings() -> None:
         status="INSUFFICIENT",
         reason="基础日期尚未确定",
     )
-    qr_check = QrCheck(status=FieldStatus.REVIEW_REQUIRED, message="二维码网页无法完成核验")
+    qr_check = QrCheck(
+        status=FieldStatus.REVIEW_REQUIRED, message="二维码网页无法完成核验"
+    )
 
-    recommendation, advice = build_final_advice([], [cross_check], [qr_check], ["未采集到审核图片"], ["识别超时"], [])
+    recommendation, advice = build_final_advice(
+        [], [cross_check], [qr_check], ["未采集到审核图片"], ["识别超时"], []
+    )
 
     assert recommendation == "REVIEW_REQUIRED"
-    assert {finding.check_id for finding in advice.findings} >= {"CROSS-DATE-001", "QR-1", "ISSUE-1", "LIMITATION-1"}
+    assert {finding.check_id for finding in advice.findings} >= {
+        "CROSS-DATE-001",
+        "QR-1",
+        "ISSUE-1",
+        "LIMITATION-1",
+    }
     assert advice.summary == "发现 4 项需要审核人员确认"

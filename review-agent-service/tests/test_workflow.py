@@ -12,11 +12,12 @@ def test_workflow_declares_the_approved_node_order() -> None:
         "assess_collected_materials",
         "extract_documents",
         "assess_extracted_evidence",
-        "verify_qr",
+        "run_external_checks",
         "compare_same_fields",
-        "compare_cross_documents",
+        "run_business_rules",
+        "prepare_review_steps",
         "derive_recommendation",
-        "build_final_advice",
+        "build_final_response",
     )
 
 
@@ -27,10 +28,20 @@ def test_workflow_state_declares_entry_context_as_required() -> None:
 @pytest.mark.asyncio
 async def test_workflow_returns_both_cross_checks_and_two_state_advice() -> None:
     result = await ReviewService().assist_async(
-        ReviewRequest(page_url="https://example.test/review/1", images=[])
+        ReviewRequest(
+            page_url="https://example.test/review/1", region="qingdao", images=[]
+        )
     )
 
-    assert {check.check_id for check in result.cross_checks} == {"CROSS-OWNER-001", "CROSS-DATE-001"}
+    assert {check.check_id for check in result.cross_checks} == {
+        "POLICY-INVOICE-DATE",
+        "POLICY-DISPOSAL-DEADLINE",
+        "POLICY-NEW-ORIGIN",
+        "AFFILIATION-SUBJECT-001",
+        "AFFILIATION-AUX-OWNER-TYPE",
+        "AFFILIATION-AUX-NEW-VIN",
+        "AFFILIATION-AUX-CUSTOMER-NAME",
+    }
     assert result.recommendation.value == "REVIEW_REQUIRED"
     assert result.agent_advice.decision == "REVIEW_REQUIRED"
     assert result.agent_advice.findings
@@ -41,7 +52,9 @@ async def test_workflow_returns_its_local_batch_with_the_response() -> None:
     service = ReviewService()
 
     response, batch = await service.workflow.run(
-        ReviewRequest(page_url="https://example.test/review/1", images=[])
+        ReviewRequest(
+            page_url="https://example.test/review/1", region="qingdao", images=[]
+        )
     )
 
     assert response.recommendation.value == "REVIEW_REQUIRED"
@@ -50,7 +63,9 @@ async def test_workflow_returns_its_local_batch_with_the_response() -> None:
 
 def test_partial_response_uses_final_advice_contract() -> None:
     service = ReviewService()
-    request = ReviewRequest(page_url="https://example.test/review/1", images=[])
+    request = ReviewRequest(
+        page_url="https://example.test/review/1", region="qingdao", images=[]
+    )
 
     response = service._build_response(
         request,
@@ -60,4 +75,4 @@ def test_partial_response_uses_final_advice_contract() -> None:
 
     assert response.agent_advice.title == "建议人工复核"
     assert response.agent_advice.findings
-    assert len(response.cross_checks) == 2
+    assert response.cross_checks == []

@@ -12,14 +12,23 @@ import type {
   JobStatus,
 } from "./types/review";
 
-export type BusinessChoice = "AUTO" | BusinessType;
+export type BusinessChoice =
+  | "AUTO"
+  | "scrap_replacement_qingdao"
+  | "scrap_replacement_changchun"
+  | "consistency_qingdao"
+  | "consistency_changchun"
+  | "vehicle_source"
+  | "transfer";
 
 export const businessLabels: Record<BusinessChoice, string> = {
   AUTO: "自动识别",
-  scrap_replacement: "报废置换审核",
+  scrap_replacement_qingdao: "青岛报废置换审核",
+  scrap_replacement_changchun: "长春报废置换审核",
   vehicle_source: "车源审核",
   transfer: "过户审核",
-  consistency: "一致性审核",
+  consistency_qingdao: "青岛一致性审核",
+  consistency_changchun: "长春一致性审核",
 };
 
 const fieldLabels: Record<string, string> = {
@@ -42,13 +51,21 @@ const fieldLabels: Record<string, string> = {
 };
 
 export function manualBusinessSelection(
-  businessType: BusinessType,
+  choice: Exclude<BusinessChoice, "AUTO">,
 ): BusinessSelection {
-  const usesQingdaoProfile =
-    businessType === "scrap_replacement" || businessType === "consistency";
+  const region = choice.endsWith("_qingdao")
+    ? "qingdao"
+    : choice.endsWith("_changchun")
+      ? "changchun"
+      : "default";
+  const businessType: BusinessType = choice.startsWith("scrap_replacement")
+    ? "scrap_replacement"
+    : choice.startsWith("consistency")
+      ? "consistency"
+      : choice as BusinessType;
   return {
     businessType,
-    region: usesQingdaoProfile ? "qingdao" : "default",
+    region,
     profileVersion: "1.0",
     workflowStage: businessType,
     selectionMode: "MANUAL",

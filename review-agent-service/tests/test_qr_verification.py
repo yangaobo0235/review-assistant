@@ -142,6 +142,7 @@ async def test_review_keeps_an_untrusted_qr_for_manual_review():
     service = ReviewService(qr=FakeQr())
     request = ReviewRequest(
         page_url="https://example.test",
+        region="qingdao",
         images=[
             ImageInput(
                 index=1,
@@ -176,6 +177,7 @@ async def test_review_scans_image_when_agent_identifies_scrap_certificate():
     )
     request = ReviewRequest(
         page_url="https://example.test",
+        region="qingdao",
         images=[ImageInput(index=1, src="data:image/jpeg;base64,AA==", businessScope="old_vehicle")],
     )
     batch = AgentBatchResult(observations=[FieldObservation(

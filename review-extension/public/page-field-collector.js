@@ -11,6 +11,18 @@
       aliases: ["申请单ID", "申请单编号"],
       section: "unknown",
     },
+    "application.owner_type": {
+      aliases: ["车辆所有人类型"],
+      section: "unknown",
+    },
+    "page_ocr.new_vehicle_vin": {
+      aliases: ["OCR新车车架号"],
+      section: "unknown",
+    },
+    "application.customer_name": {
+      aliases: ["客户名称"],
+      section: "unknown",
+    },
     "old_vehicle.type": {
       aliases: ["报废车辆类型"],
       section: "old_vehicle",
@@ -113,6 +125,10 @@
     adjacent: 100,
   };
   const CONTROL_SELECTOR = "input, textarea, select, [contenteditable]:not([contenteditable='false'])";
+  const WRITABLE_TARGETS = {
+    "报废车挂靠": "old_vehicle.affiliation",
+    "新车挂靠": "new_vehicle.affiliation",
+  };
 
   const normalizeText = (value) => String(value || "")
     .replace(/[＊*]/g, "")
@@ -163,6 +179,8 @@
       definition.aliases.some((alias) => normalizeText(alias) === normalized),
     );
   };
+
+  const writableTargetField = (label) => WRITABLE_TARGETS[normalizeText(label)] || null;
 
   const isSectionRequired = (field) => Boolean(FIELD_DEFINITIONS[field]?.sectionRequired);
 
@@ -253,7 +271,7 @@
           : [];
         return [candidate, ...fallback];
       })
-      .filter((candidate) => candidate.label && isUsableValue(candidate.value));
+      .filter((candidate) => candidate.label && (isUsableValue(candidate.value) || writableTargetField(candidate.label)));
 
   const directElementChildren = (element) => Array.from(element?.children || []);
 
@@ -290,7 +308,7 @@
       }];
     }
 
-    if (children.length === 2 && isKnownLabel(visibleText(children[0]))) {
+    if (children.length === 2 && (isKnownLabel(visibleText(children[0])) || writableTargetField(visibleText(children[0])))) {
       return [{
         label: visibleText(children[0]),
         value: visibleText(children[1]),
@@ -308,7 +326,7 @@
       "tr, dl > div, .ant-descriptions-item, .el-descriptions__row, .ant-form-item, .el-form-item, .form-item",
     )
       .flatMap(structuredCandidatesForContainer)
-      .filter((candidate) => candidate.label && isUsableValue(candidate.value));
+      .filter((candidate) => candidate.label && (isUsableValue(candidate.value) || writableTargetField(candidate.label)));
 
   const adjacentCandidates = (root) => {
     const candidates = [];
@@ -325,9 +343,9 @@
         });
         continue;
       }
-      if (!isKnownLabel(ownText)) continue;
+      if (!isKnownLabel(ownText) && !writableTargetField(ownText)) continue;
       const value = visibleText(element.nextElementSibling);
-      if (!isUsableValue(value) || value.length > 200) continue;
+      if ((!isUsableValue(value) && !writableTargetField(ownText)) || value.length > 200) continue;
       candidates.push({
         label: ownText,
         value,
@@ -379,6 +397,16 @@
     const pageFields = {};
     const unmatchedLabels = [];
     const ambiguousFields = [];
+    const writableTargets = Object.entries(WRITABLE_TARGETS).flatMap(([label, field]) => {
+      const targets = candidates.filter((candidate) => normalizeText(candidate.label) === label);
+      if (targets.length !== 1) {
+        if (targets.length > 1) ambiguousFields.push(field);
+        return [];
+      }
+      const [target] = targets;
+      const currentValue = String(target.value || "").trim() || null;
+      return [{ field, label, present: true, currentValue }];
+    });
 
     for (const [field, definition] of Object.entries(FIELD_DEFINITIONS)) {
       const ranked = candidates
@@ -421,6 +449,7 @@
 
     return {
       pageFields,
+      writableTargets,
       unmatchedLabels,
       ambiguousFields,
       candidateCount: candidates.length,

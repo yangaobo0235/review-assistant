@@ -66,21 +66,22 @@ test("keeps a registration certificate as a known business document", () => {
   assert.deepEqual(Array.from(result.selected, (item) => item.index), [1]);
 });
 
-test("excludes large non-review images before applying the configured limit", () => {
+test("keeps business licenses but excludes unrelated large images", () => {
   const select = loadSelector();
   const result = select([
     candidate(1, {
-      businessScope: "other",
+      businessScope: "business_license",
       hint: "营业执照",
-      categoryHint: "unknown",
+      categoryHint: "business_license",
       naturalWidth: 2400,
       naturalHeight: 1600,
     }),
     candidate(2, { businessScope: "old_vehicle" }),
     candidate(3, { businessScope: "new_vehicle", hint: "新车资料", categoryHint: "new_vehicle" }),
+    candidate(4, { businessScope: "other", hint: "其他图片", categoryHint: "unknown" }),
   ]);
 
-  assert.deepEqual(Array.from(result.selected, (item) => item.index), [2, 3]);
+  assert.deepEqual(new Set(Array.from(result.selected, (item) => item.index)), new Set([1, 2, 3]));
 });
 
 test("reserves one image for each business scope and document type", () => {

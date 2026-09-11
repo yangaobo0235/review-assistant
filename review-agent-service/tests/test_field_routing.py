@@ -161,3 +161,42 @@ def test_registration_certificate_drops_fields_outside_exact_allowlist() -> None
         "new_vehicle.vin": "VIN",
     }
     assert limitation is None
+
+
+def test_routes_invoice_policy_fields_only_from_new_vehicle_scope() -> None:
+    routed, limitation = route_fields(
+        "new_vehicle",
+        "invoice",
+        {
+            "invoice.invoice_no": "INV-001",
+            "invoice.invoice_date": "2026-09-10",
+            "new_vehicle.origin": "长春市",
+        },
+    )
+
+    assert routed == {
+        "invoice.invoice_no": "INV-001",
+        "invoice.invoice_date": "2026-09-10",
+        "new_vehicle.origin": "长春市",
+    }
+    assert limitation is None
+
+
+def test_routes_business_license_fields_without_vehicle_scope() -> None:
+    routed, limitation = route_fields(
+        "business_license",
+        "business_license",
+        {
+            "business_license.company_name": "甲运输有限公司",
+            "business_license.legal_representative": "张三",
+            "business_license.unified_social_credit_code": "91230000ABC",
+            "vehicle.owner": "DROP",
+        },
+    )
+
+    assert routed == {
+        "business_license.company_name": "甲运输有限公司",
+        "business_license.legal_representative": "张三",
+        "business_license.unified_social_credit_code": "91230000ABC",
+    }
+    assert limitation is None

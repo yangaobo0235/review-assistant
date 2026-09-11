@@ -58,6 +58,9 @@ def aggregate_field(
     evidence = [
         Evidence(
             source=EVIDENCE_SOURCE_LABELS.get(item.source_type, item.source_type),
+            source_id=item.source_id,
+            field=item.field,
+            uncertain=item.uncertain,
             image_index=item.image_index,
             detail=item.source_id,
             image_id=item.image_id,
@@ -70,7 +73,10 @@ def aggregate_field(
         for item in valid
     ]
 
-    if not valid:
+    if any(item.uncertain for item in valid):
+        status = FieldStatus.REVIEW_REQUIRED
+        message = "图片识别结果不确定，请核对原图"
+    elif not valid:
         status = FieldStatus.REVIEW_REQUIRED
         message = "页面与图片均未取得有效值"
     elif len(valid) == 1:

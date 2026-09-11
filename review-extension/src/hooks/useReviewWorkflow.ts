@@ -13,6 +13,8 @@ import {
   fetchReviewJob,
 } from "../reviewClient";
 import { pollReviewJob } from "../reviewJobs";
+import { applyPageFillIntent, type PageFillResult } from "../pageFillClient";
+import { focusReviewImage } from "../imageFocusClient";
 import {
   manualBusinessSelection,
   type BusinessChoice,
@@ -34,11 +36,12 @@ async function collectPageData(selection: BusinessChoice): Promise<PageData> {
   if (!tab.id) {
     throw new Error("没有找到当前页面");
   }
-  return (await chrome.tabs.sendMessage(tab.id, {
+  const pageData = (await chrome.tabs.sendMessage(tab.id, {
     type: "COLLECT_PAGE_DATA",
     businessSelection:
       selection === "AUTO" ? null : manualBusinessSelection(selection),
-  })) as PageData;
+  })) as Omit<PageData, "sourceTabId">;
+  return { ...pageData, sourceTabId: tab.id };
 }
 
 export interface ReviewWorkflow {
@@ -48,6 +51,7 @@ export interface ReviewWorkflow {
   pageData: PageData | null;
   error: string;
   notice: string;
+  pageFillResult: PageFillResult | null;
   reset: () => void;
   startReview: () => Promise<void>;
   focusOriginalImage: (imageId: string) => Promise<void>;
@@ -63,6 +67,7 @@ export function useReviewWorkflow(
   const [pageData, setPageData] = useState<PageData | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pageFillResult, setPageFillResult] = useState<PageFillResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +95,7 @@ export function useReviewWorkflow(
     setPageData(null);
     setError("");
     setNotice("");
+    setPageFillResult(null);
   }, []);
 
   const startReview = useCallback(async () => {
@@ -99,6 +105,7 @@ export function useReviewWorkflow(
     setNotice("");
     setReview(null);
     setJob(null);
+    setPageFillResult(null);
     try {
       const data = await collectPageData(businessSelection);
       if (!data.businessType) {
@@ -126,9 +133,16 @@ export function useReviewWorkflow(
       if (finalSnapshot.status === "FAILED") {
         throw new Error(finalSnapshot.message || "审核任务执行失败");
       }
+      if (finalSnapshot.result?.page_fill_intent?.length) {
+        const fillResult = await applyPageFillIntent(finalSnapshot.result.page_fill_intent, {
+          tabId: data.sourceTabId, pageUrl: data.pageUrl, pageInstanceId: data.pageInstanceId, pageFingerprint: data.pageFingerprint,
+        });
+        setPageFillResult(fillResult);
+        if (!fillResult.ok) setNotice(fillResult.message);
+      }
       // The client deadline is a presentation boundary: a running snapshot still
       // contains useful partial review results and is not a transport failure.
-      setNotice(completionNotice(finalSnapshot));
+      setNotice((current) => current || completionNotice(finalSnapshot));
     } catch (reason: unknown) {
       setError(
         reason instanceof Error ? reason.message : "审核辅助服务调用失败",
@@ -139,19 +153,15 @@ export function useReviewWorkflow(
   }, [businessSelection, loading]);
 
   const focusOriginalImage = useCallback(async (imageId: string) => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab.id) {
+    if (!pageData) {
       setNotice("没有找到原审核页面");
       return;
     }
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: "FOCUS_REVIEW_IMAGE",
-      imageId,
-    });
+    const response = await focusReviewImage(imageId, pageData);
     if (!response?.ok) {
       setNotice(response?.error || "原图已变化，请重新采集");
     }
-  }, []);
+  }, [pageData]);
 
   return {
     loading,
@@ -160,6 +170,7 @@ export function useReviewWorkflow(
     pageData,
     error,
     notice,
+    pageFillResult,
     reset,
     startReview,
     focusOriginalImage,

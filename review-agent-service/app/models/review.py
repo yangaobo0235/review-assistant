@@ -6,7 +6,7 @@
 """
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import (
     AliasChoices,
@@ -22,6 +22,7 @@ from app.agent.models import (
     MaterialCompletenessReport,
     RetrySummary,
     ReviewCheck,
+    ReviewCheckValue,
 )
 
 
@@ -62,13 +63,20 @@ class SelectionMode(StrEnum):
     MANUAL = "MANUAL"
 
 
+class ReviewDisplayTarget(StrEnum):
+    PAGE_FIELD = "PAGE_FIELD"
+    ASSISTANT = "ASSISTANT"
+
+
 class ImageInput(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     index: int = Field(ge=0)
     src: str
     group: str = "未分类"
-    image_id: str | None = Field(default=None, validation_alias=AliasChoices("image_id", "imageId"))
+    image_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("image_id", "imageId")
+    )
     category_hint: str = Field(
         default="unknown",
         validation_alias=AliasChoices("category_hint", "categoryHint"),
@@ -90,9 +98,15 @@ class ImageInput(BaseModel):
         default="unknown",
         validation_alias=AliasChoices("document_type_hint", "documentTypeHint"),
     )
-    mime_type: str | None = Field(default=None, validation_alias=AliasChoices("mime_type", "mimeType"))
-    size_bytes: int | None = Field(default=None, ge=0, validation_alias=AliasChoices("size_bytes", "sizeBytes"))
-    data_url: str | None = Field(default=None, validation_alias=AliasChoices("data_url", "dataUrl"))
+    mime_type: str | None = Field(
+        default=None, validation_alias=AliasChoices("mime_type", "mimeType")
+    )
+    size_bytes: int | None = Field(
+        default=None, ge=0, validation_alias=AliasChoices("size_bytes", "sizeBytes")
+    )
+    data_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("data_url", "dataUrl")
+    )
     collection_error: str | None = Field(
         default=None,
         validation_alias=AliasChoices("collection_error", "collectionError"),
@@ -106,17 +120,30 @@ class ImageInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def derive_legacy_business_scope(cls, value: Any) -> Any:
-        if not isinstance(value, dict) or "business_scope" in value or "businessScope" in value:
+        if (
+            not isinstance(value, dict)
+            or "business_scope" in value
+            or "businessScope" in value
+        ):
             return value
         category = value.get("category_hint", value.get("categoryHint", "unknown"))
         old_types = {"scrap_certificate", "old_vehicle", "registration_certificate"}
         new_types = {"new_vehicle", "invoice"}
-        scope = "old_vehicle" if category in old_types else "new_vehicle" if category in new_types else "unknown"
+        scope = (
+            "old_vehicle"
+            if category in old_types
+            else "new_vehicle"
+            if category in new_types
+            else "unknown"
+        )
         return {**value, "business_scope": scope}
 
 
 class Evidence(BaseModel):
     source: str
+    source_id: str | None = None
+    field: str | None = None
+    uncertain: bool = False
     image_index: int | None = None
     detail: str | None = None
     image_id: str | None = None
@@ -135,6 +162,7 @@ class FieldObservation(BaseModel):
     source_type: str
     source_id: str
     value: Any = None
+    uncertain: bool = False
     document_type: str | None = None
     image_index: int | None = None
     image_id: str | None = None
@@ -166,15 +194,52 @@ class QrCheck(BaseModel):
     message: str = ""
 
 
+class PageFillAction(BaseModel):
+    field: str
+    target_label: str
+    owner_type: str
+
+
+class ReviewStep(BaseModel):
+    """一个已经实际执行、可按顺序展示的审核步骤。"""
+
+    step_id: str
+    sequence: int = Field(ge=1)
+    category: Literal["FIELD", "EXTERNAL", "BUSINESS_RULE", "MATERIAL"]
+    display_target: ReviewDisplayTarget
+    page_field: str | None = None
+    requires_reviewer_action: bool
+    label: str
+    result_status: Literal["MATCH", "CONFLICT", "INSUFFICIENT"]
+    reason: str
+    values: list[ReviewCheckValue] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_display_contract(self) -> "ReviewStep":
+        if self.display_target is ReviewDisplayTarget.PAGE_FIELD and not self.page_field:
+            raise ValueError("PAGE_FIELD review steps require page_field")
+        if (
+            self.display_target is ReviewDisplayTarget.ASSISTANT
+            and self.page_field is not None
+        ):
+            raise ValueError("ASSISTANT review steps cannot declare page_field")
+        if self.requires_reviewer_action != (self.result_status != "MATCH"):
+            raise ValueError("requires_reviewer_action must match result_status")
+        return self
+
+
 class ReviewRequest(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    page_url: HttpUrl | str = Field(validation_alias=AliasChoices("page_url", "pageUrl"))
+    page_url: HttpUrl | str = Field(
+        validation_alias=AliasChoices("page_url", "pageUrl")
+    )
     business_type: BusinessType = Field(
         default=BusinessType.SCRAP_REPLACEMENT,
         validation_alias=AliasChoices("business_type", "businessType"),
     )
-    region: Region = Region.QINGDAO
+    region: Region = Region.DEFAULT
     profile_version: str = Field(
         default="1.0",
         validation_alias=AliasChoices("profile_version", "profileVersion"),
@@ -202,24 +267,65 @@ class ReviewRequest(BaseModel):
     images: list[ImageInput] = Field(default_factory=list)
     collection_diagnostics: "CollectionDiagnostics" = Field(
         default_factory=lambda: CollectionDiagnostics(),
-        validation_alias=AliasChoices("collection_diagnostics", "collectionDiagnostics"),
+        validation_alias=AliasChoices(
+            "collection_diagnostics", "collectionDiagnostics"
+        ),
     )
 
 
 class CollectionDiagnostics(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    scanned_controls: int = Field(default=0, ge=0, validation_alias=AliasChoices("scanned_controls", "scannedControls"))
-    matched_fields: int = Field(default=0, ge=0, validation_alias=AliasChoices("matched_fields", "matchedFields"))
-    unmatched_labels: list[str] = Field(default_factory=list, validation_alias=AliasChoices("unmatched_labels", "unmatchedLabels"))
-    candidate_count: int = Field(default=0, ge=0, validation_alias=AliasChoices("candidate_count", "candidateCount"))
-    ambiguous_fields: list[str] = Field(default_factory=list, validation_alias=AliasChoices("ambiguous_fields", "ambiguousFields"))
-    image_success_count: int = Field(default=0, ge=0, validation_alias=AliasChoices("image_success_count", "imageSuccessCount"))
-    image_failure_count: int = Field(default=0, ge=0, validation_alias=AliasChoices("image_failure_count", "imageFailureCount"))
-    scanned_images: int = Field(default=0, ge=0, validation_alias=AliasChoices("scanned_images", "scannedImages"))
-    selected_images: int = Field(default=0, ge=0, validation_alias=AliasChoices("selected_images", "selectedImages"))
-    image_overflow: bool = Field(default=False, validation_alias=AliasChoices("image_overflow", "imageOverflow"))
-    collection_issues: list[str] = Field(default_factory=list, validation_alias=AliasChoices("collection_issues", "collectionIssues"))
+    scanned_controls: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("scanned_controls", "scannedControls"),
+    )
+    matched_fields: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("matched_fields", "matchedFields"),
+    )
+    unmatched_labels: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("unmatched_labels", "unmatchedLabels"),
+    )
+    candidate_count: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("candidate_count", "candidateCount"),
+    )
+    ambiguous_fields: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("ambiguous_fields", "ambiguousFields"),
+    )
+    image_success_count: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("image_success_count", "imageSuccessCount"),
+    )
+    image_failure_count: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("image_failure_count", "imageFailureCount"),
+    )
+    scanned_images: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("scanned_images", "scannedImages"),
+    )
+    selected_images: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("selected_images", "selectedImages"),
+    )
+    image_overflow: bool = Field(
+        default=False, validation_alias=AliasChoices("image_overflow", "imageOverflow")
+    )
+    collection_issues: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("collection_issues", "collectionIssues"),
+    )
 
 
 class ResultSection(BaseModel):
@@ -230,7 +336,7 @@ class ResultSection(BaseModel):
 
 class ReviewResponse(BaseModel):
     business_type: BusinessType = BusinessType.SCRAP_REPLACEMENT
-    region: Region = Region.QINGDAO
+    region: Region = Region.DEFAULT
     profile_version: str = "1.0"
     recommendation: Recommendation
     risk_level: str
@@ -244,6 +350,8 @@ class ReviewResponse(BaseModel):
     agent_advice: AgentAdvice | None = None
     material_completeness: MaterialCompletenessReport | None = None
     retry_summary: RetrySummary | None = None
+    page_fill_intent: list[PageFillAction] = Field(default_factory=list)
+    review_steps: list[ReviewStep] = Field(default_factory=list)
 
 
 class ReviewProgress(BaseModel):

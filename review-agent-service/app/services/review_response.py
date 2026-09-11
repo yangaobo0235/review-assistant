@@ -18,13 +18,13 @@ from app.models.review import (
     ReviewResponse,
 )
 from app.rules.aggregate import aggregate_field
-from app.rules.cross_document import build_cross_document_checks
-from app.rules.final_advice import build_final_advice
+from app.rules.check_results import unique_checks
 from app.rules.normalize import normalize_value
 from app.rules.transfer_sources import (
     enforce_transfer_source_requirements,
     filter_transfer_observations,
 )
+from app.services.review_assembly import assemble_review_response
 
 
 def _append_qr_observations(
@@ -117,53 +117,24 @@ def build_review_response(
     observations: list[FieldObservation],
     issues: list[str],
     qr_checks: list[QrCheck] | None = None,
+    business_checks: list | None = None,
+    page_fill_intent: list | None = None,
+    defer_advice: bool = False,
 ) -> ReviewResponse:
     """把提取结果和确定性检查组装为稳定的审核响应。"""
 
     resolved_qr_checks = qr_checks or []
     _append_qr_observations(observations, resolved_qr_checks)
-    qr_conflict = _mark_qr_conflicts(observations, resolved_qr_checks)
+    _mark_qr_conflicts(observations, resolved_qr_checks)
     comparisons = _build_comparisons(request, profile, observations)
-    cross_checks = build_cross_document_checks(
-        request.business_type,
-        comparisons,
-        observations,
-        request.page_fields,
-    )
-    decision, advice = build_final_advice(
-        comparisons,
-        cross_checks,
-        resolved_qr_checks,
-        issues,
-        batch.limitations,
-        batch.confidences,
-        completeness=batch.material_completeness,
-        qr_required=profile.qr_required,
-    )
-    has_conflict = qr_conflict or any(
-        item.status is FieldStatus.CONFLICT for item in comparisons
-    )
-    has_review = (
-        any(item.status is FieldStatus.REVIEW_REQUIRED for item in comparisons)
-        or bool(issues)
-        or bool(batch.limitations)
-        or batch.failed_count > 0
-        or batch.timed_out_count > 0
-        or any(check.status is not FieldStatus.MATCH for check in resolved_qr_checks)
-    )
-    return ReviewResponse(
+    cross_checks = unique_checks(business_checks or [])
+    response = ReviewResponse(
         business_type=request.business_type,
         region=request.region,
         profile_version=profile.version,
-        recommendation=Recommendation(decision),
-        risk_level="HIGH" if has_conflict else "MEDIUM" if has_review else "LOW",
-        summary=(
-            "发现明确字段冲突"
-            if has_conflict
-            else "审核辅助结果需要人工复核"
-            if has_review
-            else "字段检查通过"
-        ),
+        recommendation=Recommendation.REVIEW_REQUIRED,
+        risk_level="MEDIUM",
+        summary="审核检查正在进行",
         comparisons=comparisons,
         qr_checks=resolved_qr_checks,
         cross_checks=cross_checks,
@@ -186,9 +157,19 @@ def build_review_response(
             "failed_count": batch.failed_count,
             "timed_out_count": batch.timed_out_count,
         },
-        agent_advice=advice,
         material_completeness=batch.material_completeness,
         retry_summary=batch.retry_summary,
+        page_fill_intent=page_fill_intent or [],
+    )
+    return (
+        response
+        if defer_advice
+        else assemble_review_response(
+            response,
+            batch,
+            business_checks=cross_checks,
+            page_actions=page_fill_intent,
+        )
     )
 
 
@@ -199,16 +180,7 @@ def build_unconfigured_response(
     """Build the stable manual-review response for an unconfigured profile."""
 
     message = profile.unconfigured_message or "当前审核业务规则尚未配置，请人工复核"
-    _, advice = build_final_advice(
-        [],
-        [],
-        [],
-        [message],
-        [],
-        [],
-        qr_required=profile.qr_required,
-    )
-    return ReviewResponse(
+    response = ReviewResponse(
         business_type=request.business_type,
         region=request.region,
         profile_version=profile.version,
@@ -227,5 +199,7 @@ def build_unconfigured_response(
             "failed_count": 0,
             "timed_out_count": 0,
         },
-        agent_advice=advice,
     )
+    return assemble_review_response(
+        response, AgentBatchResult(), business_checks=[]
+    ).model_copy(update={"summary": message})

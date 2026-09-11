@@ -66,24 +66,26 @@ export function ReviewAdvice({ review }: { review: ReviewResponse }) {
         </details>
       ) : null}
 
-      <details className="advice-section" open={crossChecks.some((check) => check.status !== "MATCH")}>
-        <summary>
-          <span className="advice-section-label">跨资料校验</span>
-          <span className="advice-section-chevron" aria-hidden="true">⌄</span>
-        </summary>
-        <div className="cross-checks">
-          {crossChecks.map((check) => (
-            <article className={`cross-check cross-check-${check.status.toLowerCase()}`} key={check.check_id}>
-              <div className="advice-check-heading">
-                <strong>{check.label}</strong>
-                <b>{checkStatusLabel(check.status)}</b>
-              </div>
-              <p>{check.reason}</p>
-              <CheckValues check={check} />
-            </article>
-          ))}
-        </div>
-      </details>
+      {crossChecks.length ? (
+        <details className="advice-section" open={crossChecks.some((check) => check.status !== "MATCH")}>
+          <summary>
+            <span className="advice-section-label">跨资料校验</span>
+            <span className="advice-section-chevron" aria-hidden="true">⌄</span>
+          </summary>
+          <div className="cross-checks">
+            {crossChecks.map((check) => (
+              <article className={`cross-check cross-check-${check.status.toLowerCase()}`} key={check.check_id}>
+                <div className="advice-check-heading">
+                  <strong>{check.label}</strong>
+                  <b>{checkStatusLabel(check.status)}</b>
+                </div>
+                <p>{check.reason}</p>
+                <CheckValues check={check} />
+              </article>
+            ))}
+          </div>
+        </details>
+      ) : null}
 
     </section>
   );

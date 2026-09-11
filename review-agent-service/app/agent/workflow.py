@@ -5,7 +5,7 @@
 修改人：wuyi
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from itertools import pairwise
 from typing import Any, Required, TypedDict
 
@@ -16,22 +16,53 @@ from app.agent.models import (
     AgentBatchResult,
     MaterialCompletenessReport,
     ReviewCheck,
+    ReviewCheckValue,
 )
+from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
-from app.models.review import QrCheck, Recommendation, ReviewRequest, ReviewResponse
-from app.rules.final_advice import build_final_advice
+from app.models.review import (
+    BusinessType,
+    FieldStatus,
+    PageFillAction,
+    QrCheck,
+    Region,
+    ReviewRequest,
+    ReviewResponse,
+    ReviewStep,
+)
+from app.rules.affiliation_subject_checks import (
+    build_affiliation_auxiliary_checks,
+    build_affiliation_subject_check,
+)
+from app.rules.business_rule_registry import BusinessRuleRegistry
+from app.rules.capabilities import (
+    BusinessRuleHandler,
+    ExternalCheckHandler,
+    ExternalCheckSpec,
+    ReviewExecutionContext,
+    RuleExecutionResult,
+)
+from app.rules.check_results import qr_review_checks, unique_checks
+from app.rules.cross_document_common import raw_settled_value
+from app.rules.evidence_values import batch_observations
+from app.rules.external_check_registry import ExternalCheckRegistry
+from app.rules.final_advice import FIELD_LABELS
 from app.rules.material_completeness import evaluate_collected, evaluate_extracted
+from app.rules.replacement_policy_checks import build_replacement_policy_checks
+from app.rules.transfer_checks import build_transfer_checks
+from app.services.review_assembly import assemble_review_response
 
 WORKFLOW_NODE_ORDER = (
     "validate_context",
     "assess_collected_materials",
     "extract_documents",
     "assess_extracted_evidence",
-    "verify_qr",
+    "run_external_checks",
     "compare_same_fields",
-    "compare_cross_documents",
+    "run_business_rules",
+    "prepare_review_steps",
     "derive_recommendation",
-    "build_final_advice",
+    "build_final_response",
 )
 
 
@@ -43,29 +74,84 @@ class ReviewState(TypedDict, total=False):
     batch_callback: Callable[[AgentBatchResult], Any] | None
     batch: AgentBatchResult
     qr_checks: list[QrCheck]
+    external_results: list[ReviewCheck]
     response: ReviewResponse
     cross_checks: list[ReviewCheck]
+    page_fill_intent: list[PageFillAction]
     recommendation: str
     advice: AgentAdvice
     material_completeness: MaterialCompletenessReport
+    review_steps: list[ReviewStep]
 
 
 class ReviewWorkflow:
     """按固定节点顺序执行提取、核验、比较和最终建议组装。"""
 
-    def __init__(self, service: Any) -> None:
+    def __init__(
+        self,
+        service: Any,
+        *,
+        external_check_handlers: Mapping[str, ExternalCheckHandler] | None = None,
+        business_rule_handlers: Mapping[str, BusinessRuleHandler] | None = None,
+    ) -> None:
         """构建并编译审核状态图，具体业务能力由服务门面提供。"""
         self.service = service
+        self.external_checks = ExternalCheckRegistry(
+            {
+                "scrap_certificate_qr": self._run_scrap_certificate_qr,
+                **(external_check_handlers or {}),
+            }
+        )
+        builtin_rules: dict[str, BusinessRuleHandler] = {
+            "qingdao_replacement_policy": self._run_replacement_policy,
+            "changchun_replacement_policy": self._run_replacement_policy,
+            "affiliation_subject": self._run_affiliation_subject,
+            "transfer_registration": self._run_transfer_registration,
+        }
+        additional_rules = dict(business_rule_handlers or {})
+        overridden = builtin_rules.keys() & additional_rules.keys()
+        if overridden:
+            raise ValueError(f"不能覆盖内置业务规则：{', '.join(sorted(overridden))}")
+        self.business_rules = BusinessRuleRegistry({**builtin_rules, **additional_rules})
+        for profile in service.registry.profiles:
+            self.external_checks.validate(profile.external_checks)
+            self.business_rules.validate(profile.rule_groups)
+            unknown_actions = set(profile.page_actions) - {"fill_affiliation_fields"}
+            if unknown_actions:
+                raise ValueError(
+                    f"未注册页面动作：{', '.join(sorted(unknown_actions))}"
+                )
+            if (
+                set(profile.rule_groups)
+                & {"qingdao_replacement_policy", "changchun_replacement_policy"}
+                and profile.replacement_policy is None
+            ):
+                raise ValueError("地区政策规则缺少 replacement_policy 配置")
+            policy = profile.replacement_policy
+            policy_rules = set(profile.rule_groups) & {
+                "qingdao_replacement_policy",
+                "changchun_replacement_policy",
+            }
+            if policy is not None and (
+                profile.business_type is not BusinessType.SCRAP_REPLACEMENT
+                or policy.region != profile.region
+                or policy.version != profile.version
+                or policy.policy_id != f"scrap_replacement_{profile.region.value}"
+                or policy_rules
+                and policy_rules != {f"{profile.region.value}_replacement_policy"}
+            ):
+                raise ValueError("地区政策的归属、版本或规则标识与 Profile 不一致")
         builder = StateGraph(ReviewState)
         builder.add_node("validate_context", self._validate_context)
         builder.add_node("assess_collected_materials", self._assess_collected_materials)
         builder.add_node("extract_documents", self._extract_documents)
         builder.add_node("assess_extracted_evidence", self._assess_extracted_evidence)
-        builder.add_node("verify_qr", self._verify_qr)
+        builder.add_node("run_external_checks", self._run_external_checks)
         builder.add_node("compare_same_fields", self._compare_same_fields)
-        builder.add_node("compare_cross_documents", self._compare_cross_documents)
+        builder.add_node("run_business_rules", self._run_business_rules)
+        builder.add_node("prepare_review_steps", self._prepare_review_steps)
         builder.add_node("derive_recommendation", self._derive_recommendation)
-        builder.add_node("build_final_advice", self._build_final_advice)
+        builder.add_node("build_final_response", self._build_final_response)
         builder.add_edge(START, WORKFLOW_NODE_ORDER[0])
         for source, target in pairwise(WORKFLOW_NODE_ORDER):
             builder.add_edge(source, target)
@@ -75,12 +161,24 @@ class ReviewWorkflow:
     @staticmethod
     def _validate_context(state: ReviewState) -> dict[str, Any]:
         """保留入口已解析的请求和业务配置，建立稳定的初始状态。"""
+        request, profile = state["request"], state["profile"]
+        validate_request_route(request)
+        if (
+            profile.business_type != request.business_type
+            or profile.version != request.profile_version
+            or profile.region != request.region
+            and profile.region is not Region.DEFAULT
+        ):
+            raise ValueError("请求业务、地区或版本与显式 Profile 不一致")
         return {"request": state["request"], "profile": state["profile"]}
 
     async def _extract_documents(self, state: ReviewState) -> dict[str, Any]:
         """调用批处理服务提取材料字段，并透传进度回调。"""
         batch = await self.service._extract_documents(
-            state["request"], state.get("batch_callback"), state["profile"], state.get("material_completeness")
+            state["request"],
+            state.get("batch_callback"),
+            state["profile"],
+            state.get("material_completeness"),
         )
         return {"batch": batch}
 
@@ -89,7 +187,12 @@ class ReviewWorkflow:
         report = evaluate_collected(state["request"], state["profile"])
         callback = state.get("batch_callback")
         if callback is not None:
-            callback_result = callback(AgentBatchResult(total_count=len(state["request"].images), material_completeness=report))
+            callback_result = callback(
+                AgentBatchResult(
+                    total_count=len(state["request"].images),
+                    material_completeness=report,
+                )
+            )
             if hasattr(callback_result, "__await__"):
                 await callback_result
         return {"material_completeness": report}
@@ -108,17 +211,52 @@ class ReviewWorkflow:
                 await callback_result
         return {"batch": updated, "material_completeness": report}
 
-    async def _verify_qr(self, state: ReviewState) -> dict[str, Any]:
-        """基于材料提取结果执行二维码收集与官网核验。"""
+    def _execution_context(self, state: ReviewState) -> ReviewExecutionContext:
         batch = state.get("batch")
         if batch is None:
             raise RuntimeError("工作流状态缺少文档提取结果")
-        return {
-            "qr_checks": await self.service._collect_qr_checks(
-                state["request"],
-                batch,
-                state["profile"],
+        response = state.get("response")
+        return ReviewExecutionContext(
+            request=state["request"],
+            profile=state["profile"],
+            batch=batch,
+            observations=tuple(batch_observations(batch)),
+            comparisons=tuple(response.comparisons if response else ()),
+            qr_checks=tuple(state.get("qr_checks", ())),
+        )
+
+    async def _run_scrap_certificate_qr(
+        self,
+        context: ReviewExecutionContext,
+        spec: ExternalCheckSpec,
+    ) -> tuple[ReviewCheck | QrCheck, ...]:
+        checks = await self.service._collect_qr_checks(
+            context.request,
+            context.batch,
+            context.profile,
+        )
+        if not checks and spec.mode == "REQUIRED":
+            return (
+                ReviewCheck(
+                    check_id=f"EXTERNAL-{spec.check_id}",
+                    label="二维码官网核验",
+                    status="INSUFFICIENT",
+                    reason="缺少可核验的报废回收证明材料",
+                ),
             )
+        return tuple(checks)
+
+    async def _run_external_checks(self, state: ReviewState) -> dict[str, Any]:
+        """只执行当前 Profile 声明的外部核验。"""
+        results = await self.external_checks.execute(
+            state["profile"].external_checks,
+            self._execution_context(state),
+        )
+        return {
+            "qr_checks": [item for item in results if isinstance(item, QrCheck)],
+            "external_results": unique_checks(
+                item for item in results if isinstance(item, ReviewCheck)
+            ),
         }
 
     def _compare_same_fields(self, state: ReviewState) -> dict[str, Any]:
@@ -135,16 +273,193 @@ class ReviewWorkflow:
             state["profile"],
             include_tools=True,
             qr_checks=qr_checks,
+            business_checks=[],
+            defer_advice=True,
         )
-        return {"response": response}
+        return {
+            "response": response,
+            "external_results": unique_checks(
+                [
+                    *state.get("external_results", []),
+                    *qr_review_checks(response.qr_checks, state["request"].images),
+                ]
+            ),
+        }
 
     @staticmethod
-    def _compare_cross_documents(state: ReviewState) -> dict[str, Any]:
-        """从响应中提取已经由业务规则生成的跨材料检查结果。"""
+    def _run_replacement_policy(context: ReviewExecutionContext) -> RuleExecutionResult:
+        policy = context.profile.replacement_policy
+        if policy is None:
+            raise ValueError("地区政策规则缺少 replacement_policy 配置")
+        return RuleExecutionResult(
+            checks=tuple(
+                build_replacement_policy_checks(policy, list(context.observations))
+            )
+        )
+
+    @staticmethod
+    def _run_affiliation_subject(
+        context: ReviewExecutionContext,
+    ) -> RuleExecutionResult:
+        comparisons = {item.field: item for item in context.comparisons}
+        result = build_affiliation_subject_check(
+            raw_settled_value(comparisons, "old_vehicle.owner"),
+            raw_settled_value(comparisons, "new_vehicle.owner"),
+            list(context.observations),
+        )
+        new_vin = raw_settled_value(comparisons, "new_vehicle.vin")
+        auxiliary_checks = build_affiliation_auxiliary_checks(
+            page_fields=context.request.page_fields,
+            new_owner_type=result.owner_types[1],
+            new_vehicle_vin=new_vin,
+            new_owner=raw_settled_value(comparisons, "new_vehicle.owner"),
+        )
+        return RuleExecutionResult(
+            checks=(result.check, *auxiliary_checks),
+            page_action_candidates=(
+                result.page_actions
+                if result.check.status == "MATCH"
+                and all(check.status == "MATCH" for check in auxiliary_checks)
+                else ()
+            ),
+        )
+
+    @staticmethod
+    def _run_transfer_registration(
+        context: ReviewExecutionContext,
+    ) -> RuleExecutionResult:
+        return RuleExecutionResult(
+            checks=tuple(
+                build_transfer_checks(
+                    list(context.comparisons),
+                    list(context.observations),
+                    context.request.page_fields,
+                )
+            )
+        )
+
+    def _run_business_rules(self, state: ReviewState) -> dict[str, Any]:
+        result = self.business_rules.execute(
+            state["profile"].rule_groups,
+            self._execution_context(state),
+        )
+        allowed_actions = (
+            list(result.page_action_candidates)
+            if "fill_affiliation_fields" in state["profile"].page_actions
+            else []
+        )
+        return {
+            "cross_checks": list(result.checks),
+            "page_fill_intent": allowed_actions,
+        }
+
+    @staticmethod
+    def _prepare_review_steps(state: ReviewState) -> dict[str, Any]:
+        """Serialize only the checks that this profile actually executed."""
+
         response = state.get("response")
         if response is None:
             raise RuntimeError("工作流状态缺少同字段比对结果")
-        return {"cross_checks": response.cross_checks}
+        steps: list[ReviewStep] = []
+        seen: set[str] = set()
+
+        def append(step: ReviewStep) -> None:
+            if step.step_id not in seen:
+                seen.add(step.step_id)
+                steps.append(step.model_copy(update={"sequence": len(steps) + 1}))
+
+        for comparison in response.comparisons:
+            append(
+                ReviewStep(
+                    step_id=f"FIELD-{comparison.field}",
+                    sequence=1,
+                    category="FIELD",
+                    label=FIELD_LABELS.get(comparison.field, "材料字段核验"),
+                    result_status=(
+                        "MATCH"
+                        if comparison.status is FieldStatus.MATCH
+                        else "CONFLICT"
+                        if comparison.status is FieldStatus.CONFLICT
+                        else "INSUFFICIENT"
+                    ),
+                    reason=comparison.message,
+                    values=[
+                        ReviewCheckValue(source=item.source, value=item.value)
+                        for item in comparison.evidence
+                        if item.value not in (None, "")
+                    ],
+                    evidence=comparison.evidence,
+                )
+            )
+
+        for check in state.get("external_results", []):
+            append(
+                ReviewStep(
+                    step_id=check.check_id,
+                    sequence=1,
+                    category="EXTERNAL",
+                    label=check.label,
+                    result_status=check.status,
+                    reason=check.reason,
+                    values=check.values,
+                    evidence=check.evidence,
+                )
+            )
+
+        for check in state.get("cross_checks", []):
+            append(
+                ReviewStep(
+                    step_id=f"BUSINESS-{check.check_id}",
+                    sequence=1,
+                    category="BUSINESS_RULE",
+                    label=check.label,
+                    result_status=check.status,
+                    reason=check.reason,
+                    values=check.values,
+                    evidence=check.evidence,
+                )
+            )
+
+        report = state.get("material_completeness")
+        if report is not None and state["profile"].material_policy is not None:
+            if report.issues:
+                for index, issue in enumerate(report.issues, start=1):
+                    append(
+                        ReviewStep(
+                            step_id=f"MATERIAL-{issue.code}-{index}",
+                            sequence=1,
+                            category="MATERIAL",
+                            label="资料完整性",
+                            result_status="INSUFFICIENT",
+                            reason=f"{issue.message}；{issue.suggested_action}",
+                        )
+                    )
+            else:
+                append(
+                    ReviewStep(
+                        step_id="MATERIAL-COMPLETENESS",
+                        sequence=1,
+                        category="MATERIAL",
+                        label="资料完整性",
+                        result_status="MATCH",
+                        reason="当前业务要求的材料完整",
+                    )
+                )
+        batch = state.get("batch")
+        for index, limitation in enumerate(
+            dict.fromkeys(batch.limitations if batch else []), start=1
+        ):
+            append(
+                ReviewStep(
+                    step_id=f"LIMITATION-{index}",
+                    sequence=1,
+                    category="MATERIAL",
+                    label="识别限制",
+                    result_status="INSUFFICIENT",
+                    reason=limitation,
+                )
+            )
+        return {"review_steps": steps}
 
     @staticmethod
     def _derive_recommendation(state: ReviewState) -> dict[str, Any]:
@@ -161,20 +476,22 @@ class ReviewWorkflow:
             raise RuntimeError("工作流状态缺少二维码核验结果")
         if batch is None:
             raise RuntimeError("工作流状态缺少文档提取结果")
-        recommendation, advice = build_final_advice(
-            response.comparisons,
-            cross_checks,
-            qr_checks,
-            response.issues,
-            batch.limitations,
-            batch.confidences,
-            completeness=batch.material_completeness,
-            qr_required=state["profile"].qr_required,
+        assembled = assemble_review_response(
+            response,
+            batch,
+            business_checks=cross_checks,
+            external_checks=state.get("external_results", []),
+            page_actions=state.get("page_fill_intent", []),
+            review_steps=state.get("review_steps", []),
         )
-        return {"recommendation": recommendation, "advice": advice}
+        return {
+            "response": assembled,
+            "recommendation": assembled.recommendation.value,
+            "advice": assembled.agent_advice,
+        }
 
     @staticmethod
-    def _build_final_advice(state: ReviewState) -> dict[str, Any]:
+    def _build_final_response(state: ReviewState) -> dict[str, Any]:
         """把最终建议写回响应，并按冲突程度计算风险级别。"""
         current_response = state.get("response")
         recommendation = state.get("recommendation")
@@ -188,22 +505,7 @@ class ReviewWorkflow:
             raise RuntimeError("工作流状态缺少最终建议详情")
         if cross_checks is None:
             raise RuntimeError("工作流状态缺少跨材料比对结果")
-        response = current_response.model_copy(
-            update={
-                "recommendation": Recommendation(recommendation),
-                "risk_level": (
-                    "LOW"
-                    if recommendation == "PASS"
-                    else "HIGH"
-                    if any(item.status == "CONFLICT" for item in advice.findings)
-                    else "MEDIUM"
-                ),
-                "summary": advice.summary,
-                "cross_checks": cross_checks,
-                "agent_advice": advice,
-            }
-        )
-        return {"response": response}
+        return {"response": current_response}
 
     async def run(
         self,

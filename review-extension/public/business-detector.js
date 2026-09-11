@@ -21,6 +21,10 @@
       result: profile("scrap_replacement", "qingdao"),
     },
     {
+      prefix: "/scrap-replace-changchun",
+      result: profile("scrap_replacement", "changchun"),
+    },
+    {
       prefix: "/vehicle-source",
       result: profile("vehicle_source", "default"),
     },
@@ -28,20 +32,16 @@
       prefix: "/consistency-qingdao",
       result: profile("consistency", "qingdao"),
     },
+    {
+      prefix: "/consistency-changchun",
+      result: profile("consistency", "changchun"),
+    },
   ];
 
   const fingerprintMatchers = [
     {
-      matches: (text) => text.includes("报废车辆信息") && text.includes("报废证明编号"),
-      result: profile("scrap_replacement", "qingdao"),
-    },
-    {
       matches: (text) => text.includes("车源审核") && text.includes("车辆来源信息"),
       result: profile("vehicle_source", "default"),
-    },
-    {
-      matches: (text) => text.includes("一致性审核"),
-      result: profile("consistency", "qingdao"),
     },
     {
       matches: (text) => text.includes("过户审核"),
@@ -62,12 +62,33 @@
       return null;
     }
     if (isTransferVoucher(pageText)) return { ...profile("transfer", "default") };
-    const route = routeMatchers.find((candidate) => path.startsWith(candidate.prefix));
+    const route = routeMatchers.find((candidate) =>
+      path === candidate.prefix || path.startsWith(`${candidate.prefix}/`),
+    );
     if (route) return { ...route.result };
 
     const fingerprint = fingerprintMatchers.find((candidate) => candidate.matches(pageText));
     return fingerprint ? { ...fingerprint.result } : null;
   }
 
-  globalObject.ReviewBusinessDetector = { detect };
+  function resolve(url, pageText = "", manualSelection = null) {
+    const automatic = detect(url, pageText);
+    if (!manualSelection) return { business: automatic, error: automatic ? null : "无法识别当前审核业务，请人工选择" };
+    if (
+      automatic &&
+      (automatic.businessType !== manualSelection.businessType || automatic.region !== manualSelection.region)
+    ) {
+      return { business: null, error: "人工选择的审核地区与当前页面不一致，请重新确认" };
+    }
+    return {
+      business: {
+        ...manualSelection,
+        selectionMode: "MANUAL",
+        detectionStatus: "CONFIRMED",
+      },
+      error: null,
+    };
+  }
+
+  globalObject.ReviewBusinessDetector = { detect, resolve };
 })(globalThis);

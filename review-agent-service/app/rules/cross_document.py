@@ -9,7 +9,6 @@ from typing import Any
 
 from app.agent.models import ReviewCheck
 from app.models.review import BusinessType, FieldComparison, FieldObservation
-from app.rules.scrap_replacement_checks import build_scrap_replacement_checks
 from app.rules.transfer_checks import build_transfer_checks
 
 
@@ -21,14 +20,11 @@ def build_cross_document_checks(
 ) -> list[ReviewCheck]:
     """按业务类型分派跨材料检查，并兼容既有调用参数。"""
 
-    # Older callers passed comparisons as the first positional argument before
-    # multi-business routing existed. Keep that path until those clients migrate.
+    # 报废置换只允许通过 Profile 注册的地区政策和主体能力运行。
     if isinstance(business_type, list):
-        return build_scrap_replacement_checks(business_type)
+        return []
 
     resolved_comparisons = comparisons or []
-    if business_type is BusinessType.SCRAP_REPLACEMENT:
-        return build_scrap_replacement_checks(resolved_comparisons)
     if business_type is BusinessType.TRANSFER:
         return build_transfer_checks(
             resolved_comparisons,
