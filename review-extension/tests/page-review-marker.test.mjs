@@ -244,6 +244,60 @@ test("an uncertain field pauses with two decisions and no continue button", () =
   assert.equal(buttonLabels().length, 0);
 });
 
+test("an anomaly with the action flag off keeps the backend palette instead of success", () => {
+  const { marker, fakeInput, findMarker } = setup();
+  const matchInput = fakeInput("VIN-0");
+  const conflictInput = fakeInput("VIN-8");
+  const insufficientInput = fakeInput("VIN-9");
+  const handledConflict = pageStep({
+    step_id: "FIELD-handled.conflict",
+    requires_reviewer_action: false,
+    result_status: "CONFLICT",
+    reason: "页面车架号与合格证冲突",
+  });
+  const handledInsufficient = pageStep({
+    step_id: "FIELD-handled.insufficient",
+    requires_reviewer_action: false,
+    result_status: "INSUFFICIENT",
+    reason: "发票金额识别置信度不足",
+  });
+
+  marker.show(matchInput, matchStep, () => {});
+  marker.show(conflictInput, handledConflict, () => {});
+  marker.show(insufficientInput, handledInsufficient, () => {});
+
+  const matchRoot = findMarker(matchStep.step_id);
+  const conflictRoot = findMarker(handledConflict.step_id);
+  const insufficientRoot = findMarker(handledInsufficient.step_id);
+
+  // Without the action flag there are still no buttons and no scroll...
+  assert.equal(conflictRoot.querySelectorAll("button").length, 0);
+  assert.equal(insufficientRoot.querySelectorAll("button").length, 0);
+  assert.deepEqual(conflictInput.scrollCalls, []);
+  assert.deepEqual(insufficientInput.scrollCalls, []);
+
+  // ...but the tag must never read or look like a success.
+  assert.doesNotMatch(conflictRoot.textContent, /核验成功/);
+  assert.doesNotMatch(insufficientRoot.textContent, /核验成功/);
+  assert.equal(conflictRoot.querySelector(".review-assistant-marker__status").textContent, "存在冲突");
+  assert.equal(insufficientRoot.querySelector(".review-assistant-marker__status").textContent, "证据不足");
+
+  // Palette follows result_status: identical to the actionable rendering, never the MATCH green.
+  const actionableConflict = pageStep({
+    step_id: "FIELD-actionable.conflict",
+    requires_reviewer_action: true,
+    result_status: "CONFLICT",
+    reason: "页面车架号与合格证冲突",
+  });
+  marker.show(fakeInput("VIN-7"), actionableConflict, () => {});
+  const actionableRoot = findMarker(actionableConflict.step_id);
+  assert.equal(conflictRoot.style.color, actionableRoot.style.color);
+  assert.equal(conflictRoot.style.backgroundColor, actionableRoot.style.backgroundColor);
+  assert.equal(conflictRoot.style.border, actionableRoot.style.border);
+  assert.notEqual(conflictRoot.style.backgroundColor, matchRoot.style.backgroundColor);
+  assert.notEqual(insufficientRoot.style.backgroundColor, matchRoot.style.backgroundColor);
+});
+
 test("records only the first click and marks an exception immediately", () => {
   const { marker, fakeInput, decisions, buttonLabels, clickButton } = setup();
 

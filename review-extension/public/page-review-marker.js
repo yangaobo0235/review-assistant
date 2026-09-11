@@ -140,9 +140,9 @@
 
   const buildMarker = (ownerDocument, step, onDecision) => {
     const requiresAction = step.requires_reviewer_action === true;
-    const palette = requiresAction
-      ? textFor(PALETTE, step.result_status, PALETTE.INSUFFICIENT)
-      : PALETTE.MATCH;
+    // 配色与状态文案只跟随 result_status；requires_reviewer_action 仅决定按钮和滚动，
+    // 后端异常即使没有待办动作也不得渲染成无按钮的成功标记。
+    const palette = textFor(PALETTE, step.result_status, PALETTE.INSUFFICIENT);
     const root = applyStyles(ownerDocument.createElement("div"), { ...ROOT_STYLE, ...palette });
     root.setAttribute("class", "review-assistant-marker");
     root.setAttribute(MARKER_ATTRIBUTE, String(step.step_id));
@@ -151,9 +151,7 @@
 
     const status = applyStyles(ownerDocument.createElement("span"), STATUS_STYLE);
     status.setAttribute("class", "review-assistant-marker__status");
-    status.textContent = requiresAction
-      ? textFor(STATUS_TEXT, step.result_status, "需要人工确认")
-      : SUCCESS_TEXT;
+    status.textContent = textFor(STATUS_TEXT, step.result_status, "需要人工确认");
     root.appendChild(status);
 
     const record = {
@@ -197,7 +195,7 @@
     return record;
   };
 
-  /** 在字段后插入标记；MATCH 渲染常驻无按钮成功标记，异常渲染原因和两个人工按钮。 */
+  /** 在字段后插入标记；配色与状态文案跟随 result_status，requires_reviewer_action 只决定按钮与滚动。 */
   function show(target, step, onDecision) {
     if (!target?.isConnected) return { ok: false, error: TARGET_ERROR };
     const stepId = String(step?.step_id ?? "");
