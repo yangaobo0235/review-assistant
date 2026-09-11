@@ -128,6 +128,73 @@ def test_policy_identity_must_match_profile_and_declared_rule(profile, change):
         ReviewService(registry=BusinessRegistry((replace(profile, **change),)))
 
 
+async def run_review(*, region, page_fields, business_type="scrap_replacement"):
+    """端到端执行真实 LangGraph 主图；仅桩掉文档提取，避免调用真实模型。"""
+    service = ReviewService()
+
+    async def extract(*args):
+        return AgentBatchResult()
+
+    service._extract_documents = extract
+    return await service.assist_async(
+        ReviewRequest(
+            page_url=f"https://example.test/{business_type}-{region}",
+            business_type=business_type,
+            region=region,
+            page_fields=page_fields,
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("region", ["qingdao", "changchun"])
+async def test_scrap_profiles_return_valid_display_routes(region):
+    result = await run_review(region=region, page_fields={"new_vehicle.vin": "VIN-1"})
+    assert all(step.display_target in {"PAGE_FIELD", "ASSISTANT"} for step in result.review_steps)
+    assert all(step.page_field for step in result.review_steps if step.display_target == "PAGE_FIELD")
+    assert all(step.page_field is None for step in result.review_steps if step.display_target == "ASSISTANT")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("region", ["qingdao", "changchun"])
+async def test_scrap_runs_route_collected_field_to_page_and_rest_to_assistant(region):
+    result = await run_review(region=region, page_fields={"new_vehicle.vin": "VIN-1"})
+    # 后端一次运行到底就返回完整展示路由：步骤非空、按顺序重排为连续序号。
+    assert [step.sequence for step in result.review_steps] == list(
+        range(1, len(result.review_steps) + 1)
+    )
+    vin_step = next(
+        step for step in result.review_steps if step.step_id == "FIELD-new_vehicle.vin"
+    )
+    assert vin_step.display_target == "PAGE_FIELD"
+    assert vin_step.page_field == "new_vehicle.vin"
+    # 页面外政策、二维码、挂靠守护与材料异常只能停留在助手面板。
+    assert all(
+        step.display_target == "ASSISTANT" and step.page_field is None
+        for step in result.review_steps
+        if step.step_id != "FIELD-new_vehicle.vin"
+    )
+    # 缺少主体关系证据时不生成任何挂靠填写意图。
+    assert result.page_fill_intent == []
+
+
+@pytest.mark.asyncio
+async def test_transfer_profile_keeps_every_step_in_the_assistant_panel():
+    result = await run_review(
+        region="default",
+        page_fields={"transfer.vin": "VIN-1"},
+        business_type="transfer",
+    )
+    # 过户不是页内交互目标 Profile：旧业务继续使用现有结果界面和行为。
+    assert result.business_type.value == "transfer"
+    assert result.review_steps
+    assert all(
+        step.display_target == "ASSISTANT" and step.page_field is None
+        for step in result.review_steps
+    )
+    assert result.page_fill_intent == []
+
+
 def license_observations(source, company, representative, *, uncertain=False):
     return [
         FieldObservation(

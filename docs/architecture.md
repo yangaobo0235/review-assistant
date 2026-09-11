@@ -29,12 +29,12 @@ sequenceDiagram
     Workflow->>Rules: 聚合页面、图片和官网证据
     Rules-->>Workflow: 字段状态、跨材料检查与建议
     Extension->>API: GET /api/review/jobs/{job_id}
-    API-->>Extension: 进度、部分结果或最终结果
-    Extension-->>Page: 展示全部审核步骤并定位原图
-    Extension->>Page: 核验通过时填写两个空白挂靠字段
+    API-->>Extension: 进度、部分结果或最终结果（含 review_steps 展示路由）
+    Extension-->>Page: 目标业务在原字段旁逐项标记，助手只显示页面外待办
+    Extension->>Page: 主体关系与保护项全部通过时填写两个空白挂靠字段
 ```
 
-请求边界是 `ReviewRequest`，主要包含业务类型、地区、Profile 版本、页面字段、材料图片和采集诊断。响应边界是 `ReviewResponse`，包含字段比较、二维码检查、跨材料检查、材料完整性、重试摘要、问题列表和最终建议。
+请求边界是 `ReviewRequest`，主要包含业务类型、地区、Profile 版本、页面字段、材料图片和采集诊断。响应边界是 `ReviewResponse`，包含字段比较、二维码检查、跨材料检查、材料完整性、重试摘要、问题列表、最终建议，以及带展示路由的 `review_steps`：每个步骤声明 `display_target`（`PAGE_FIELD` 或 `ASSISTANT`）和唯一的 `page_field` 目标，由后端一次运行到底时全部确定，前端不再自行推断展示位置。
 
 ## 3. 浏览器扩展
 
@@ -48,7 +48,8 @@ sequenceDiagram
 - `public/business-scope.js`：识别旧车、新车、过户和非审核资料范围。
 - `public/image-candidates.js`：过滤、评分并选择材料图片。
 - `public/image-normalization.js`：统一图片格式、尺寸和体积。
-- `public/content.js`：协调采集脚本并处理原图定位消息。
+- `public/content.js`：协调采集脚本，并处理原图定位、审核标记、人工决定和挂靠填写消息。
+- `public/page-review-marker.js`：在原页面字段旁渲染只读核验标记和“确认无误 / 标记异常”按钮；只创建、更新和清理扩展自己的节点。
 - `public/page-field-writer.js`：只对两个挂靠字段进行联合预检、选择和回读。
 
 图片处理约束：
@@ -66,14 +67,31 @@ sequenceDiagram
 
 - `src/App.tsx`：组合页面与业务选择状态。
 - `src/hooks/useReviewWorkflow.ts`：页面采集、任务创建、轮询和部分结果生命周期。
+- `src/hooks/useScrapReplacementReview.ts`：目标业务的字段优先会话编排，驱动状态机和页面客户端。
+- `src/reviewSession.ts`：纯内存的逐字段会话状态机；人工选择只记录在 `decisions`，绝不改写后端结论。
+- `src/reviewSteps.ts`：按 `sequence` 排序步骤，并以 `requires_reviewer_action` 或 `result_status != MATCH` 判断是否需要人工。
+- `src/pageReviewClient.ts`：构造带完整身份参数的标记消息，并按页面实例、采集 ID 和当前 stepId 过滤入站人工事件。
+- `src/pageFillClient.ts`：把后端填写意图发送到原标签页，并绑定完整页面身份。
 - `src/reviewClient.ts`：封装异步任务 HTTP 请求和错误映射。
 - `src/reviewJobs.ts`：实现 1 秒轮询与 60 秒客户端展示时限。
-- `src/components/`：展示进度、材料完整性、最终建议和异常证据。
+- `src/components/`：展示进度、材料完整性、最终建议和异常证据；目标业务走 `ScrapReplacementReview.tsx`，旧业务走 `ReviewResults.tsx` 内的 `LegacyReviewResults`。
 - `src/*Presentation.ts`：把后端状态转换为稳定的界面展示模型。
 
 扩展保留每张图片的稳定 `imageId`。审核人员点击原图操作时，Content Script 只定位仍与该 ID 对应的页面元素，不会在元素失效后操作其他图片。
 
-扩展保留采集时的标签页、页面 URL、页面实例标识、单次采集标识和由申请单号或 VIN 构成的记录指纹。页面填写只由原始标签页、URL、页面实例和强记录指纹约束；页面导航、刷新、同 URL 换单、控件已有值、控件或选项不唯一、禁用、重渲染及回读失败都会停止填写。单次采集标识 `collectionId` 仅约束原图定位，确保定位请求对应当前的图片映射。人工逐项处理状态仅存在 React 内存中，不回写后端规则结论，也不跨刷新恢复。
+扩展保留采集时的标签页、页面 URL、页面实例标识、单次采集标识和由申请单号或 VIN 构成的记录指纹。原图定位、页面标记、人工决定回传和挂靠填写都绑定这套身份：URL、页面实例、强记录指纹或采集标识任一不符即拒绝。页面导航、刷新、同 URL 换单、控件已有值、控件或选项不唯一、禁用、重渲染及回读失败都会停止标记和填写。人工逐项处理状态仅存在 React 内存中，不回写后端规则结论，也不跨刷新恢复。
+
+### 字段优先审核流程（报废置换目标业务）
+
+只有报废置换 `qingdao/1.0` 与 `changchun/1.0` 两个目标 Profile 启用字段优先流程；过户、车源和一致性审核保持原有结果界面和行为。
+
+1. **后端一次运行到底**：LangGraph 主图执行一遍后返回完整、有序、带展示路由的 `review_steps`，中途不等待人工、不暂停、不持久化。
+2. **前端在内存中暂停**：会话状态机按 `sequence` 逐项推进，状态全部保存在 React 内存；刷新、重置或业务切换都会丢弃，不落库、不设 Checkpoint。
+3. **`PAGE_FIELD` 项就地标记**：命中目标字段的成功项在字段旁常驻“核验成功”标记并自动前进；异常项滚动到该字段，只出现“确认无误 / 标记异常”两个按钮，任一点击立即进入下一项，不再额外点击“继续”。
+4. **`ASSISTANT` 项最小展示**：助手面板只显示当前唯一需要人工处理的页面外事项（政策、二维码、主体关系、材料缺失等）或一个阻塞问题；不显示任何正常成功项、页面字段副本、完成历史或整体汇总。
+5. **人工决定不改后端结论**：“确认无误 / 标记异常”只记录在前端内存的 `decisions` 中，绝不改写后端返回的 `MATCH/CONFLICT/INSUFFICIENT`。
+6. **挂靠白名单是唯一写入**：仅当主体关系步骤和三个辅助保护步骤全部 `MATCH` 且后端返回恰好覆盖两个挂靠字段的填写意图时，才对原本为空的“报废车挂靠”“新车挂靠”执行一次写入。写入前执行联合预检——目标唯一、当前为空、控件可用、选项唯一、页面身份一致；任一写入或回读失败即回滚本次已写字段，回滚同样遵守字段白名单和页面身份守卫。
+7. **身份失效立即停止**：页面实例、URL、指纹、采集 ID 或 DOM 目标失效时，会话进入 `STALE_PAGE`，后续标记和写入全部停止，并把阻塞原因显示给审核人员。
 
 ## 4. Agent 服务
 
@@ -120,11 +138,11 @@ START
 | 5 | `run_external_checks` | 按配置执行二维码等外部核验；未配置时返回空结果。 |
 | 6 | `compare_same_fields` | 将页面、图片和外部来源映射到规范字段后进行一致性比较。 |
 | 7 | `run_business_rules` | 按 Profile 顺序执行地区政策、主体关系或过户等确定性处理器。 |
-| 8 | `prepare_review_steps` | 把本次实际执行的全部检查整理成有序、中文、可展示的步骤。 |
+| 8 | `prepare_review_steps` | 把本次实际执行的全部检查整理成有序、中文、可展示的步骤，并按显式映射表为每步路由 `display_target` 和 `page_field`。 |
 | 9 | `derive_recommendation` | 汇总冲突、证据不足和材料限制，生成风险与审核建议。 |
 | 10 | `build_final_response` | 组装唯一最终响应及经 Profile 授权的候选页面动作。 |
 
-页面逐项查看和挂靠填写不属于 LangGraph 节点。后端图一次运行到底，插件收到完整结果后才执行本地交互。
+页面逐项查看和挂靠填写不属于 LangGraph 节点。后端图一次运行到底，插件收到完整结果后才执行本地交互。展示路由由 `app/rules/review_step_routing.py` 的显式映射表决定：只有报废置换 `qingdao/1.0` 和 `changchun/1.0`（`PAGE_INTERACTION_PROFILES`）能把成功采集且无歧义的目标字段路由为 `PAGE_FIELD`；规则要求但页面未采集到的字段转为 `ASSISTANT` 且状态为证据不足；外部核验、政策、主体关系、材料异常一律留在 `ASSISTANT`，不根据中文文案猜测目标。
 
 - 主图只表达通用审核阶段，不包含二维码、地区、挂靠或过户等业务节点。
 - `BusinessProfile` 通过 `external_checks`、`rule_groups`、`page_actions` 声明需要的能力，注册表把稳定标识解析为处理器。
@@ -149,6 +167,8 @@ START
 | 过户审核 | `default/1.0` | 强制模式 | 不需要 | 已配置 |
 | 车源审核 | `default/1.0` | 不执行 | 不需要 | 未配置，转人工 |
 | 一致性审核 | `qingdao/1.0`、`changchun/1.0` | 不执行 | 不需要 | 地区已隔离，具体规则未配置，转人工 |
+
+只有报废置换的两个 Profile 声明 `page_actions=("fill_affiliation_fields",)`，即只有它们允许页内交互和挂靠写入；过户、车源和一致性审核没有任何页面动作，继续使用现有结果界面和行为。
 
 ## 7. 证据与确定性规则
 
