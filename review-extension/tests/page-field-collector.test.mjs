@@ -37,8 +37,32 @@ function element({
   };
 }
 
-function fixture(candidates) {
+function candidateFixture(candidates) {
   return { candidates };
+}
+
+function control({ label = "", value = "", section = "unknown" } = {}) {
+  return {
+    tagName: "INPUT",
+    value,
+    textContent: "",
+    innerText: "",
+    dataset: { reviewSection: section },
+    getAttribute(name) {
+      if (name === "aria-label") return label || null;
+      return null;
+    },
+    closest: () => null,
+  };
+}
+
+function fixture(...controls) {
+  return {
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return controls;
+      return [];
+    },
+  };
 }
 
 function collect(collector, root) {
@@ -74,7 +98,7 @@ test("requires a known section for repeated vehicle fields", () => {
 
 test("collects a labeled form control", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       tag: "input",
       label: "报废车日期",
@@ -91,7 +115,7 @@ test("collects a labeled form control", () => {
 
 test("collects a form control whose label contains required text", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       tag: "input",
       label: "报废车日期（必填）",
@@ -108,7 +132,7 @@ test("collects a form control whose label contains required text", () => {
 
 test("collects a readonly label and value pair", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车日期",
       text: "2026-07-20",
@@ -124,7 +148,7 @@ test("collects a readonly label and value pair", () => {
 
 test("collects adjacent table cells in the old vehicle section", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       tag: "tr",
       label: "报废车辆车架号",
@@ -142,7 +166,7 @@ test("collects adjacent table cells in the old vehicle section", () => {
 
 test("collects when label and value are separate sibling nodes", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车日期",
       text: "2026-07-20",
@@ -158,7 +182,7 @@ test("collects when label and value are separate sibling nodes", () => {
 
 test("does not collect a repeated vehicle field without a known section", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({ label: "车架号", text: "NEW-VIN", source: "adjacent" }),
   ]);
 
@@ -170,7 +194,7 @@ test("does not collect a repeated vehicle field without a known section", () => 
 
 test("collects an explicit old vehicle VIN label without a section", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车辆车架号",
       text: "LJVA39D84DW002198",
@@ -186,7 +210,7 @@ test("collects an explicit old vehicle VIN label without a section", () => {
 
 test("collects an explicit old vehicle plate label without a section", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车辆车牌号",
       text: "青A07149",
@@ -202,7 +226,7 @@ test("collects an explicit old vehicle plate label without a section", () => {
 
 test("does not collect a generic plate label without a known section", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({ label: "车牌号", text: "青A07149", source: "structured" }),
   ]);
 
@@ -214,7 +238,7 @@ test("does not collect a generic plate label without a known section", () => {
 
 test("does not route a new vehicle VIN into the old vehicle field", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "车架号",
       text: "NEW-VIN",
@@ -270,7 +294,7 @@ test("does not infer a field section from the whole document body", () => {
 
 test("prefers an exact field label over a generic alias", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "车架号",
       text: "OLD-GENERIC-VIN",
@@ -293,7 +317,7 @@ test("prefers an exact field label over a generic alias", () => {
 
 test("leaves conflicting top-ranked values ambiguous", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车辆车架号",
       text: "VIN-A",
@@ -316,7 +340,7 @@ test("leaves conflicting top-ranked values ambiguous", () => {
 
 test("does not use value length to break equally reliable conflicts", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车辆车架号",
       text: "VIN-A",
@@ -339,7 +363,7 @@ test("does not use value length to break equally reliable conflicts", () => {
 
 test("treats specific synonymous labels as equally reliable", () => {
   const collector = loadCollector();
-  const root = fixture([
+  const root = candidateFixture([
     element({
       label: "报废车辆车架号",
       text: "VIN-A",
@@ -577,4 +601,43 @@ test("marks duplicate affiliation controls as ambiguous instead of writable", ()
     { field: "old_vehicle.affiliation", label: "报废车挂靠", present: true, currentValue: null },
   ]);
   assert.ok(Array.from(result.ambiguousFields).includes("new_vehicle.affiliation"));
+});
+
+test("only one accepted DOM candidate becomes a review target", () => {
+  const collector = loadCollector();
+  const target = control({ label: "新车车架号", value: "VIN-1" });
+  const result = collector.collect(fixture(target), "scrap_replacement");
+  assert.equal(result.fieldTargets[0].field, "new_vehicle.vin");
+  assert.equal(result.fieldTargets[0].element, target);
+});
+
+test("equally ranked duplicate DOM candidates do not expose a target", () => {
+  const collector = loadCollector();
+  const result = collector.collect(fixture(
+    control({ label: "新车车架号", value: "VIN-1" }),
+    control({ label: "新车车架号", value: "VIN-1" }),
+  ), "scrap_replacement");
+  assert.equal(result.fieldTargets.some(item => item.field === "new_vehicle.vin"), false);
+  assert.ok(result.ambiguousFields.includes("new_vehicle.vin"));
+});
+
+test("equally ranked duplicate DOM candidates do not expose a page field value", () => {
+  const collector = loadCollector();
+  const result = collector.collect(fixture(
+    control({ label: "新车车架号", value: "VIN-1" }),
+    control({ label: "新车车架号", value: "VIN-1" }),
+  ), "scrap_replacement");
+  assert.equal(result.pageFields["new_vehicle.vin"], undefined);
+  assert.ok(result.unmatchedLabels.includes("新车车架号"));
+});
+
+test("conflicting DOM candidates do not expose a target", () => {
+  const collector = loadCollector();
+  const result = collector.collect(fixture(
+    control({ label: "新车车架号", value: "VIN-1" }),
+    control({ label: "新车车架号", value: "VIN-2" }),
+  ), "scrap_replacement");
+  assert.equal(result.fieldTargets.some(item => item.field === "new_vehicle.vin"), false);
+  assert.ok(result.ambiguousFields.includes("new_vehicle.vin"));
+  assert.equal(result.pageFields["new_vehicle.vin"], undefined);
 });

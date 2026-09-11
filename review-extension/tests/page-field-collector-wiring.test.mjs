@@ -48,6 +48,60 @@ test("content script sends writable target snapshots", () => {
   assert.match(contentSource, /APPLY_PAGE_FILL_INTENT/);
 });
 
+test("content script keeps field elements in a map replaced only by the active collection", () => {
+  assert.match(contentSource, /const reviewFieldElements = new Map\(\);/);
+  assert.match(contentSource, /reviewFieldElements\.set\(field, \{ element, collectionId \}\);/);
+  const expiredGuard = contentSource.indexOf("latestCollectionId !== collectionId");
+  const fieldMapReplace = contentSource.indexOf("reviewFieldElements.clear()");
+  assert.ok(expiredGuard >= 0);
+  assert.ok(fieldMapReplace > expiredGuard);
+});
+
+test("content script sends field target snapshots without DOM elements", async () => {
+  let handler;
+  const element = { isConnected: true };
+  const fields = { "application.id": "case-a", "old_vehicle.vin": "OLD-A" };
+  const context = {
+    chrome: {
+      runtime: {
+        onMessage: { addListener(listener) { handler = listener; } },
+        sendMessage: async () => ({ ok: true }),
+      },
+    },
+    document: {
+      title: "审核页",
+      images: [],
+      body: { innerText: "", querySelectorAll() { return []; } },
+    },
+    window: {
+      location: { href: "https://admin.forjtruck.com/scrap-replace-qingdao?showPageModel=1" },
+      getComputedStyle() { return { display: "block", visibility: "visible" }; },
+    },
+    console: { info() {} },
+    globalThis: {
+      crypto: { randomUUID: () => "page-instance" },
+      ReviewBusinessDetector: { resolve() { return { business: { businessType: "scrap_replacement" } }; } },
+      ReviewPageFieldCollector: {
+        collect() { return { pageFields: fields, fieldTargets: [{ field: "old_vehicle.vin", element }], writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
+      },
+      ReviewBusinessScope: { scopeForLabel() { return null; }, assign() { return []; } },
+      ReviewImageCandidates: { select() { return { selected: [], scannedCount: 0, overflow: false }; } },
+    },
+  };
+  vm.runInNewContext(contentSource, context);
+  const responses = [];
+
+  handler({ type: "COLLECT_PAGE_DATA" }, null, (response) => responses.push(response));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  // The response crosses a vm realm boundary, so compare JSON instead of prototypes.
+  assert.equal(
+    JSON.stringify(responses[0]?.fieldTargets),
+    JSON.stringify([{ field: "old_vehicle.vin", present: true }]),
+  );
+  assert.equal(Object.hasOwn(responses[0].fieldTargets[0], "element"), false);
+});
+
 test("content script rejects a mismatched page identity before calling the writer", async () => {
   let handler;
   let writes = 0;
@@ -223,7 +277,7 @@ test("content keeps image focus bound to the latest completed collection token",
       crypto: { randomUUID: () => "page-instance" },
       ReviewBusinessDetector: { resolve() { return { business: { businessType: "scrap_replacement" } }; } },
       ReviewPageFieldCollector: {
-        collect() { return { pageFields: fields, writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
+        collect() { return { pageFields: fields, fieldTargets: [], writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
       },
       ReviewBusinessScope: { scopeForLabel() { return null; }, assign() { return []; } },
       ReviewImageCandidates: { select() { return { selected: [], scannedCount: 0, overflow: false }; } },
@@ -300,7 +354,7 @@ test("content rejects a mapped image when its source changes after collection", 
       crypto: { randomUUID: () => "page-instance" },
       ReviewBusinessDetector: { resolve() { return { business: { businessType: "scrap_replacement" } }; } },
       ReviewPageFieldCollector: {
-        collect() { return { pageFields: fields, writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
+        collect() { return { pageFields: fields, fieldTargets: [], writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
       },
       ReviewBusinessScope: { scopeForLabel() { return null; }, assign() { return []; } },
       ReviewImageCandidates: { select(candidates) { return { selected: candidates, scannedCount: candidates.length, overflow: false }; } },

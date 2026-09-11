@@ -39,6 +39,12 @@ export interface WritableTargetSnapshot {
   currentValue: string | null;
 }
 
+/** 页面字段 DOM 目标的跨消息快照；真实元素只保留在 Content Script 内部。 */
+export interface PageFieldTargetSnapshot {
+  field: string;
+  present: boolean;
+}
+
 export interface PageData {
   pageUrl: string;
   sourceTabId: number;
@@ -49,6 +55,7 @@ export interface PageData {
   applicationId?: string;
   pageFields: Record<string, string>;
   writableTargets?: WritableTargetSnapshot[];
+  fieldTargets?: PageFieldTargetSnapshot[];
   pageText: string;
   images: PageImage[];
   businessType?: BusinessType;

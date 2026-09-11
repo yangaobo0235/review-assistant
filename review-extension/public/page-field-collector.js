@@ -1,7 +1,7 @@
 /**
  * 功能：从表单、表格和只读 DOM 提取标准字段候选。
- * 职责边界：同等可靠候选冲突时保留歧义，不猜测值。
- * 修改日期：2026-08-26
+ * 职责边界：同等可靠候选冲突时保留歧义，不猜测值；只有唯一候选才保留 DOM 目标。
+ * 修改日期：2026-09-11
  * 修改人：wuyi
  */
 
@@ -261,6 +261,7 @@
           value,
           section,
           source: "control",
+          element: control,
           proximity: visibleText(control.parentElement).length,
         };
         const nearbyText = visibleText(control.parentElement) + visibleText(control.parentElement?.parentElement);
@@ -286,6 +287,7 @@
           value: visibleText(cells[index + 1]),
           section: findSection(container),
           source: "table",
+          element: cells[index + 1],
           proximity: visibleText(container).length,
         });
       }
@@ -304,6 +306,7 @@
         value: visibleText(valueNode),
         section: findSection(container),
         source: "structured",
+        element: valueNode,
         proximity: visibleText(container).length,
       }];
     }
@@ -314,6 +317,7 @@
         value: visibleText(children[1]),
         section: findSection(container),
         source: "structured",
+        element: children[1],
         proximity: visibleText(container).length,
       }];
     }
@@ -339,6 +343,7 @@
           value: inlineMatch[2],
           section: findSection(element),
           source: "inline",
+          element,
           proximity: ownText.length,
         });
         continue;
@@ -351,6 +356,7 @@
         value,
         section: findSection(element),
         source: "adjacent",
+        element: element.nextElementSibling,
         proximity: value.length,
       });
     }
@@ -395,6 +401,7 @@
 
   const collectCandidates = (candidates, scannedControls = 0, businessType = null) => {
     const pageFields = {};
+    const fieldTargets = [];
     const unmatchedLabels = [];
     const ambiguousFields = [];
     const writableTargets = Object.entries(WRITABLE_TARGETS).flatMap(([label, field]) => {
@@ -423,14 +430,19 @@
       }
 
       const top = ranked.filter((item) => item.score === ranked[0].score);
-      // Preserve equally reliable conflicting candidates for manual review instead of guessing by value length.
-      const values = new Set(top.map((item) => String(item.candidate.value).trim()));
-      if (values.size > 1) {
+      // Preserve equally reliable candidates for manual review instead of guessing by value length.
+      // Equally ranked duplicates stay ambiguous even when values agree, so a review
+      // marker can never be mapped onto the wrong element.
+      if (top.length > 1) {
         ambiguousFields.push(field);
         unmatchedLabels.push(definition.aliases[0]);
         continue;
       }
-      pageFields[field] = top[0].candidate.value;
+      const [accepted] = top;
+      pageFields[field] = accepted.candidate.value;
+      if (accepted.candidate.element) {
+        fieldTargets.push({ field, element: accepted.candidate.element });
+      }
     }
 
     if (!pageFields["invoice.invoice_date"] && businessType !== "transfer") {
@@ -442,6 +454,9 @@
         || dateCandidates.find((candidate) => candidate.section !== "transfer");
       if (fallback) {
         pageFields["invoice.invoice_date"] = fallback.value;
+        if (dateCandidates.length === 1 && fallback.element) {
+          fieldTargets.push({ field: "invoice.invoice_date", element: fallback.element });
+        }
         const unmatchedIndex = unmatchedLabels.indexOf("开票日期");
         if (unmatchedIndex >= 0) unmatchedLabels.splice(unmatchedIndex, 1);
       }
@@ -449,6 +464,7 @@
 
     return {
       pageFields,
+      fieldTargets,
       writableTargets,
       unmatchedLabels,
       ambiguousFields,

@@ -1,12 +1,13 @@
 /**
  * 功能：协调页面采集、图片标准化和原图定位消息。
- * 职责边界：复杂识别逻辑委托给独立公共脚本。
- * 修改日期：2026-08-26
+ * 职责边界：复杂识别逻辑委托给独立公共脚本；DOM 元素不跨消息传输。
+ * 修改日期：2026-09-11
  * 修改人：wuyi
  */
 
 // Keep collection orchestration here; field, image, normalization, and focus rules live in dedicated scripts.
 const reviewImageElements = new Map();
+const reviewFieldElements = new Map();
 const MAX_REVIEW_IMAGES = 10;
 const pageInstanceId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 let activeCollectionId = "";
@@ -96,6 +97,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const pageFields = fieldCollection.pageFields;
   const writableTargets = fieldCollection.writableTargets;
   const unmatchedLabels = fieldCollection.unmatchedLabels;
+  // DOM 元素只保留在 Content Script 内部；跨消息只发送字段键和可定位状态。
+  const fieldTargets = fieldCollection.fieldTargets.map(({ field }) => ({
+    field,
+    present: true,
+  }));
   log("fields", {
     scannedControls: fieldCollection.scannedControls,
     matchedFields: Object.keys(pageFields).length,
@@ -241,6 +247,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const imageAsset = imageAssets[index];
         if (imageAsset?.src) reviewImageElements.set(candidate.imageId, { image: candidate.image, src: imageAsset.src });
       });
+      reviewFieldElements.clear();
+      for (const { field, element } of fieldCollection.fieldTargets) {
+        reviewFieldElements.set(field, { element, collectionId });
+      }
       activeCollectionId = collectionId;
       const imageFailureCount = imageAssets.filter((image) => image.collectionError).length;
       const collectionDiagnostics = {
@@ -275,6 +285,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       pageTitle: document.title,
       pageFields,
       writableTargets,
+      fieldTargets,
       pageText: allText,
       images: imageAssets,
       businessDetectionError: businessResolution.error,
@@ -295,6 +306,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       pageTitle: document.title,
       pageFields,
       writableTargets,
+      fieldTargets,
       pageText: allText,
       images: [],
       businessDetectionError: businessResolution.error,
