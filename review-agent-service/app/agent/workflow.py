@@ -16,13 +16,11 @@ from app.agent.models import (
     AgentBatchResult,
     MaterialCompletenessReport,
     ReviewCheck,
-    ReviewCheckValue,
 )
 from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
 from app.models.review import (
     BusinessType,
-    FieldStatus,
     PageFillAction,
     QrCheck,
     Region,
@@ -46,9 +44,9 @@ from app.rules.check_results import qr_review_checks, unique_checks
 from app.rules.cross_document_common import raw_settled_value
 from app.rules.evidence_values import batch_observations
 from app.rules.external_check_registry import ExternalCheckRegistry
-from app.rules.final_advice import FIELD_LABELS
 from app.rules.material_completeness import evaluate_collected, evaluate_extracted
 from app.rules.replacement_policy_checks import build_replacement_policy_checks
+from app.rules.review_step_routing import build_review_steps
 from app.rules.transfer_checks import build_transfer_checks
 from app.services.review_assembly import assemble_review_response
 
@@ -355,111 +353,23 @@ class ReviewWorkflow:
 
     @staticmethod
     def _prepare_review_steps(state: ReviewState) -> dict[str, Any]:
-        """Serialize only the checks that this profile actually executed."""
+        """读取工作流状态，把步骤路由委托给集中路由模块。"""
 
         response = state.get("response")
         if response is None:
             raise RuntimeError("工作流状态缺少同字段比对结果")
-        steps: list[ReviewStep] = []
-        seen: set[str] = set()
-
-        def append(step: ReviewStep) -> None:
-            if step.step_id not in seen:
-                seen.add(step.step_id)
-                steps.append(step.model_copy(update={"sequence": len(steps) + 1}))
-
-        for comparison in response.comparisons:
-            append(
-                ReviewStep(
-                    step_id=f"FIELD-{comparison.field}",
-                    sequence=1,
-                    category="FIELD",
-                    label=FIELD_LABELS.get(comparison.field, "材料字段核验"),
-                    result_status=(
-                        "MATCH"
-                        if comparison.status is FieldStatus.MATCH
-                        else "CONFLICT"
-                        if comparison.status is FieldStatus.CONFLICT
-                        else "INSUFFICIENT"
-                    ),
-                    reason=comparison.message,
-                    values=[
-                        ReviewCheckValue(source=item.source, value=item.value)
-                        for item in comparison.evidence
-                        if item.value not in (None, "")
-                    ],
-                    evidence=comparison.evidence,
-                )
-            )
-
-        for check in state.get("external_results", []):
-            append(
-                ReviewStep(
-                    step_id=check.check_id,
-                    sequence=1,
-                    category="EXTERNAL",
-                    label=check.label,
-                    result_status=check.status,
-                    reason=check.reason,
-                    values=check.values,
-                    evidence=check.evidence,
-                )
-            )
-
-        for check in state.get("cross_checks", []):
-            append(
-                ReviewStep(
-                    step_id=f"BUSINESS-{check.check_id}",
-                    sequence=1,
-                    category="BUSINESS_RULE",
-                    label=check.label,
-                    result_status=check.status,
-                    reason=check.reason,
-                    values=check.values,
-                    evidence=check.evidence,
-                )
-            )
-
-        report = state.get("material_completeness")
-        if report is not None and state["profile"].material_policy is not None:
-            if report.issues:
-                for index, issue in enumerate(report.issues, start=1):
-                    append(
-                        ReviewStep(
-                            step_id=f"MATERIAL-{issue.code}-{index}",
-                            sequence=1,
-                            category="MATERIAL",
-                            label="资料完整性",
-                            result_status="INSUFFICIENT",
-                            reason=f"{issue.message}；{issue.suggested_action}",
-                        )
-                    )
-            else:
-                append(
-                    ReviewStep(
-                        step_id="MATERIAL-COMPLETENESS",
-                        sequence=1,
-                        category="MATERIAL",
-                        label="资料完整性",
-                        result_status="MATCH",
-                        reason="当前业务要求的材料完整",
-                    )
-                )
         batch = state.get("batch")
-        for index, limitation in enumerate(
-            dict.fromkeys(batch.limitations if batch else []), start=1
-        ):
-            append(
-                ReviewStep(
-                    step_id=f"LIMITATION-{index}",
-                    sequence=1,
-                    category="MATERIAL",
-                    label="识别限制",
-                    result_status="INSUFFICIENT",
-                    reason=limitation,
-                )
+        return {
+            "review_steps": build_review_steps(
+                request=state["request"],
+                profile=state["profile"],
+                comparisons=list(response.comparisons),
+                external_checks=list(state.get("external_results", [])),
+                business_checks=list(state.get("cross_checks", [])),
+                completeness=state.get("material_completeness"),
+                limitations=list(batch.limitations if batch else []),
             )
-        return {"review_steps": steps}
+        }
 
     @staticmethod
     def _derive_recommendation(state: ReviewState) -> dict[str, Any]:

@@ -1,7 +1,12 @@
 from app.agent.models import AgentBatchResult, ReviewCheck
 from app.agent.workflow import ReviewWorkflow
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
-from app.models.review import FieldComparison, FieldStatus, ReviewRequest
+from app.models.review import (
+    FieldComparison,
+    FieldStatus,
+    ReviewDisplayTarget,
+    ReviewRequest,
+)
 
 
 def comparison(field: str, value: str) -> FieldComparison:
@@ -109,6 +114,12 @@ def test_prepare_review_steps_includes_only_configured_capabilities_and_maps_sta
         ("FIELD-transfer.vin", "FIELD", "INSUFFICIENT"),
         ("BUSINESS-CROSS-TRANSFER-VIN-001", "BUSINESS_RULE", "MATCH"),
     ]
+    # 过户不是页内交互目标 Profile，所有步骤保持在助手面板。
+    assert all(
+        item.display_target is ReviewDisplayTarget.ASSISTANT
+        and item.page_field is None
+        for item in result["review_steps"]
+    )
     assert not any("QR" in item.step_id or "AFFILIATION" in item.step_id for item in result["review_steps"])
 
 
@@ -134,4 +145,10 @@ def test_scrap_missing_auxiliary_values_are_independent_steps_and_block_final_in
         "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME",
     }
     assert all(step.result_status == "INSUFFICIENT" for step in steps if "AFFILIATION-AUX" in step.step_id)
+    # 页面字段未采集时，辅助守护步骤只能留在助手面板。
+    assert all(
+        step.display_target is ReviewDisplayTarget.ASSISTANT
+        and step.page_field is None
+        for step in steps
+    )
     assert result.page_action_candidates == ()

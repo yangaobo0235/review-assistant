@@ -6,7 +6,11 @@ from app.agent.models import (
     MaterialCompletenessReport,
     ReviewCheck,
 )
-from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
+from app.businesses.profiles import (
+    SCRAP_REPLACEMENT_CHANGCHUN,
+    SCRAP_REPLACEMENT_QINGDAO,
+    TRANSFER_DEFAULT,
+)
 from app.models.review import (
     FieldComparison,
     FieldStatus,
@@ -241,3 +245,70 @@ def test_non_target_profile_keeps_steps_as_assistant_contracts() -> None:
     assert [(item.step_id, item.display_target, item.page_field) for item in steps] == [
         ("FIELD-transfer.vin", ReviewDisplayTarget.ASSISTANT, None)
     ]
+
+
+def test_assistant_match_remains_in_contract_but_needs_no_reviewer_action():
+    steps = build_steps(business_checks=[ReviewCheck(
+        check_id="POLICY-INVOICE-DATE",
+        label="新车发票日期政策核验",
+        status="MATCH",
+        reason="符合政策",
+    )])
+    assert steps[0].display_target == "ASSISTANT"
+    assert steps[0].requires_reviewer_action is False
+
+
+def test_missing_configured_page_field_becomes_actionable_assistant_step():
+    step = next(item for item in build_steps(
+        comparisons=[matching_comparison("new_vehicle.vin")],
+    ) if item.step_id == "FIELD-new_vehicle.vin")
+    assert step.display_target == "ASSISTANT"
+    assert step.result_status == "INSUFFICIENT"
+    assert step.requires_reviewer_action is True
+
+
+def test_changchun_collected_field_routes_to_page_field() -> None:
+    steps = build_review_steps(
+        request=ReviewRequest(
+            page_url="https://admin.forjtruck.com/scrap-replace-changchun/review/1",
+            region="changchun",
+            page_fields={"new_vehicle.vin": "VIN-1"},
+        ),
+        profile=SCRAP_REPLACEMENT_CHANGCHUN,
+        comparisons=[matching_comparison("new_vehicle.vin")],
+        external_checks=[],
+        business_checks=[],
+        completeness=None,
+        limitations=[],
+    )
+
+    step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
+
+    assert step.display_target is ReviewDisplayTarget.PAGE_FIELD
+    assert step.page_field == "new_vehicle.vin"
+    assert step.requires_reviewer_action is False
+
+
+def test_ambiguous_collected_page_field_routes_to_assistant() -> None:
+    steps = build_review_steps(
+        request=ReviewRequest(
+            page_url="https://admin.forjtruck.com/scrap-replace-qingdao/review/1",
+            region="qingdao",
+            page_fields={"new_vehicle.vin": "VIN-1"},
+            collection_diagnostics={
+                "ambiguous_fields": ["new_vehicle.vin"],
+            },
+        ),
+        profile=SCRAP_REPLACEMENT_QINGDAO,
+        comparisons=[matching_comparison("new_vehicle.vin")],
+        external_checks=[],
+        business_checks=[],
+        completeness=None,
+        limitations=[],
+    )
+
+    step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
+
+    assert step.display_target is ReviewDisplayTarget.ASSISTANT
+    assert step.result_status == "INSUFFICIENT"
+    assert step.requires_reviewer_action is True
