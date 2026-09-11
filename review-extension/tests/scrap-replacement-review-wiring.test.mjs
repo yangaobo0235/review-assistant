@@ -9,7 +9,14 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
-import { createScrapReplacementSession } from "../src/hooks/useScrapReplacementReview.ts";
+import { createAffiliationFillLatch } from "../src/hooks/useScrapReplacementReview.ts";
+import {
+  decisionEvent,
+  makeStep,
+  pageData,
+  runSession,
+  settle,
+} from "./helpers/scrapReplacementHarness.mjs";
 
 const read = (relative) =>
   readFileSync(new URL(relative, import.meta.url), "utf8");
@@ -40,28 +47,6 @@ function loadModule(file, extraGlobals = {}) {
   });
   return module.exports;
 }
-
-const pageData = {
-  pageUrl: "https://admin.forjtruck.com/scrap-replace-qingdao?showPageModel=1",
-  sourceTabId: 42,
-  pageInstanceId: "page-instance",
-  pageFingerprint: '[["application.id","case-a"]]',
-  collectionId: "collection-1",
-};
-
-const makeStep = (overrides) => ({
-  sequence: 1,
-  category: "BUSINESS_RULE",
-  display_target: "ASSISTANT",
-  page_field: null,
-  requires_reviewer_action: false,
-  label: "审核步骤",
-  result_status: "MATCH",
-  reason: "",
-  values: [],
-  evidence: [],
-  ...overrides,
-});
 
 const pageMatch = (stepId, sequence) => makeStep({
   step_id: stepId,
@@ -116,73 +101,14 @@ const affiliationIntent = [
   { field: "new_vehicle.affiliation", target_label: "新车挂靠", owner_type: "COMPANY" },
 ];
 
-const settle = async () => {
-  await new Promise(setImmediate);
-  await new Promise(setImmediate);
-};
-
-function makeGateways(overrides = {}) {
-  const calls = { show: [], complete: [], clear: [] };
-  const listeners = new Set();
-  return {
-    calls,
-    listenerCount: () => listeners.size,
-    emit: (event) => {
-      for (const listener of [...listeners]) listener(event);
-    },
-    api: {
-      show: async (step) => {
-        calls.show.push(step.step_id);
-        return overrides.show?.(step) ?? { ok: true };
-      },
-      complete: async (stepId) => {
-        calls.complete.push(stepId);
-        return overrides.complete?.(stepId) ?? { ok: true };
-      },
-      clear: async () => {
-        calls.clear.push(true);
-        return overrides.clear?.() ?? { ok: true };
-      },
-      subscribe: (_context, onDecision) => {
-        listeners.add(onDecision);
-        return () => listeners.delete(onDecision);
-      },
-    },
-  };
+/** 在测试体内监听未处理拒绝：任何编排路径都不得泄漏 rejection。 */
+function watchUnhandledRejections(t) {
+  const rejections = [];
+  const onUnhandledRejection = (reason) => rejections.push(reason);
+  process.on("unhandledRejection", onUnhandledRejection);
+  t.after(() => process.off("unhandledRejection", onUnhandledRejection));
+  return rejections;
 }
-
-function runSession(steps, options = {}) {
-  const gateways = makeGateways(options.gateways);
-  const snapshots = [];
-  const fills = [];
-  const session = createScrapReplacementSession({
-    steps,
-    pageData,
-    sessionKey: "test-session",
-    getPageFillIntent: () => options.pageFillIntent ?? [],
-    applyAffiliationFill: async (actions) => {
-      fills.push(actions);
-      return options.fillResult ?? { ok: true, message: "挂靠字段已填写并回读" };
-    },
-    onChange: (snapshot) => snapshots.push(snapshot),
-    gateways: gateways.api,
-  });
-  return {
-    session,
-    gateways,
-    snapshots,
-    fills,
-    latest: () => snapshots.at(-1) ?? null,
-  };
-}
-
-const decisionEvent = (stepId, decision = "CONFIRMED", overrides = {}) => ({
-  stepId,
-  decision,
-  pageInstanceId: pageData.pageInstanceId,
-  collectionId: pageData.collectionId,
-  ...overrides,
-});
 
 test("page match shows its marker and auto-advances without any COMPLETE message", async () => {
   const runner = runSession([pageMatch("FIELD-a", 1), pageMatch("FIELD-b", 2)]);
@@ -385,6 +311,218 @@ test("dispose unsubscribes and clears markers; a refused clear is surfaced and t
   assert.deepEqual(await refused.session.dispose(), refusal);
 });
 
+test("a thrown show rejection becomes the blocking issue without an unhandled rejection", async (t) => {
+  const rejections = watchUnhandledRejections(t);
+  const runner = runSession([pageMatch("FIELD-a", 1), pageMatch("FIELD-b", 2)], {
+    gateways: {
+      show: (step) => {
+        // sendMessage 在标签页导航/关闭或上下文失效时直接 reject。
+        if (step.step_id === "FIELD-b") {
+          throw new Error("Could not establish connection. Receiving end does not exist.");
+        }
+        return { ok: true };
+      },
+    },
+  });
+
+  runner.session.start();
+  await settle();
+  await settle();
+
+  assert.deepEqual(runner.gateways.calls.show, ["FIELD-a", "FIELD-b"]);
+  assert.equal(runner.latest().session.phase, "STALE_PAGE");
+  assert.match(runner.latest().blockingIssue, /Could not establish connection/);
+  assert.equal(runner.fills.length, 0);
+  assert.deepEqual(rejections, []);
+});
+
+test("a thrown complete rejection freezes the session as STALE_PAGE", async (t) => {
+  const rejections = watchUnhandledRejections(t);
+  const conflict = makeStep({
+    step_id: "FIELD-new_vehicle.vin",
+    sequence: 1,
+    category: "FIELD",
+    display_target: "PAGE_FIELD",
+    page_field: "new_vehicle.vin",
+    label: "新车车架号",
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+  });
+  const runner = runSession([conflict, pageMatch("FIELD-b", 2)], {
+    gateways: { complete: () => { throw new Error("消息端口已关闭"); } },
+  });
+
+  runner.session.start();
+  await settle();
+  assert.equal(runner.latest().session.phase, "WAITING_REVIEWER");
+
+  runner.gateways.emit(decisionEvent(conflict.step_id, "CONFIRMED"));
+  await settle();
+  await settle();
+
+  assert.equal(runner.latest().session.phase, "STALE_PAGE");
+  assert.match(runner.latest().blockingIssue, /消息端口已关闭/);
+  // 冻结被拒绝后不再执行任何后续标记。
+  assert.deepEqual(runner.gateways.calls.show, ["FIELD-new_vehicle.vin"]);
+  assert.deepEqual(rejections, []);
+});
+
+test("a thrown fill rejection becomes the blocking issue and is never retried", async (t) => {
+  const rejections = watchUnhandledRejections(t);
+  const runner = runSession([...affiliationSteps(), pageMatch("FIELD-after", 9)], {
+    pageFillIntent: affiliationIntent,
+    applyAffiliationFill: async () => {
+      throw new Error("Extension context invalidated.");
+    },
+  });
+
+  runner.session.start();
+  await settle();
+  await settle();
+
+  assert.equal(runner.fills.length, 1);
+  assert.equal(runner.latest().session.phase, "STALE_PAGE");
+  assert.match(runner.latest().blockingIssue, /Extension context invalidated/);
+  assert.equal(runner.latest().assistantStep, null);
+  assert.deepEqual(runner.gateways.calls.show, []);
+  assert.deepEqual(rejections, []);
+});
+
+test("a thrown clear rejection surfaces from dispose as a cleanup failure", async (t) => {
+  const rejections = watchUnhandledRejections(t);
+  const runner = runSession([assistantConflict("RULE-1", 1, "发票校验")], {
+    gateways: { clear: () => { throw new Error("No tab with id: 42."); } },
+  });
+  runner.session.start();
+  await settle();
+
+  const cleared = await runner.session.dispose();
+
+  assert.equal(cleared.ok, false);
+  assert.match(cleared.error, /No tab with id/);
+  assert.equal(runner.gateways.listenerCount(), 0);
+  assert.deepEqual(rejections, []);
+});
+
+test("the fill latch survives a session rebuild within one collection", async () => {
+  const latch = createAffiliationFillLatch();
+  const first = runSession(affiliationSteps(), {
+    pageFillIntent: affiliationIntent,
+    affiliationFillLatch: latch,
+  });
+  first.session.start();
+  await settle();
+  assert.equal(first.fills.length, 1);
+  assert.equal(first.latest().session.phase, "COMPLETED");
+
+  // 轮询导致 stepsKey 变化 → hook 重建会话；同一采集 ID 绝不允许第二次写入。
+  const rebuilt = runSession(affiliationSteps(), {
+    pageFillIntent: affiliationIntent,
+    affiliationFillLatch: latch,
+  });
+  rebuilt.session.start();
+  await settle();
+  assert.equal(rebuilt.fills.length, 0);
+  assert.equal(rebuilt.latest().session.phase, "COMPLETED");
+  assert.equal(rebuilt.latest().blockingIssue, null);
+
+  // 全新一轮审核（新采集 ID）允许再执行一次写入。
+  const fresh = runSession(affiliationSteps(), {
+    pageFillIntent: affiliationIntent,
+    affiliationFillLatch: latch,
+    pageData: { ...pageData, collectionId: "collection-2" },
+  });
+  fresh.session.start();
+  await settle();
+  assert.equal(fresh.fills.length, 1);
+});
+
+test("disposing mid-fill still latches the collection against a second write", async () => {
+  const latch = createAffiliationFillLatch();
+  let releaseFill;
+  const pendingFill = new Promise((resolve) => { releaseFill = resolve; });
+  const first = runSession(affiliationSteps(), {
+    pageFillIntent: affiliationIntent,
+    affiliationFillLatch: latch,
+    applyAffiliationFill: () => pendingFill,
+  });
+  first.session.start();
+  await settle();
+  assert.equal(first.fills.length, 1);
+
+  await first.session.dispose();
+  releaseFill({ ok: true, message: "挂靠字段已填写并回读" });
+  await settle();
+
+  const rebuilt = runSession(affiliationSteps(), {
+    pageFillIntent: affiliationIntent,
+    affiliationFillLatch: latch,
+  });
+  rebuilt.session.start();
+  await settle();
+  assert.equal(rebuilt.fills.length, 0);
+  assert.equal(rebuilt.latest().session.phase, "COMPLETED");
+});
+
+test("an intent that does not exactly cover both affiliation fields blocks without filling", async () => {
+  const malformedShapes = [
+    [affiliationIntent[0]],
+    [affiliationIntent[1]],
+    [affiliationIntent[0], { ...affiliationIntent[0] }],
+    [
+      ...affiliationIntent,
+      { field: "old_vehicle.affiliation", target_label: "多余动作", owner_type: "COMPANY" },
+    ],
+    [
+      { field: "new_vehicle.owner_name", target_label: "陌生字段", owner_type: "COMPANY" },
+      { field: "old_vehicle.affiliation", target_label: "报废车挂靠", owner_type: "COMPANY" },
+    ],
+  ];
+  for (const intent of malformedShapes) {
+    const runner = runSession(affiliationSteps(), { pageFillIntent: intent });
+    runner.session.start();
+    await settle();
+
+    assert.equal(runner.fills.length, 0);
+    assert.equal(runner.latest().session.phase, "STALE_PAGE");
+    assert.match(runner.latest().blockingIssue, /挂靠填写意图字段异常/);
+    assert.equal(runner.latest().assistantStep, null);
+  }
+});
+
+test("fill proceeds when the intent covers both affiliation fields in either order", async () => {
+  const runner = runSession(affiliationSteps(), {
+    pageFillIntent: [...affiliationIntent].reverse(),
+  });
+
+  runner.session.start();
+  await settle();
+
+  assert.equal(runner.fills.length, 1);
+  assert.equal(runner.latest().session.phase, "COMPLETED");
+  assert.equal(runner.latest().blockingIssue, null);
+});
+
+test("a MATCH protection step that still requires reviewer action blocks the fill", async () => {
+  const steps = affiliationSteps();
+  const ownerTypeIndex = steps.findIndex(
+    (step) => step.step_id === "BUSINESS-AFFILIATION-AUX-OWNER-TYPE",
+  );
+  // 后端不一致载荷：result_status 是 MATCH 却仍要求人工处理。
+  steps[ownerTypeIndex] = { ...steps[ownerTypeIndex], requires_reviewer_action: true };
+  const runner = runSession(steps, { pageFillIntent: affiliationIntent });
+
+  runner.session.start();
+  await settle();
+
+  assert.equal(runner.fills.length, 0);
+  assert.notEqual(runner.latest().session.phase, "STALE_PAGE");
+  assert.equal(
+    runner.latest().assistantStep.step_id,
+    "BUSINESS-AFFILIATION-AUX-OWNER-TYPE",
+  );
+});
+
 test("startReview itself never sends APPLY_PAGE_FILL_INTENT for a finished job carrying a fill intent", async () => {
   const messages = [];
   const collectedPage = {
@@ -511,6 +649,20 @@ test("the orchestration hook keys the affiliation gate off stable backend step i
   assert.match(source, /clearPageReviewMarkers/);
   assert.match(source, /subscribePageReviewDecisions/);
   assert.match(source, /请刷新页面/);
+});
+
+test("the hook hardens transport rejections, the fill latch, and generation-scoped cleanup notices", () => {
+  const source = read("../src/hooks/useScrapReplacementReview.ts");
+
+  // 每个网关调用点都包 try/catch：show、complete、clear、fill 加 pump 兜底。
+  assert.ok(source.split("catch").length - 1 >= 5, "expected try/catch around every gateway call site");
+  // 一次性写入闸门在 hook 层持有（按采集 ID 键控），会话重建不重置。
+  assert.match(source, /createAffiliationFillLatch/);
+  assert.match(source, /affiliationFillLatch: fillLatch/);
+  // 清理通知按代号作用域：已销毁旧会话不得覆盖新会话的通知状态。
+  assert.match(source, /generationRef\.current === generation/);
+  // dispose().then 带拒绝分支，绝不产生未处理拒绝。
+  assert.match(source, /notifyCleanupFailure/);
 });
 
 test("assistant styles keep stable button heights, focus states, and wrapping", () => {

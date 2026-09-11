@@ -70,6 +70,55 @@ export const AFFILIATION_PROTECTION_STEP_IDS: readonly string[] = Object.freeze(
 
 const FALLBACK_SESSION_ERROR = "页面审核标记已失效，请重新审核";
 const MARKER_CLEANUP_NOTICE = "原审核页面标记清理失败，请刷新页面";
+const AFFILIATION_INTENT_MISMATCH_ERROR =
+  "挂靠填写意图字段异常，已停止自动填写，请人工核对挂靠信息";
+
+/** 合法填写意图必须恰好覆盖的两个挂靠字段；其他形态一律转为阻塞项。 */
+const AFFILIATION_FILL_FIELDS: readonly PageFillAction["field"][] = Object.freeze([
+  "old_vehicle.affiliation",
+  "new_vehicle.affiliation",
+] as const);
+
+/** 意图必须不多不少、不重复地覆盖两个挂靠字段（顺序无关）。 */
+function coversExactlyAffiliationFields(
+  intent: readonly PageFillAction[],
+): boolean {
+  if (intent.length !== AFFILIATION_FILL_FIELDS.length) return false;
+  const fields = new Set(intent.map((action) => action?.field));
+  return (
+    fields.size === AFFILIATION_FILL_FIELDS.length
+    && AFFILIATION_FILL_FIELDS.every((field) => fields.has(field))
+  );
+}
+
+/**
+ * chrome.tabs.sendMessage 在标签页导航/关闭、Content Script 上下文失效时
+ * 直接 reject（而不是返回 {ok:false}）；提取可读文案，缺失时回退到统一失效提示。
+ */
+function rejectionMessage(error: unknown): string | undefined {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  return undefined;
+}
+
+/**
+ * 挂靠写入的一次性闸门，按采集 ID 键控；由 hook 层持有，
+ * stepsKey 变化导致的会话重建绝不重置，同一采集只允许发起一次写入。
+ */
+export interface AffiliationFillLatch {
+  isEngaged(collectionId: string): boolean;
+  engage(collectionId: string): void;
+}
+
+export function createAffiliationFillLatch(): AffiliationFillLatch {
+  const engaged = new Set<string>();
+  return {
+    isEngaged: (collectionId) => engaged.has(collectionId),
+    engage: (collectionId) => {
+      engaged.add(collectionId);
+    },
+  };
+}
 
 export interface ScrapSessionGateways {
   show(step: ReviewStep, pageData: PageData): Promise<PageReviewResult>;
@@ -106,6 +155,8 @@ export interface ScrapSessionOptions {
   applyAffiliationFill(actions: PageFillAction[]): Promise<PageFillResult>;
   onChange(snapshot: ScrapSessionSnapshot): void;
   gateways?: Partial<ScrapSessionGateways>;
+  /** 跨会话重建的一次性写入闸门；缺省时退化为会话内闸门。 */
+  affiliationFillLatch?: AffiliationFillLatch;
 }
 
 export interface ScrapReplacementSession {
@@ -128,6 +179,8 @@ export function createScrapReplacementSession(
     ...options.gateways,
   };
   const sessionKey = options.sessionKey ?? "";
+  // 一次会话内挂靠写入只允许发起一次；hook 传入跨重建的闸门时以其为准。
+  const fillLatch = options.affiliationFillLatch ?? createAffiliationFillLatch();
 
   let state = createReviewSession(steps);
   let disposed = false;
@@ -135,8 +188,6 @@ export function createScrapReplacementSession(
   let pumping = false;
   let queued = false;
   let freezing = false;
-  // 一次会话内挂靠写入只允许发起一次，绝不模糊重试。
-  let affiliationFillStarted = false;
 
   function snapshot(): ScrapSessionSnapshot {
     const step = currentStep(state);
@@ -168,23 +219,44 @@ export function createScrapReplacementSession(
     return true;
   }
 
-  /** spec §12：主体关系 MATCH 时，先确认三个保护步骤也 MATCH 且存在填写意图，再执行唯一一次写入。 */
+  /** spec §12：主体关系 MATCH 时，先确认三个保护步骤也 MATCH 且填写意图恰好覆盖两个挂靠字段，再执行唯一一次写入。 */
   async function runAffiliationGate(step: ReviewStep): Promise<boolean> {
     const next = completeMatchedStep(state, step.step_id);
     if (next === state) return false;
     const intent = options.getPageFillIntent();
+    // 防御后端不一致载荷：保护步骤必须既是 MATCH 又不要求人工处理。
     const protectionsMatched = AFFILIATION_PROTECTION_STEP_IDS.every((stepId) =>
       state.steps.some(
-        (item) => item.step_id === stepId && item.result_status === "MATCH",
+        (item) =>
+          item.step_id === stepId
+          && item.result_status === "MATCH"
+          && !stepRequiresReviewerAction(item),
       ),
     );
-    if (!protectionsMatched || intent.length === 0 || affiliationFillStarted) {
-      // 守护未全部通过或后端没有填写意图：绝不写入，静默前进。
+    if (
+      !protectionsMatched
+      || intent.length === 0
+      || fillLatch.isEngaged(pageData.collectionId)
+    ) {
+      // 守护未全部通过、后端没有填写意图或本采集已发起过：绝不写入，静默前进。
       commit(next);
       return true;
     }
-    affiliationFillStarted = true;
-    const result = await options.applyAffiliationFill(intent);
+    if (!coversExactlyAffiliationFields(intent)) {
+      // 意图形态非法（缺字段、多字段、重复或陌生字段）：绝不写入，转为阻塞项。
+      failWith(AFFILIATION_INTENT_MISMATCH_ERROR);
+      return false;
+    }
+    // 闸门在发起前落下：写入中途 dispose/重建同样计为唯一一次，绝不重试。
+    fillLatch.engage(pageData.collectionId);
+    let result: PageFillResult;
+    try {
+      result = await options.applyAffiliationFill(intent);
+    } catch (error) {
+      // 传输层拒绝（标签页导航/关闭、上下文失效）按身份失效处理，不得成为未处理拒绝。
+      failWith(rejectionMessage(error));
+      return false;
+    }
     if (disposed) return false;
     if (result.ok) {
       // 成功：直接继续，不添加任何常驻结果卡片。
@@ -202,7 +274,14 @@ export function createScrapReplacementSession(
       const step = currentStep(state);
       if (!step) return;
       if (step.display_target === "PAGE_FIELD") {
-        const shown = await gateways.show(step, pageData);
+        let shown: PageReviewResult;
+        try {
+          shown = await gateways.show(step, pageData);
+        } catch (error) {
+          // 消息发送被拒绝（标签页导航/关闭、上下文失效）按身份失效处理。
+          failWith(rejectionMessage(error));
+          return;
+        }
         if (disposed) return;
         if (!shown.ok) {
           // 身份/DOM 目标拒绝：停止后续全部标记和写入。
@@ -245,6 +324,9 @@ export function createScrapReplacementSession(
         queued = false;
         await runUntilWait();
       } while (queued && !disposed);
+    } catch (error) {
+      // 兜底：任何漏网异常都必须转为阻塞项，绝不让 void pump() 变成未处理拒绝。
+      failWith(rejectionMessage(error));
     } finally {
       pumping = false;
     }
@@ -256,7 +338,13 @@ export function createScrapReplacementSession(
   ): Promise<void> {
     freezing = true;
     try {
-      const completed = await gateways.complete(stepId, pageData);
+      let completed: PageReviewResult;
+      try {
+        completed = await gateways.complete(stepId, pageData);
+      } catch (error) {
+        // COMPLETE 消息被拒绝：按身份失效处理，绝不静默吞掉。
+        completed = { ok: false, error: rejectionMessage(error) };
+      }
       if (!disposed) {
         // 人工选择已记录；再冻结页面标记，冻结被拒绝按身份失效处理。
         state = completed.ok
@@ -307,8 +395,14 @@ export function createScrapReplacementSession(
       disposed = true;
       const stopListening = unsubscribe;
       unsubscribe = null;
-      stopListening?.();
-      return gateways.clear(pageData);
+      try {
+        stopListening?.();
+        return await gateways.clear(pageData);
+      } catch (error) {
+        // 取消订阅或清理标记被拒绝：转为清理失败结果，交由调用方提示刷新页面，
+        // 绝不让 dispose() 变成未处理拒绝。
+        return { ok: false, error: rejectionMessage(error) };
+      }
     },
   };
 }
@@ -335,6 +429,10 @@ export function useScrapReplacementReview(
   const [notice, setNotice] = useState("");
   const sessionRef = useRef<ScrapReplacementSession | null>(null);
   const reviewRef = useRef<ReviewResponse | null>(review);
+  // 一次性写入闸门按采集 ID 键控并跨 effect 重建存活（useState 初始化器只执行一次）。
+  const [fillLatch] = useState(createAffiliationFillLatch);
+  // 每次 effect 运行领取一个代号；只有最新一代允许写入清理通知。
+  const generationRef = useRef(0);
 
   useEffect(() => {
     reviewRef.current = review;
@@ -356,12 +454,15 @@ export function useScrapReplacementReview(
     if (!active || !pageData) return;
     const currentReview = reviewRef.current;
     if (!currentReview) return;
+    generationRef.current += 1;
+    const generation = generationRef.current;
     const session = createScrapReplacementSession({
       steps: currentReview.review_steps ?? [],
       pageData,
       sessionKey: stepsKey,
       getPageFillIntent: () => reviewRef.current?.page_fill_intent ?? [],
       applyAffiliationFill,
+      affiliationFillLatch: fillLatch,
       // 会话快照只经由 start/decide/dispose 异步驱动，避免 effect 体内同步 setState。
       onChange: (next) => {
         setSnapshot(next);
@@ -372,12 +473,16 @@ export function useScrapReplacementReview(
     session.start();
     return () => {
       sessionRef.current = null;
+      // 清理失败（身份拒绝或消息被拒）只提示刷新页面；旧会话已停止，不再继续。
+      // 代号守卫：已销毁旧会话的异步通知绝不覆盖已重建新会话的通知状态。
+      const notifyCleanupFailure = () => {
+        if (generationRef.current === generation) setNotice(MARKER_CLEANUP_NOTICE);
+      };
       void session.dispose().then((cleared) => {
-        // 清理失败（身份拒绝）只提示刷新页面；旧会话已停止，不再继续。
-        if (cleared && !cleared.ok) setNotice(MARKER_CLEANUP_NOTICE);
-      });
+        if (cleared && !cleared.ok) notifyCleanupFailure();
+      }, notifyCleanupFailure);
     };
-  }, [active, stepsKey, pageData, applyAffiliationFill]);
+  }, [active, stepsKey, pageData, applyAffiliationFill, fillLatch]);
 
   const decide = useCallback((stepId: string, decision: ReviewerDecision) => {
     sessionRef.current?.decide(stepId, decision);

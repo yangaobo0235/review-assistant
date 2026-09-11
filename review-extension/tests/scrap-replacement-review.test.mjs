@@ -9,10 +9,13 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
+import { isFieldFirstProfile } from "../src/hooks/useScrapReplacementReview.ts";
 import {
-  createScrapReplacementSession,
-  isFieldFirstProfile,
-} from "../src/hooks/useScrapReplacementReview.ts";
+  decisionEvent,
+  makeStep,
+  runSession,
+  settle,
+} from "./helpers/scrapReplacementHarness.mjs";
 
 const require = createRequire(import.meta.url);
 const cache = new Map();
@@ -35,28 +38,6 @@ function loadComponent(file) {
 const { ScrapReplacementReview } = loadComponent(
   fileURLToPath(new URL("../src/components/ScrapReplacementReview.tsx", import.meta.url)),
 );
-
-const pageData = {
-  pageUrl: "https://admin.forjtruck.com/scrap-replace-qingdao?showPageModel=1",
-  sourceTabId: 42,
-  pageInstanceId: "page-instance",
-  pageFingerprint: '[["application.id","case-a"]]',
-  collectionId: "collection-1",
-};
-
-const makeStep = (overrides) => ({
-  sequence: 1,
-  category: "BUSINESS_RULE",
-  display_target: "ASSISTANT",
-  page_field: null,
-  requires_reviewer_action: false,
-  label: "审核步骤",
-  result_status: "MATCH",
-  reason: "",
-  values: [],
-  evidence: [],
-  ...overrides,
-});
 
 const assistantMatch = makeStep({
   step_id: "RULE-POLICY-001",
@@ -91,83 +72,6 @@ const assistantInsufficient = makeStep({
     { source: "图片识别", image_id: "invoice-1" },
     { source: "申请页面字段" },
   ],
-});
-
-const settle = async () => {
-  await new Promise(setImmediate);
-  await new Promise(setImmediate);
-};
-
-function makeGateways(overrides = {}) {
-  const calls = { show: [], complete: [], clear: [], fill: [] };
-  const listeners = new Set();
-  return {
-    calls,
-    listenerCount: () => listeners.size,
-    emit: (event) => {
-      for (const listener of [...listeners]) listener(event);
-    },
-    api: {
-      show: async (step) => {
-        calls.show.push(step.step_id);
-        return overrides.show?.(step) ?? { ok: true };
-      },
-      complete: async (stepId) => {
-        calls.complete.push(stepId);
-        return overrides.complete?.(stepId) ?? { ok: true };
-      },
-      clear: async () => {
-        calls.clear.push(true);
-        return overrides.clear?.() ?? { ok: true };
-      },
-      subscribe: (_context, onDecision) => {
-        listeners.add(onDecision);
-        return () => listeners.delete(onDecision);
-      },
-      applyFill: async (actions) => {
-        calls.fill.push(actions);
-        return overrides.applyFill?.(actions) ?? { ok: true, message: "挂靠字段已填写并回读" };
-      },
-    },
-  };
-}
-
-function runSession(steps, options = {}) {
-  const gateways = makeGateways(options.gateways);
-  const snapshots = [];
-  const fills = [];
-  const session = createScrapReplacementSession({
-    steps,
-    pageData,
-    sessionKey: "test-session",
-    getPageFillIntent: () => options.pageFillIntent ?? [],
-    applyAffiliationFill: async (actions) => {
-      fills.push(actions);
-      return options.applyAffiliationFill
-        ? options.applyAffiliationFill(actions)
-        : { ok: true, message: "挂靠字段已填写并回读" };
-    },
-    onChange: (snapshot) => snapshots.push(snapshot),
-    gateways: gateways.api,
-  });
-  return {
-    session,
-    gateways,
-    snapshots,
-    fills,
-    latest: () => snapshots.at(-1) ?? null,
-    currentStepId: () => {
-      const state = snapshots.at(-1)?.session;
-      return state ? state.steps[state.index]?.step_id ?? null : null;
-    },
-  };
-}
-
-const decisionEvent = (stepId, decision = "CONFIRMED") => ({
-  stepId,
-  decision,
-  pageInstanceId: pageData.pageInstanceId,
-  collectionId: pageData.collectionId,
 });
 
 function renderAssistant(snapshot, onFocusImage = async () => {}) {
