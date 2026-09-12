@@ -243,6 +243,13 @@ export interface PageFillAction {
   owner_type: "PERSONAL" | "COMPANY";
 }
 
+/** 审核员从助手中选择候选值后发起的单字段页面回填。 */
+export interface PageWriteAction {
+  field: string;
+  value: string;
+  expectedValue?: string | null;
+}
+
 export interface ResultSection {
   id: string;
   title: string;

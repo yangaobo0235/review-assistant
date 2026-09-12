@@ -2,6 +2,7 @@
 
 OLD_VEHICLE_FIELDS = (
     "old_vehicle.recycle_date",
+    "scrap_certificate.certificate_no",
     "old_vehicle.vin",
     "old_vehicle.plate_no",
     "old_vehicle.owner",
@@ -10,6 +11,7 @@ OLD_VEHICLE_FIELDS = (
 
 NEW_VEHICLE_AND_INVOICE_FIELDS = (
     "invoice.code",
+    "invoice.invoice_no",
     "invoice.amount",
     "invoice.invoice_date",
     "new_vehicle.vin",

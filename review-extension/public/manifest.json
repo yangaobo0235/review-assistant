@@ -41,7 +41,6 @@
         "image-focus.js",
         "image-normalization.js",
         "page-field-writer.js",
-        "page-review-marker.js",
         "content.js"
       ],
       "run_at": "document_idle"

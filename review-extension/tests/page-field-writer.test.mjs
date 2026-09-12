@@ -616,3 +616,46 @@ test("rolls back a filled custom control through its clear affordance when the s
   assert.match(result.message, /已有值|禁止覆盖/);
   assert.match(result.message, /已回滚/);
 });
+
+function valueInput(initial = "") {
+  return {
+    tagName: "INPUT",
+    value: initial,
+    isConnected: true,
+    getAttribute: () => null,
+    dispatchEvent() {},
+  };
+}
+
+test("single-field writer enforces the scrap field allowlist and collected value", async () => {
+  const writer = loadWriter({ setTimeout });
+  const input = valueInput("VIN-OLD");
+  const root = { defaultView: { Event: class Event {} } };
+
+  const denied = await writer.executeValue(root, input, { field: "application.customer_name", value: "张三", expectedValue: "" });
+  assert.equal(denied.ok, false);
+  assert.equal(input.value, "VIN-OLD");
+
+  const stale = await writer.executeValue(root, input, { field: "new_vehicle.vin", value: "VIN-NEW", expectedValue: "VIN-OTHER" });
+  assert.equal(stale.ok, false);
+  assert.match(stale.message, /原值已变化/);
+  assert.equal(input.value, "VIN-OLD");
+});
+
+test("single-field writer restores the original value after failed readback", async () => {
+  const input = valueInput("VIN-OLD");
+  let events = 0;
+  input.dispatchEvent = () => {
+    events += 1;
+    if (events <= 2) input.value = "FRAMEWORK-REJECTED";
+  };
+  const result = await loadWriter({ setTimeout }).executeValue(
+    { defaultView: { Event: class Event {} } },
+    input,
+    { field: "new_vehicle.vin", value: "VIN-NEW", expectedValue: "VIN-OLD" },
+  );
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /回读失败/);
+  assert.equal(input.value, "VIN-OLD");
+});

@@ -146,8 +146,9 @@ def test_review_service_only_compares_configured_business_fields() -> None:
                 "old_vehicle.vin": "OLD-VIN",
                 "old_vehicle.engine_model": "ENGINE-1",
                 "invoice.code": "INVOICE-CODE",
+                "invoice.invoice_no": "INVOICE-NO",
                 "invoice.amount": "152000",
-                "scrap_certificate.certificate_no": "NOT-IN-PRIMARY-CHECKS",
+                "scrap_certificate.certificate_no": "CERTIFICATE-001",
             },
             images=[],
         )
@@ -157,8 +158,9 @@ def test_review_service_only_compares_configured_business_fields() -> None:
     assert "old_vehicle.vin" in compared_fields
     assert "old_vehicle.engine_model" in compared_fields
     assert "invoice.code" in compared_fields
+    assert "invoice.invoice_no" in compared_fields
     assert "invoice.amount" in compared_fields
-    assert "scrap_certificate.certificate_no" not in compared_fields
+    assert "scrap_certificate.certificate_no" in compared_fields
 
 
 def test_review_service_includes_missing_required_business_fields() -> None:

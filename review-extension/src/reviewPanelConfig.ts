@@ -33,11 +33,13 @@ export const businessLabels: Record<BusinessChoice, string> = {
 
 const fieldLabels: Record<string, string> = {
   "old_vehicle.recycle_date": "报废交车日期",
+  "scrap_certificate.certificate_no": "报废证明编号",
   "old_vehicle.vin": "报废车辆车架号",
   "old_vehicle.plate_no": "报废车辆车牌号",
   "old_vehicle.owner": "报废车辆所有人",
   "old_vehicle.engine_model": "报废发动机型号",
   "invoice.code": "发票代码",
+  "invoice.invoice_no": "发票号码",
   "invoice.amount": "开票金额",
   "invoice.invoice_date": "开票日期",
   "new_vehicle.vin": "新车车架号",

@@ -25,15 +25,12 @@ const MESSAGE_TYPES = Object.freeze({
   collectPageData: "COLLECT_PAGE_DATA",
   focusReviewImage: "FOCUS_REVIEW_IMAGE",
   applyPageFillIntent: "APPLY_PAGE_FILL_INTENT",
-  showReviewFieldStep: "SHOW_REVIEW_FIELD_STEP",
-  completeReviewFieldStep: "COMPLETE_REVIEW_FIELD_STEP",
-  clearReviewFieldMarkers: "CLEAR_REVIEW_FIELD_MARKERS",
-  reviewFieldDecision: "REVIEW_FIELD_DECISION",
+  applyPageFieldValue: "APPLY_PAGE_FIELD_VALUE",
 });
-// 人工选择只有两种；其他值一律不转发给审核助手。
-const REVIEWER_DECISIONS = Object.freeze(["CONFIRMED", "MARKED_EXCEPTION"]);
-const REVIEW_IDENTITY_ERROR = "页面已变化，请重新审核";
-const REVIEW_TARGET_ERROR = "页面字段已变化，请重新审核";
+const SCRAP_WRITABLE_FIELDS = new Set([
+  "old_vehicle.recycle_date", "scrap_certificate.certificate_no", "old_vehicle.vin", "old_vehicle.plate_no", "old_vehicle.owner", "old_vehicle.engine_model",
+  "invoice.code", "invoice.invoice_no", "invoice.amount", "invoice.invoice_date", "new_vehicle.vin", "new_vehicle.plate_no", "new_vehicle.owner",
+]);
 
 const sameCollectedRecord = (message) => {
   const currentFields = globalThis.ReviewPageFieldCollector.collect(document, null).pageFields;
@@ -65,50 +62,26 @@ const focusReviewImage = (message) => {
 const isCollectionMessage = (message) =>
   message?.type === MESSAGE_TYPES.collectPageData;
 
-const reportFieldDecision = (step, decision) => {
-  if (!REVIEWER_DECISIONS.includes(decision)) return false;
-  const sent = chrome.runtime.sendMessage({
-    type: MESSAGE_TYPES.reviewFieldDecision,
-    stepId: step.step_id,
-    decision,
-    pageInstanceId,
-    collectionId: activeCollectionId,
-  });
-  if (typeof sent?.catch === "function") sent.catch(() => {});
-  return true;
-};
-
-// 标记只使用采集时登记的唯一目标；映射过期、元素脱离 DOM 或身份不符时立即拒绝，不做模糊重找。
-const showReviewFieldStep = (message) => {
-  if (!sameReviewIdentity(message)) return { ok: false, error: REVIEW_IDENTITY_ERROR };
-  const step = message.step;
-  const field = step?.page_field;
-  if (!field) return { ok: false, error: "审核步骤未指定页面字段" };
-  const entry = reviewFieldElements.get(field);
-  if (!entry || entry.collectionId !== activeCollectionId || !entry.element?.isConnected) {
-    return { ok: false, error: REVIEW_TARGET_ERROR };
-  }
-  let reported = false;
-  return globalThis.ReviewPageMarker.show(entry.element, step, (decision) => {
-    if (reported) return;
-    reported = reportFieldDecision(step, decision);
-  });
-};
-
-const completeReviewFieldStep = (message) => {
-  if (!sameReviewIdentity(message)) return { ok: false, error: REVIEW_IDENTITY_ERROR };
-  const stepId = message.stepId || message.step?.step_id;
-  if (!stepId) return { ok: false, error: "审核步骤缺少标识" };
-  return globalThis.ReviewPageMarker.complete(stepId, message.decision);
-};
-
-const clearReviewFieldMarkers = (message) => {
-  if (!sameReviewIdentity(message)) return { ok: false, error: REVIEW_IDENTITY_ERROR };
-  globalThis.ReviewPageMarker.clear();
-  return { ok: true };
-};
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === MESSAGE_TYPES.applyPageFieldValue) {
+    if (!sameReviewIdentity(message)) {
+      sendResponse({ ok: false, message: "页面已变化，请重新审核", actions: [] });
+      return true;
+    }
+    if (!SCRAP_WRITABLE_FIELDS.has(message.action?.field)) {
+      sendResponse({ ok: false, message: "该字段不在报废置换允许回填范围内", actions: [] });
+      return true;
+    }
+    const entry = reviewFieldElements.get(message.action?.field);
+    if (!entry?.element || entry.collectionId !== activeCollectionId) {
+      sendResponse({ ok: false, message: "未找到该字段的当前页面控件", actions: [] });
+      return true;
+    }
+    globalThis.ReviewPageFieldWriter.executeValue(document, entry.element, message.action, () => sameReviewIdentity(message))
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, message: error instanceof Error ? error.message : "字段回填失败", actions: [] }));
+    return true;
+  }
   if (message.type === MESSAGE_TYPES.applyPageFillIntent) {
     if (!sameReviewIdentity(message)) {
       sendResponse({ ok: false, message: "页面已变化，请重新审核", actions: [] });
@@ -125,18 +98,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === MESSAGE_TYPES.focusReviewImage) {
     sendResponse(focusReviewImage(message));
-    return;
-  }
-  if (message.type === MESSAGE_TYPES.showReviewFieldStep) {
-    sendResponse(showReviewFieldStep(message));
-    return;
-  }
-  if (message.type === MESSAGE_TYPES.completeReviewFieldStep) {
-    sendResponse(completeReviewFieldStep(message));
-    return;
-  }
-  if (message.type === MESSAGE_TYPES.clearReviewFieldMarkers) {
-    sendResponse(clearReviewFieldMarkers(message));
     return;
   }
   if (!isCollectionMessage(message)) {
@@ -323,8 +284,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       for (const { field, element } of fieldCollection.fieldTargets) {
         reviewFieldElements.set(field, { element, collectionId });
       }
-      // 新采集生效即代表旧标记失效；只清理扩展自己创建的节点，不触碰宿主控件。
-      globalThis.ReviewPageMarker?.clear?.();
       activeCollectionId = collectionId;
       const imageFailureCount = imageAssets.filter((image) => image.collectionError).length;
       const collectionDiagnostics = {

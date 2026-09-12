@@ -166,8 +166,8 @@ async def test_scrap_runs_route_collected_field_to_page_and_rest_to_assistant(re
     vin_step = next(
         step for step in result.review_steps if step.step_id == "FIELD-new_vehicle.vin"
     )
-    assert vin_step.display_target == "PAGE_FIELD"
-    assert vin_step.page_field == "new_vehicle.vin"
+    assert vin_step.display_target == "ASSISTANT"
+    assert vin_step.page_field is None
     # 页面外政策、二维码、挂靠守护与材料异常只能停留在助手面板。
     assert all(
         step.display_target == "ASSISTANT" and step.page_field is None

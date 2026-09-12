@@ -118,39 +118,21 @@ def _field_step(
         for item in comparison.evidence
         if item.value not in (None, "")
     ]
-    page_field = PAGE_FIELD_BY_CANONICAL_FIELD.get(comparison.field)
-    if page_interaction and page_field is not None:
-        if _page_field_collected(request, page_field):
-            return _step(
-                step_id=f"FIELD-{comparison.field}",
-                category="FIELD",
-                display_target=ReviewDisplayTarget.PAGE_FIELD,
-                page_field=page_field,
-                label=label,
-                result_status=_comparison_status(comparison),
-                reason=comparison.message,
-                values=values,
-                evidence=comparison.evidence,
-            )
-        # 基础字段在规则清单中但本次页面没有成功采集：转为助手面板并说明原因。
-        return _step(
-            step_id=f"FIELD-{comparison.field}",
-            category="FIELD",
-            display_target=ReviewDisplayTarget.ASSISTANT,
-            label=label,
-            result_status="INSUFFICIENT",
-            reason=MISSING_PAGE_FIELD_REASON,
-            values=values,
-            evidence=comparison.evidence,
-        )
-    # 非目标 Profile 或映射表之外的字段继续使用助手面板展示。
+    result_status = _comparison_status(comparison)
+    if result_status == "MATCH" and not _page_field_collected(request, comparison.field):
+        result_status = "INSUFFICIENT"
+        reason = f"{comparison.message}；{MISSING_PAGE_FIELD_REASON}"
+    else:
+        reason = comparison.message
+    # 报废置换字段全部在审核助手中展示；原页面保持干净，不再注入标记。
+    # 页面是否采集、页面原值和材料证据都由 evidence/values 传给工作台处理。
     return _step(
         step_id=f"FIELD-{comparison.field}",
         category="FIELD",
         display_target=ReviewDisplayTarget.ASSISTANT,
         label=label,
-        result_status=_comparison_status(comparison),
-        reason=comparison.message,
+        result_status=result_status,
+        reason=reason,
         values=values,
         evidence=comparison.evidence,
     )
@@ -175,22 +157,10 @@ def _business_step(
     *,
     page_interaction: bool,
 ) -> ReviewStep:
-    page_field = PAGE_FIELD_BY_CHECK_ID.get(check.check_id)
-    if (
-        not page_interaction
-        or page_field is None
-        or not _page_field_collected(request, page_field)
-    ):
-        page_field = None
     return _step(
         step_id=f"BUSINESS-{check.check_id}",
         category="BUSINESS_RULE",
-        display_target=(
-            ReviewDisplayTarget.PAGE_FIELD
-            if page_field is not None
-            else ReviewDisplayTarget.ASSISTANT
-        ),
-        page_field=page_field,
+        display_target=ReviewDisplayTarget.ASSISTANT,
         label=check.label,
         result_status=check.status,
         reason=check.reason,

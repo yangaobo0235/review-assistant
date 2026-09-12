@@ -631,12 +631,13 @@ test("the field-first assistant never renders legacy summary sections", () => {
   assert.match(source, /查看原图/);
 });
 
-test("App composes the orchestration hook and surfaces the cleanup notice", () => {
+test("App renders the workbench without starting the retired page-marker orchestration", () => {
   const source = read("../src/App.tsx");
 
-  assert.match(source, /useScrapReplacementReview\(workflow\)/);
-  assert.match(source, /scrapReview=\{scrapReview\}/);
-  assert.match(source, /scrapReview\.notice/);
+  assert.doesNotMatch(source, /useScrapReplacementReview\(workflow\)/);
+  assert.doesNotMatch(source, /scrapReview=\{scrapReview\}|scrapReview\.notice/);
+  assert.match(source, /onApplyPageFieldValue=\{workflow\.applyPageFieldValue\}/);
+  assert.match(source, /onRerun=\{workflow\.startReview\}/);
 });
 
 test("the orchestration hook keys the affiliation gate off stable backend step ids", () => {

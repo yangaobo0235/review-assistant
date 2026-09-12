@@ -13,13 +13,10 @@ import {
   type EvidenceHighlightPlan,
 } from "../evidencePresentation";
 import { exceptionComparisons, exceptionSections, type ExceptionFilter } from "../exceptionPresentation";
-import {
-  isFieldFirstProfile,
-  type ScrapReplacementReviewController,
-} from "../hooks/useScrapReplacementReview";
+import { isFieldFirstProfile } from "../scrapReplacementProfile.ts";
 import { qrCheckPresentation } from "../qrPresentation";
 import { fieldLabel, groupStatusLabel, statusLabel } from "../reviewPanelConfig";
-import type { Evidence, FieldComparison, JobStatus, PageData, ReviewJobSnapshot, ReviewResponse } from "../types/review";
+import type { Evidence, FieldComparison, JobStatus, PageData, PageFillAction, ReviewJobSnapshot, ReviewResponse } from "../types/review";
 import { diffValue, diffValueByPosition } from "../valueDiff";
 import { ReviewAdvice } from "./ReviewAdvice";
 import { MaterialCompleteness } from "./MaterialCompleteness";
@@ -34,21 +31,16 @@ interface ReviewResultsProps {
   onExceptionFilterChange: (filter: ExceptionFilter) => void;
   onFocusImage: (imageId: string) => Promise<void>;
   pageFillResult: PageFillResult | null;
-  scrapReview: ScrapReplacementReviewController;
+  onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
+  onApplyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
+  onRerun: () => Promise<void>;
 }
 
 export function ReviewResults(props: ReviewResultsProps) {
-  const { review, onFocusImage, scrapReview } = props;
+  const { review, onFocusImage } = props;
   if (isFieldFirstProfile(review)) {
-    // 目标业务：助手只保留当前一个需要人工处理的页面外事项。
-    return (
-      <ScrapReplacementReview
-        assistantStep={scrapReview.assistantStep}
-        blockingIssue={scrapReview.blockingIssue}
-        onDecide={scrapReview.decide}
-        onFocusImage={onFocusImage}
-      />
-    );
+    // 目标业务：页面字段、人工选择与页面外核验统一留在侧边栏工作台。
+    return <ScrapReplacementReview review={review} pageData={props.pageData} onFocusImage={onFocusImage} onApplyPageFieldValue={props.onApplyPageFieldValue} onApplyAffiliationFill={props.onApplyAffiliationFill} onRerun={props.onRerun} />;
   }
   return <LegacyReviewResults {...props} />;
 }

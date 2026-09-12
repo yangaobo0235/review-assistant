@@ -3,6 +3,7 @@
  * 职责边界：只驱动 reviewSession 状态机和页面审核客户端，不渲染界面；
  * 人工选择只记录在前端内存，绝不篡改后端 MATCH/CONFLICT/INSUFFICIENT 结论；
  * 挂靠写入只在主体关系与三个辅助保护步骤全部 MATCH 且存在填写意图时执行一次；
+ * clearPageReviewMarkers / subscribePageReviewDecisions 保留为旧宿主协议兼容名称，但新流程不调用页面标记。
  * 页面实例、URL、指纹、采集 ID 或 DOM 目标失效时立即停止后续标记和写入。
  * 修改日期：2026-09-11
  * 修改人：wuyi
@@ -11,12 +12,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PageFillResult } from "../pageFillClient";
-import {
-  clearPageReviewMarkers,
-  completePageReviewStep,
-  showPageReviewStep,
-  subscribePageReviewDecisions,
-} from "../pageReviewClient.ts";
 import type {
   PageReviewDecisionContext,
   PageReviewDecisionEvent,
@@ -38,21 +33,8 @@ import type {
   ReviewStep,
 } from "../types/review";
 import type { ReviewWorkflow } from "./useReviewWorkflow";
-
-/** 目标 Profile 显式三元组，镜像后端 review_step_routing.PAGE_INTERACTION_PROFILES。 */
-const FIELD_FIRST_PROFILES: ReadonlySet<string> = new Set([
-  "scrap_replacement|qingdao|1.0",
-  "scrap_replacement|changchun|1.0",
-]);
-
-/** 只有青岛/长春报废置换 1.0 使用字段优先流程；过户、车源和一致性保持旧界面。 */
-export function isFieldFirstProfile(
-  review: Pick<ReviewResponse, "business_type" | "region" | "profile_version">,
-): boolean {
-  return FIELD_FIRST_PROFILES.has(
-    `${review.business_type}|${review.region}|${review.profile_version}`,
-  );
-}
+import { isFieldFirstProfile } from "../scrapReplacementProfile.ts";
+export { isFieldFirstProfile } from "../scrapReplacementProfile.ts";
 
 /**
  * 主体关系步骤的稳定后端 step_id（app/rules/affiliation_subject_checks.py 的
@@ -70,27 +52,6 @@ export const AFFILIATION_PROTECTION_STEP_IDS: readonly string[] = Object.freeze(
 
 const FALLBACK_SESSION_ERROR = "页面审核标记已失效，请重新审核";
 const MARKER_CLEANUP_NOTICE = "原审核页面标记清理失败，请刷新页面";
-const AFFILIATION_INTENT_MISMATCH_ERROR =
-  "挂靠填写意图字段异常，已停止自动填写，请人工核对挂靠信息";
-
-/** 合法填写意图必须恰好覆盖的两个挂靠字段；其他形态一律转为阻塞项。 */
-const AFFILIATION_FILL_FIELDS: readonly PageFillAction["field"][] = Object.freeze([
-  "old_vehicle.affiliation",
-  "new_vehicle.affiliation",
-] as const);
-
-/** 意图必须不多不少、不重复地覆盖两个挂靠字段（顺序无关）。 */
-function coversExactlyAffiliationFields(
-  intent: readonly PageFillAction[],
-): boolean {
-  if (intent.length !== AFFILIATION_FILL_FIELDS.length) return false;
-  const fields = new Set(intent.map((action) => action?.field));
-  return (
-    fields.size === AFFILIATION_FILL_FIELDS.length
-    && AFFILIATION_FILL_FIELDS.every((field) => fields.has(field))
-  );
-}
-
 /**
  * chrome.tabs.sendMessage 在标签页导航/关闭、Content Script 上下文失效时
  * 直接 reject（而不是返回 {ok:false}）；提取可读文案，缺失时回退到统一失效提示。
@@ -132,11 +93,11 @@ export interface ScrapSessionGateways {
 
 /** 生产环境默认走真实页面客户端；测试可整体替换。 */
 const pageClientGateways: ScrapSessionGateways = {
-  show: (step, pageData) => showPageReviewStep(step, pageData),
-  complete: (stepId, pageData) => completePageReviewStep(stepId, pageData),
-  clear: (pageData) => clearPageReviewMarkers(pageData),
-  subscribe: (context, onDecision) =>
-    subscribePageReviewDecisions(context, onDecision),
+  // 报废置换新流程全部在侧边栏展示；原页面不再注入标记或订阅人工事件。
+  show: async () => ({ ok: true }),
+  complete: async () => ({ ok: true }),
+  clear: async () => ({ ok: true }),
+  subscribe: () => () => undefined,
 };
 
 export interface ScrapSessionSnapshot {
@@ -157,6 +118,8 @@ export interface ScrapSessionOptions {
   gateways?: Partial<ScrapSessionGateways>;
   /** 跨会话重建的一次性写入闸门；缺省时退化为会话内闸门。 */
   affiliationFillLatch?: AffiliationFillLatch;
+  /** Legacy test/embedding opt-in; production field-first flow keeps this false. */
+  autoFillAffiliation?: boolean;
 }
 
 export interface ScrapReplacementSession {
@@ -179,15 +142,13 @@ export function createScrapReplacementSession(
     ...options.gateways,
   };
   const sessionKey = options.sessionKey ?? "";
-  // 一次会话内挂靠写入只允许发起一次；hook 传入跨重建的闸门时以其为准。
-  const fillLatch = options.affiliationFillLatch ?? createAffiliationFillLatch();
-
   let state = createReviewSession(steps);
   let disposed = false;
   let unsubscribe: (() => void) | null = null;
   let pumping = false;
   let queued = false;
   let freezing = false;
+  const fillLatch = options.affiliationFillLatch ?? createAffiliationFillLatch();
 
   function snapshot(): ScrapSessionSnapshot {
     const step = currentStep(state);
@@ -219,51 +180,23 @@ export function createScrapReplacementSession(
     return true;
   }
 
-  /** spec §12：主体关系 MATCH 时，先确认三个保护步骤也 MATCH 且填写意图恰好覆盖两个挂靠字段，再执行唯一一次写入。 */
+  /** 主体关系通过后只前进；挂靠写入必须由审核员在工作台主动触发。 */
   async function runAffiliationGate(step: ReviewStep): Promise<boolean> {
     const next = completeMatchedStep(state, step.step_id);
     if (next === state) return false;
-    const intent = options.getPageFillIntent();
-    // 防御后端不一致载荷：保护步骤必须既是 MATCH 又不要求人工处理。
-    const protectionsMatched = AFFILIATION_PROTECTION_STEP_IDS.every((stepId) =>
-      state.steps.some(
-        (item) =>
-          item.step_id === stepId
-          && item.result_status === "MATCH"
-          && !stepRequiresReviewerAction(item),
-      ),
-    );
-    if (
-      !protectionsMatched
-      || intent.length === 0
-      || fillLatch.isEngaged(pageData.collectionId)
-    ) {
-      // 守护未全部通过、后端没有填写意图或本采集已发起过：绝不写入，静默前进。
+    if (options.autoFillAffiliation === false) {
       commit(next);
       return true;
     }
-    if (!coversExactlyAffiliationFields(intent)) {
-      // 意图形态非法（缺字段、多字段、重复或陌生字段）：绝不写入，转为阻塞项。
-      failWith(AFFILIATION_INTENT_MISMATCH_ERROR);
-      return false;
-    }
-    // 闸门在发起前落下：写入中途 dispose/重建同样计为唯一一次，绝不重试。
+    const intent = options.getPageFillIntent();
+    const protectionsMatched = AFFILIATION_PROTECTION_STEP_IDS.every((stepId) => state.steps.some((item) => item.step_id === stepId && item.result_status === "MATCH" && !stepRequiresReviewerAction(item)));
+    if (!protectionsMatched || intent.length === 0 || fillLatch.isEngaged(pageData.collectionId)) { commit(next); return true; }
+    if (intent.length !== 2 || new Set(intent.map((action) => action.field)).size !== 2 || !intent.some((action) => action.field === "old_vehicle.affiliation") || !intent.some((action) => action.field === "new_vehicle.affiliation")) { failWith("挂靠填写意图字段异常，已停止自动填写，请人工核对挂靠信息"); return false; }
     fillLatch.engage(pageData.collectionId);
     let result: PageFillResult;
-    try {
-      result = await options.applyAffiliationFill(intent);
-    } catch (error) {
-      // 传输层拒绝（标签页导航/关闭、上下文失效）按身份失效处理，不得成为未处理拒绝。
-      failWith(rejectionMessage(error));
-      return false;
-    }
+    try { result = await options.applyAffiliationFill(intent); } catch (error) { failWith(rejectionMessage(error)); return false; }
     if (disposed) return false;
-    if (result.ok) {
-      // 成功：直接继续，不添加任何常驻结果卡片。
-      commit(next);
-      return true;
-    }
-    // 失败：设置阻塞项并等待人工处理（早期返回没有 actions 字段，只依赖 message）。
+    if (result.ok) { commit(next); return true; }
     failWith(result.message);
     return false;
   }
@@ -462,6 +395,7 @@ export function useScrapReplacementReview(
       sessionKey: stepsKey,
       getPageFillIntent: () => reviewRef.current?.page_fill_intent ?? [],
       applyAffiliationFill,
+      autoFillAffiliation: false,
       affiliationFillLatch: fillLatch,
       // 会话快照只经由 start/decide/dispose 异步驱动，避免 effect 体内同步 setState。
       onChange: (next) => {

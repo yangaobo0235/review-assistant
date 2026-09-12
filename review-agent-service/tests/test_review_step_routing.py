@@ -91,7 +91,7 @@ def build_steps(
     )
 
 
-def test_present_comparison_routes_to_page_field() -> None:
+def test_present_comparison_routes_to_assistant_field() -> None:
     steps = build_steps(
         page_fields={"new_vehicle.vin": "VIN-1"},
         comparisons=[matching_comparison("new_vehicle.vin")],
@@ -99,8 +99,8 @@ def test_present_comparison_routes_to_page_field() -> None:
 
     step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
 
-    assert step.display_target is ReviewDisplayTarget.PAGE_FIELD
-    assert step.page_field == "new_vehicle.vin"
+    assert step.display_target is ReviewDisplayTarget.ASSISTANT
+    assert step.page_field is None
     assert step.requires_reviewer_action is False
 
 
@@ -168,8 +168,8 @@ def test_present_affiliation_safeguard_routes_to_its_page_field(
 
     step = next(item for item in steps if check_id in item.step_id)
 
-    assert step.display_target is ReviewDisplayTarget.PAGE_FIELD
-    assert step.page_field == page_field
+    assert step.display_target is ReviewDisplayTarget.ASSISTANT
+    assert step.page_field is None
 
 
 def test_external_check_routes_to_assistant() -> None:
@@ -267,7 +267,7 @@ def test_missing_configured_page_field_becomes_actionable_assistant_step():
     assert step.requires_reviewer_action is True
 
 
-def test_changchun_collected_field_routes_to_page_field() -> None:
+def test_changchun_collected_field_routes_to_assistant() -> None:
     steps = build_review_steps(
         request=ReviewRequest(
             page_url="https://admin.forjtruck.com/scrap-replace-changchun/review/1",
@@ -284,8 +284,8 @@ def test_changchun_collected_field_routes_to_page_field() -> None:
 
     step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
 
-    assert step.display_target is ReviewDisplayTarget.PAGE_FIELD
-    assert step.page_field == "new_vehicle.vin"
+    assert step.display_target is ReviewDisplayTarget.ASSISTANT
+    assert step.page_field is None
     assert step.requires_reviewer_action is False
 
 

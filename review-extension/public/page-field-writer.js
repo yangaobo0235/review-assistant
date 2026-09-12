@@ -1,6 +1,10 @@
-/** Only fill the two backend-authorized, empty affiliation controls; any write or readback failure rolls back every write made by the current invocation. */
+/** Only fill explicit scrap-replacement targets; affiliation keeps its joint atomic path. */
 (() => {
   const ALLOWED_TARGETS = Object.freeze({ "old_vehicle.affiliation": "报废车挂靠", "new_vehicle.affiliation": "新车挂靠" });
+  const ALLOWED_VALUE_FIELDS = Object.freeze(new Set([
+    "old_vehicle.recycle_date", "scrap_certificate.certificate_no", "old_vehicle.vin", "old_vehicle.plate_no", "old_vehicle.owner", "old_vehicle.engine_model",
+    "invoice.code", "invoice.invoice_no", "invoice.amount", "invoice.invoice_date", "new_vehicle.vin", "new_vehicle.plate_no", "new_vehicle.owner",
+  ]));
   const OWNER_OPTIONS = Object.freeze({ PERSONAL: ["个人"], COMPANY: ["公司", "企业"] });
   const ITEM_SELECTOR = ".ant-form-item, .el-form-item, .form-item";
   const LABEL_SELECTOR = ".ant-form-item-label label, .el-form-item__label, label";
@@ -274,5 +278,63 @@
     return { ok: true, message: "挂靠字段已填写并回读", actions: results };
   }
 
-  globalThis.ReviewPageFieldWriter = { execute, preflight };
+  function writableValueControl(entry) {
+    if (!entry) return null;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(entry.tagName)) return entry;
+    return entry.querySelector?.("input, textarea, select") || null;
+  }
+
+  function dispatchValue(control, value, root) {
+    const EventClass = root?.defaultView?.Event || globalThis.Event;
+    if (control.tagName === "SELECT") {
+      const options = Array.from(control.options || []).filter((option) => normalize(text(option)) === normalize(value));
+      if (options.length !== 1) return "页面选项不存在或存在歧义";
+      control.value = String(options[0].value ?? text(options[0]));
+    } else {
+      const prototype = control.tagName === "TEXTAREA" ? root.defaultView?.HTMLTextAreaElement?.prototype : root.defaultView?.HTMLInputElement?.prototype;
+      const setter = prototype && Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+      if (setter) setter.call(control, value); else control.value = value;
+    }
+    if (EventClass) {
+      control.dispatchEvent?.(new EventClass("input", { bubbles: true }));
+      control.dispatchEvent?.(new EventClass("change", { bubbles: true }));
+    }
+    return null;
+  }
+
+  function readValueControl(control) {
+    if (control.tagName === "SELECT") return nativeCurrent(control).label;
+    return String(control.value ?? text(control)).trim();
+  }
+
+  async function executeValue(root, entry, action, guard) {
+    if (!action || !ALLOWED_VALUE_FIELDS.has(action.field)) return { ok: false, message: "该字段不在报废置换允许回填范围内" };
+    if (!entry || !sameCollectedRecord(guard)) return { ok: false, message: guardError };
+    const control = writableValueControl(entry);
+    if (!control || !writable(control, true)) return { ok: false, message: "目标字段不可写或页面已变化" };
+    const original = readValueControl(control);
+    const originalRaw = control.tagName === "SELECT" ? String(control.value ?? "") : original;
+    if (action.expectedValue != null && normalize(original) !== normalize(action.expectedValue)) {
+      return { ok: false, message: "页面原值已变化，请重新采集" };
+    }
+    const error = dispatchValue(control, action.value, root);
+    if (error) return { ok: false, message: error };
+    await settle();
+    if (!sameCollectedRecord(guard)) return { ok: false, message: guardError };
+    const after = readValueControl(control);
+    if (normalize(after) !== normalize(action.value)) {
+      if (sameCollectedRecord(guard)) {
+        if (control.tagName === "SELECT") {
+          control.value = originalRaw;
+          dispatchNative(control, root);
+        } else {
+          dispatchValue(control, original, root);
+        }
+      }
+      return { ok: false, message: "回填后回读失败" };
+    }
+    return { ok: true, message: "字段已回填并回读", actions: [{ field: action.field, label: action.field, value: after, status: "FILLED" }] };
+  }
+
+  globalThis.ReviewPageFieldWriter = { execute, preflight, executeValue };
 })();

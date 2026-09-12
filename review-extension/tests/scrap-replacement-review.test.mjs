@@ -144,3 +144,38 @@ test("assistant renders nothing when no item needs the reviewer", async () => {
   assert.equal(latest().session.phase, "COMPLETED");
   assert.equal(html, "");
 });
+
+function workbenchReview(reviewSteps, overrides = {}) {
+  return {
+    business_type: "scrap_replacement",
+    region: "changchun",
+    profile_version: "1.0",
+    review_steps: reviewSteps,
+    qr_checks: [],
+    page_fill_intent: [],
+    material_completeness: { phase: "EXTRACTED", status: "COMPLETE", enforced: false, issues: [] },
+    ...overrides,
+  };
+}
+
+test("workbench merges an actionable date policy into its page field", () => {
+  const dateField = makeStep({ step_id: "FIELD-invoice.invoice_date", sequence: 1, category: "FIELD", label: "开票日期", reason: "页面与发票日期一致" });
+  const datePolicy = makeStep({ step_id: "BUSINESS-POLICY-INVOICE-DATE", sequence: 2, result_status: "CONFLICT", requires_reviewer_action: true, label: "新车发票日期", reason: "开票日期不符合政策范围" });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([dateField, datePolicy]), pageData: { pageFields: { "invoice.invoice_date": "2024-06-25" }, images: [] } }));
+
+  assert.match(html, /页面原值/);
+  assert.match(html, /2024-06-25/);
+  assert.match(html, /地区政策核验/);
+  assert.match(html, /开票日期不符合政策范围/);
+  assert.equal((html.match(/新车发票日期/g) ?? []).length, 0);
+});
+
+test("workbench exposes only a backend-verified QR URL as a new-tab link", () => {
+  const qrStep = makeStep({ step_id: "QR-1", sequence: 1, category: "EXTERNAL", result_status: "CONFLICT", requires_reviewer_action: true, label: "二维码官网核验", reason: "官网字段与图片不一致" });
+  const url = "https://qcar.mofcom.gov.cn/query/1";
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([qrStep], { qr_checks: [{ url, domain_valid: true, accessible: true, page_fields: {}, status: "CONFLICT", message: "不一致" }] }), pageData: { pageFields: {}, images: [] } }));
+
+  assert.match(html, new RegExp(`href="${url}"`));
+  assert.match(html, /target="_blank"/);
+  assert.match(html, /noopener/);
+});

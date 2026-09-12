@@ -13,7 +13,7 @@ import {
   fetchReviewJob,
 } from "../reviewClient";
 import { pollReviewJob } from "../reviewJobs";
-import { applyPageFillIntent, type PageFillResult } from "../pageFillClient";
+import { applyPageFieldValue, applyPageFillIntent, type PageFillResult } from "../pageFillClient";
 import { focusReviewImage } from "../imageFocusClient";
 import {
   manualBusinessSelection,
@@ -56,6 +56,7 @@ export interface ReviewWorkflow {
   reset: () => void;
   startReview: () => Promise<void>;
   applyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
+  applyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   focusOriginalImage: (imageId: string) => Promise<void>;
 }
 
@@ -164,6 +165,17 @@ export function useReviewWorkflow(
     });
   }, [pageData]);
 
+  const applyFieldValue = useCallback(async (field: string, value: string, expectedValue?: string | null) => {
+    if (!pageData) return { ok: false, message: "没有找到原审核页面" };
+    return applyPageFieldValue({ field, value, expectedValue }, {
+      tabId: pageData.sourceTabId,
+      pageUrl: pageData.pageUrl,
+      pageInstanceId: pageData.pageInstanceId,
+      pageFingerprint: pageData.pageFingerprint,
+      collectionId: pageData.collectionId,
+    });
+  }, [pageData]);
+
   const focusOriginalImage = useCallback(async (imageId: string) => {
     if (!pageData) {
       setNotice("没有找到原审核页面");
@@ -186,6 +198,7 @@ export function useReviewWorkflow(
     reset,
     startReview,
     applyAffiliationFill,
+    applyPageFieldValue: applyFieldValue,
     focusOriginalImage,
   };
 }

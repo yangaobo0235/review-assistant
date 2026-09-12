@@ -1,9 +1,4 @@
-/**
- * 逐字段审核会话状态机（spec §11）。
- * 纯内存、纯函数：不访问 chrome/DOM，不落库，不跨刷新保存；
- * 人工选择只记录在 decisions 中，绝不改写后端步骤的 result_status。
- * 每次转换都校验当前 stepId 并返回冻结的新状态；不合法的旧按钮或重复事件原样返回旧状态。
- */
+/** 侧边栏字段审核会话：纯内存状态，不访问 DOM、不落库。 */
 import type { ReviewStep } from "./types/review";
 import { sortedReviewSteps, stepRequiresReviewerAction } from "./reviewSteps.ts";
 
