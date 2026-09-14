@@ -471,50 +471,7 @@ async def test_registration_page_numbers_are_normalized_for_scrap_documents(page
 
 
 @pytest.mark.asyncio
-async def test_transfer_registration_uncertainty_becomes_a_structured_observation() -> (
-    None
-):
-    fake = FakeQwenClient(
-        extraction=QwenExtraction(
-            document_type="registration_certificate",
-            fields={"registration.covered_pages": [1, 2, 3, 4]},
-            uncertain_fields=["registration.transfer_records"],
-        )
-    )
-    result = await AgentService(fake).extract_async(
-        [image(category_hint="registration_certificate", business_scope="transfer")]
-    )
-
-    uncertainty = next(
-        item
-        for item in result.observations
-        if item.field == "transfer.uncertain_fields"
-    )
-    assert uncertainty.value == ["registration.transfer_records"]
-
-
 @pytest.mark.asyncio
-async def test_transfer_invoice_uncertainty_becomes_a_structured_observation() -> None:
-    fake = FakeQwenClient(
-        extraction=QwenExtraction(
-            document_type="invoice",
-            fields={"vehicle.vin": "VIN-1"},
-            uncertain_fields=["vehicle.vin"],
-        )
-    )
-    result = await AgentService(fake).extract_async(
-        [image(category_hint="invoice", business_scope="transfer")]
-    )
-
-    uncertainty = next(
-        item
-        for item in result.observations
-        if item.field == "transfer.uncertain_fields"
-    )
-    assert uncertainty.document_type == "invoice"
-    assert uncertainty.value == ["vehicle.vin"]
-
-
 @pytest.mark.asyncio
 async def test_deadline_returns_completed_observations_and_marks_pending_timeout() -> (
     None

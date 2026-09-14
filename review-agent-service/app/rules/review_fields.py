@@ -26,6 +26,7 @@ NEW_VEHICLE_AND_INVOICE_FIELDS = (
 )
 
 PRIMARY_REVIEW_FIELDS = OLD_VEHICLE_FIELDS + NEW_VEHICLE_AND_INVOICE_FIELDS
+TRANSFER_REVIEW_FIELDS: tuple[str, ...] = ()
 
 # 报废置换页面控件的已知语义。实际字段数量和顺序来自每次 DOM 采集，
 # 不能用本表推导页面字段总数。

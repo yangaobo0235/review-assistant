@@ -66,3 +66,5 @@ SCRAP_REPLACEMENT_MATERIAL_POLICY = MaterialPolicy(
         MaterialRequirement("invoice", "new_vehicle", display_name="新车发票"),
     ),
 )
+
+TRANSFER_MATERIAL_POLICY = MaterialPolicy(mode="disabled")

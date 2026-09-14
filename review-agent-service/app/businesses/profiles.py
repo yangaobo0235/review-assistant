@@ -119,6 +119,17 @@ SCRAP_REPLACEMENT_CHANGCHUN = BusinessProfile(
     replacement_policy=CHANGCHUN_REPLACEMENT_POLICY,
 )
 
+# 仅用于旧数据/测试迁移，永不加入 BUSINESS_PROFILES。
+TRANSFER_DEFAULT = BusinessProfile(
+    business_type=BusinessType.TRANSFER,
+    region=Region.DEFAULT,
+    version="deprecated",
+    required_fields=(),
+    sections=(),
+    rules_configured=False,
+    unconfigured_message="过户审核已停用",
+)
+
 CONSISTENCY_CHANGCHUN = BusinessProfile(
     business_type=BusinessType.CONSISTENCY,
     region=Region.CHANGCHUN,

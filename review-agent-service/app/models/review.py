@@ -48,6 +48,7 @@ class JobStatus(StrEnum):
 class BusinessType(StrEnum):
     SCRAP_REPLACEMENT = "scrap_replacement"
     VEHICLE_SOURCE = "vehicle_source"
+    TRANSFER = "transfer"  # deprecated; no active profile
     CONSISTENCY = "consistency"
 
 
