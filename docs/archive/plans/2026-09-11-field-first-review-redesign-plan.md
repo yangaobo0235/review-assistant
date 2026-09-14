@@ -1,3 +1,5 @@
+> 历史归档：本文是当时的设计/实施计划，可能包含已被替代或尚未完成的内容。当前要求和实现说明以[项目完整手册](../../system-spec.md)为准，请勿直接按旧计划执行。原文保留用于追溯。
+
 # 原页面逐字段审核精简改造 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

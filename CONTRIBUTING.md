@@ -20,22 +20,7 @@ chore: update repository tooling
 
 ## 质量要求
 
-后端：
-
-```powershell
-cd review-agent-service
-uv run pytest -q
-uv run ruff check app tests
-```
-
-扩展：
-
-```powershell
-cd review-extension
-npm test
-npm run build
-npm run lint
-```
+验证命令和开发约定统一见[项目完整手册第 13 章](docs/system-spec.md#13-开发验收与排错)，避免在多处维护。
 
 Pull Request 需要说明变更目的、行为影响、风险边界和实际验证结果。涉及界面时附上截图；涉及审核规则时列出业务、地区、Profile 版本和安全降级行为。
 
@@ -46,4 +31,4 @@ Pull Request 需要说明变更目的、行为影响、风险边界和实际验�
 - 测试数据使用明确的虚构域名和值。
 - 新日志不得包含图片内容、完整业务字段或密钥。
 
-更多约定见 [开发指南](docs/development.md) 和 [安全策略](SECURITY.md)。
+更多约定见 [项目完整手册](docs/system-spec.md) 和 [安全策略](SECURITY.md)。
