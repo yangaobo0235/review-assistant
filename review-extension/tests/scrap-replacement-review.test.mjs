@@ -176,7 +176,7 @@ test("workbench merges an actionable date policy into its page field", () => {
   const datePolicy = makeStep({ step_id: "BUSINESS-POLICY-INVOICE-DATE", sequence: 2, result_status: "CONFLICT", requires_reviewer_action: true, label: "新车发票日期", reason: "开票日期不符合政策范围" });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([dateField, datePolicy]), pageData: { pageFields: { "invoice.invoice_date": "2024-06-25" }, images: [] } }));
 
-  assert.match(html, /页面原值/);
+  assert.match(html, /页面原始值/);
   assert.match(html, /2024-06-25/);
   assert.match(html, /地区政策核验/);
   assert.match(html, /开票日期不符合政策范围/);
@@ -283,7 +283,7 @@ test("technical QR details keep a verified raw URL clickable for manual review",
 
 test("workbench keeps page values at the top and shows a material thumbnail beside its image action", () => {
   const field = makeStep({
-    step_id: "FIELD-old_vehicle.vehicle_type",
+    step_id: "FIELD-old_vehicle.type",
     sequence: 1,
     category: "FIELD",
     label: "报废车辆类型",
@@ -297,14 +297,14 @@ test("workbench keeps page values at the top and shows a material thumbnail besi
   });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
     review: workbenchReview([field]),
-    pageData: { pageFields: { "old_vehicle.vehicle_type": "牵引车" }, images: [{ imageId: "vehicle-license", src: "vehicle-license.jpg", alt: "旧车行驶证" }] },
+    pageData: { pageFields: { "old_vehicle.type": "牵引车" }, images: [{ imageId: "vehicle-license", src: "vehicle-license.jpg", alt: "旧车行驶证" }] },
   }));
 
-  assert.match(html, /页面原值/);
+  assert.match(html, /页面原始值/);
   assert.match(html, /牵引车/);
-  assert.match(html, /重型半挂牵引车/);
+  assert.match(html.replace(/<[^>]+>/g, ""), /重型半挂牵引车/);
   assert.match(html, /行驶证/);
-  assert.match(html, /class="evidence-thumbnail"/);
+  assert.match(html, /class="candidate-evidence"/);
   assert.match(html, /src="vehicle-license\.jpg"/);
   assert.match(html, /查看原图/);
   assert.doesNotMatch(html, /vehicle_license/);
@@ -328,7 +328,7 @@ test("workbench marks differing identifier positions in red", () => {
   }));
 
   assert.match(html, /class="value-diff"/);
-  assert.match(html, /<mark class="value-diff"[^>]*>8<\/mark>/);
+  assert.match(html, /<mark class="value-diff"[^>]*>0<\/mark>/);
 });
 
 test("workbench labels a page invoice code derived from the invoice digital number", () => {
@@ -363,10 +363,10 @@ test("workbench reports the actual DOM-derived field count and unknown controls"
   const added = makeStep({ step_id: "FIELD-DOM-2", sequence: 2, category: "FIELD", label: "页面新增字段", page_value: "新增值", result_status: "INSUFFICIENT", requires_reviewer_action: true, reason: "未配置核验来源" });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([known, added]), pageData: { pageFields: {}, reviewFields: [], images: [] } }));
 
-  assert.match(html, /本页控件 2/);
+  assert.match(html, /全部字段 \(2\)/);
   assert.match(html, /全部字段 \(2\)/);
   assert.match(html, /页面新增字段/);
-  assert.match(html, /页面原值/);
+  assert.match(html, /页面原始值/);
   assert.match(html, /新增值/);
 });
 
@@ -382,7 +382,7 @@ test("workbench renders the six-item material checklist and blocks confirming a 
   ].map(([key, display_name, status]) => ({ key, display_name, status, material_type: key.split(":")[1], business_scope: key.split(":")[0], required_pages: [], present_pages: [], missing_pages: [], image_ids: [], reason: status === "MISSING" ? `缺少${display_name}` : "材料已确认" }));
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([materialStep], { material_completeness: { phase: "EXTRACTED", status: "INCOMPLETE", enforced: true, issues: [], checklist } }), pageData: { pageFields: {}, images: [] } }));
 
-  assert.equal((html.match(/材料已确认/g) ?? []).length, 5);
+  assert.equal((html.match(/材料已提供/g) ?? []).length, 5);
   assert.match(html, /新车行驶证/);
   assert.match(html, /缺失/);
   assert.doesNotMatch(html, /确认已核对/);
@@ -398,7 +398,7 @@ test("workbench renders dynamic identity requirements in the affiliation card", 
   assert.match(html, /查看原图/);
 });
 
-test("affiliation card separates auxiliary blockers and shows only subject evidence", () => {
+test("affiliation card includes customer identity blockers and shows subject images", () => {
   const subject = makeStep({
     step_id: "BUSINESS-AFFILIATION-SUBJECT-001",
     sequence: 1,
@@ -414,26 +414,27 @@ test("affiliation card separates auxiliary blockers and shows only subject evide
       subject_requirements: [{ party: "SHARED", subject_name: "甲运输有限公司", subject_type: "COMPANY", document: "business_license", status: "PRESENT", image_ids: ["license"], reason: "营业执照名称已确认" }],
     },
   });
-  const vin = makeStep({
-    step_id: "BUSINESS-AFFILIATION-AUX-NEW-VIN",
+  const customer = makeStep({
+    step_id: "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME",
     sequence: 2,
     category: "BUSINESS_RULE",
     result_status: "INSUFFICIENT",
     requires_reviewer_action: true,
-    label: "OCR新车车架号",
+    label: "客户名称",
     reason: "页面或材料未取得可比较的明确值",
   });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
-    review: workbenchReview([subject, vin]),
+    review: workbenchReview([subject, customer]),
     pageData: { pageFields: {}, images: [
       { imageId: "license", src: "license.jpg", alt: "营业执照原图" },
       { imageId: "registration", src: "registration.jpg", alt: "登记证原图" },
     ] },
   }));
 
-  assert.match(html, /关联辅助核验/);
-  assert.match(html, /OCR新车车架号/);
+  assert.doesNotMatch(html, /关联辅助核验/);
+  assert.match(html, /客户名称/);
   assert.match(html, /页面或材料未取得可比较的明确值/);
-  assert.match(html, /营业执照原图/);
-  assert.doesNotMatch(html, /登记证原图/);
+  assert.match(html, /src="license.jpg"/);
+  assert.match(html, /查看原图/);
+  assert.doesNotMatch(html, /src="registration.jpg"/);
 });

@@ -1,7 +1,15 @@
 import pytest
 
-from app.businesses.profiles import SCRAP_REPLACEMENT_CHANGCHUN, SCRAP_REPLACEMENT_QINGDAO
-from app.models.review import FieldObservation, FieldStatus, ReviewFieldSnapshot, ReviewRequest
+from app.businesses.profiles import (
+    SCRAP_REPLACEMENT_CHANGCHUN,
+    SCRAP_REPLACEMENT_QINGDAO,
+)
+from app.models.review import (
+    FieldObservation,
+    FieldStatus,
+    ReviewFieldSnapshot,
+    ReviewRequest,
+)
 from app.rules.review_step_routing import build_review_steps
 from app.services.review_response import _build_comparisons
 

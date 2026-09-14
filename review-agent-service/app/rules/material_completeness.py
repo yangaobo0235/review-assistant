@@ -3,7 +3,6 @@
 from collections.abc import Iterable
 
 from app.agent.field_routing import route_fields
-
 from app.agent.models import (
     AgentBatchResult,
     MaterialChecklistItem,

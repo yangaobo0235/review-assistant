@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+
 from app.services.qr import QrCodeService
 
 EXPECTED_URL = "https://qclt.mofcom.gov.cn/deal/scrap/validdata/test-token"

@@ -1,8 +1,9 @@
 import ssl
 
-import app.services.qr as qr_module
 import httpx
 import pytest
+
+import app.services.qr as qr_module
 from app.agent.models import AgentBatchResult
 from app.models.review import FieldObservation, FieldStatus, ImageInput, ReviewRequest
 from app.services.qr import (

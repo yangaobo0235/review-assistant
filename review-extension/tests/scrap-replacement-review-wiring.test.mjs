@@ -629,9 +629,9 @@ test("the field-first assistant never renders legacy summary sections", () => {
   assert.match(source, /确认无误/);
   assert.match(source, /标记异常/);
   assert.match(source, /查看原图/);
-  assert.match(source, /automaticAffiliationAttempt/);
-  assert.match(source, /writableTargets/);
-  assert.match(source, /正在自动填写新旧车挂靠/);
+  assert.match(source, /automaticAttempt/);
+  assert.match(source, /onApplyAffiliationFill\(actions\)/);
+  assert.match(source, /正在联合校验并填写挂靠字段/);
 });
 
 test("App renders the workbench without starting the retired page-marker orchestration", () => {

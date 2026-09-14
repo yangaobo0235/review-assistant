@@ -19,7 +19,11 @@ from app.models.review import (
 )
 from app.rules.aggregate import aggregate_field
 from app.rules.check_results import unique_checks
-from app.rules.field_evidence_policies import MATERIAL_FIELD_BY_PAGE_FIELD, field_policy, filter_allowed_observations
+from app.rules.field_evidence_policies import (
+    MATERIAL_FIELD_BY_PAGE_FIELD,
+    field_policy,
+    filter_allowed_observations,
+)
 from app.rules.normalize import normalize_value
 from app.rules.review_step_routing import is_page_interaction_profile
 from app.rules.transfer_sources import (
@@ -51,6 +55,14 @@ def _append_qr_observations(
             )
 
 
+def _comparable_qr_value(field_name: str, value: object) -> str:
+    normalized = normalize_value(field_name, value) or ""
+    # Official certificate numbers may omit the printed separators.
+    if field_name == "scrap_certificate.certificate_no":
+        return "".join(ch for ch in normalized.upper() if ch.isalnum())
+    return normalized
+
+
 def _mark_qr_conflicts(
     observations: list[FieldObservation],
     qr_checks: list[QrCheck],
@@ -77,15 +89,7 @@ def _mark_qr_conflicts(
                 if page_field == "vin"
                 else "scrap_certificate.certificate_no"
             )
-            def comparable(value: object) -> str:
-                normalized = normalize_value(field_name, value)
-                # QR pages commonly omit visual separators while the printed
-                # certificate keeps them. This is formatting noise, not a
-                # contradiction in the QR verification result.
-                if page_field == "certificate_no":
-                    return "".join(ch for ch in normalized.upper() if ch.isalnum())
-                return normalized
-            if candidates and comparable(candidates[0]) != comparable(page_value):
+            if candidates and _comparable_qr_value(field_name, candidates[0]) != _comparable_qr_value(field_name, page_value):
                 check.status = FieldStatus.CONFLICT
                 check.message = "二维码网页字段与图片识别结果冲突"
                 has_conflict = True

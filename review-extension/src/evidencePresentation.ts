@@ -77,7 +77,7 @@ export function comparisonEvidence(
   ];
 }
 
-export function evidencePresentation(evidence: Evidence) {
+export function evidencePresentation(evidence: Pick<Evidence, "source" | "value" | "document_type" | "business_scope" | "group_order">) {
   const value = String(evidence.value);
   if (evidence.source === "页面右侧字段" || evidence.source === "申请页面字段") {
     return { kind: "page" as const, label: "申请页面", value };
