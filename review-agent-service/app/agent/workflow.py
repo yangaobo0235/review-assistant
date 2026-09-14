@@ -17,6 +17,7 @@ from app.agent.models import (
     MaterialCompletenessReport,
     ReviewCheck,
 )
+from app.agent.planner import plan_capabilities
 from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
 from app.models.review import (
@@ -207,6 +208,10 @@ class ReviewWorkflow:
                 await callback_result
         return {"batch": updated, "material_completeness": report}
 
+    @staticmethod
+    def _plan_capabilities(state: ReviewState) -> dict[str, Any]:
+        return {"capability_plan": plan_capabilities(state["profile"])} 
+
     def _execution_context(self, state: ReviewState) -> ReviewExecutionContext:
         batch = state.get("batch")
         if batch is None:
@@ -267,7 +272,7 @@ class ReviewWorkflow:
             state["request"],
             batch,
             state["profile"],
-            include_tools=True,
+            include_tools=False,
             qr_checks=qr_checks,
             business_checks=[],
             defer_advice=True,
@@ -425,3 +430,4 @@ class ReviewWorkflow:
         if response is None or batch is None:
             raise RuntimeError("工作流未生成完整审核结果")
         return response, batch
+
