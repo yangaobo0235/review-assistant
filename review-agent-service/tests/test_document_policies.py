@@ -44,6 +44,7 @@ def test_transfer_invoice_prompt_requests_only_transfer_fields() -> None:
 
 def test_each_supported_document_has_a_specific_allowlist() -> None:
     assert DOCUMENT_POLICIES["scrap_certificate"].fields == (
+        "vehicle.type",
         "old_vehicle.recycle_date",
         "scrap_certificate.certificate_no",
         "vehicle.vin",
@@ -51,23 +52,29 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
         "vehicle.owner",
     )
     assert DOCUMENT_POLICIES["vehicle_license"].fields == (
+        "vehicle.type",
         "vehicle.vin",
         "vehicle.plate_no",
         "vehicle.owner",
+        "vehicle.registration_date",
     )
     assert DOCUMENT_POLICIES["registration_certificate"].fields == (
         "vehicle.owner",
         "vehicle.vin",
         "vehicle.engine_model",
+        "vehicle.type",
+        "vehicle.fuel_type",
+        "vehicle.registration_date",
+        "registration.covered_pages",
     )
     assert DOCUMENT_POLICIES["invoice"].fields == (
-        "invoice.code",
         "invoice.invoice_no",
         "invoice.amount",
         "invoice.invoice_date",
         "new_vehicle.origin",
+        "invoice.terminal_certificate_no",
+        "invoice.phone",
         "vehicle.vin",
-        "vehicle.plate_no",
         "vehicle.owner",
     )
     assert DOCUMENT_POLICIES["business_license"].fields == (
@@ -89,7 +96,16 @@ def test_prompts_restrict_model_scope_and_output_contract() -> None:
     classification_prompt = build_classification_prompt()
     assert "unsupported" in classification_prompt
     assert "不要提取业务字段" in classification_prompt
-    assert "身份证信息" in classification_prompt
+    assert "identity_card" in classification_prompt
+    assert "身份证号码" in classification_prompt
+
+    identity_prompt = DOCUMENT_POLICIES["identity_card"].build_extraction_prompt(
+        image_index=4,
+        business_scope="identity",
+    )
+    assert "identity_card.name" in identity_prompt
+    assert "identity_card.side" in identity_prompt
+    assert "不要读取或输出身份证号码" in identity_prompt
 
 
 def test_engine_model_is_extracted_only_from_registration_certificate() -> None:
@@ -116,12 +132,39 @@ def test_registration_certificate_prompt_fields_follow_business_scope() -> None:
         business_scope="new_vehicle",
     )
 
-    assert "vehicle.owner" in old_prompt
+    assert "vehicle.owner" not in old_prompt
     assert "vehicle.vin" in old_prompt
     assert "vehicle.engine_model" in old_prompt
-    assert "vehicle.owner" in new_prompt
+    assert "vehicle.owner" not in new_prompt
     assert "vehicle.vin" in new_prompt
     assert "vehicle.engine_model" not in new_prompt
+    assert "registration.covered_pages" in old_prompt
+    assert "registration.covered_pages" in new_prompt
+
+
+def test_new_owner_allowlist_excludes_registration_certificate() -> None:
+    from app.rules.field_evidence_policies import field_policy
+
+    policy = field_policy("new_vehicle.owner")
+    assert policy is not None
+    assert policy.allowed_document_types == ("vehicle_license", "invoice")
+
+
+def test_scrap_replacement_prompts_use_scope_specific_allowlists_and_confusion_guards() -> None:
+    old_license = DOCUMENT_POLICIES["vehicle_license"].build_extraction_prompt(1, "old_vehicle")
+    new_license = DOCUMENT_POLICIES["vehicle_license"].build_extraction_prompt(1, "new_vehicle")
+    old_registration = DOCUMENT_POLICIES["registration_certificate"].build_extraction_prompt(2, "old_vehicle")
+    new_registration = DOCUMENT_POLICIES["registration_certificate"].build_extraction_prompt(2, "new_vehicle")
+    invoice = DOCUMENT_POLICIES["invoice"].build_extraction_prompt(3, "new_vehicle")
+
+    assert "发动机号码不是发动机型号" in old_license
+    assert "注册日期" in new_license
+    assert "vehicle.engine_model" in old_registration
+    assert "vehicle.engine_model" not in new_registration
+    assert "第13项‘燃料种类’" in new_registration
+    assert "模型不要输出 invoice.code" in invoice
+    assert "销货单位信息区域中‘电话’" in invoice
+    assert "图片可能横向" in invoice
 
 
 def test_combined_prompt_restricts_registration_fields_by_business_scope() -> None:

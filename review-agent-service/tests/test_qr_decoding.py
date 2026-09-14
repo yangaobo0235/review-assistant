@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-
 from app.services.qr import QrCodeService
 
 EXPECTED_URL = "https://qclt.mofcom.gov.cn/deal/scrap/validdata/test-token"
@@ -46,6 +45,25 @@ def test_candidate_generation_is_bounded() -> None:
     candidates = list(QrCodeService._candidates(photographed_certificate()))
 
     assert len(candidates) <= 12
+
+
+def test_lower_left_qr_is_found_when_certificate_text_extends_above_crop() -> None:
+    """The QR on a photographed recycling certificate is below dense table text.
+
+    The old fixed 45% crop removed the QR finder pattern on some portrait photos;
+    the overlapping lower-left candidate must still decode it.
+    """
+    canvas = np.full((517, 735, 3), 235, dtype=np.uint8)
+    # Add table-like horizontal lines/noise above the QR to reproduce the
+    # certificate layout without checking in a real applicant document.
+    for y in range(30, 280, 18):
+        cv2.line(canvas, (0, y), (730, y), (180, 180, 180), 1)
+    qr = make_qr(EXPECTED_URL, size=145)
+    canvas[300:445, 40:185] = cv2.cvtColor(qr, cv2.COLOR_GRAY2BGR)
+
+    results = QrCodeService().decode(canvas, image_index=3)
+
+    assert [item.raw_value for item in results] == [EXPECTED_URL]
 
 
 def test_decode_rounds_stop_before_work_when_deadline_expired(monkeypatch) -> None:

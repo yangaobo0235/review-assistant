@@ -25,6 +25,14 @@ class BusinessLicenseEvidence:
 
 
 @dataclass(frozen=True)
+class IdentityCardEvidence:
+    source_id: str
+    side: str | None
+    name: str | None
+    ambiguous: bool = False
+
+
+@dataclass(frozen=True)
 class AffiliationCheckResult:
     check: ReviewCheck
     owner_types: tuple[str | None, str | None]
@@ -43,6 +51,10 @@ def _person_name(value: object | None) -> str | None:
         if name and PERSON_PATTERN.fullmatch(name) and not COMPANY_PATTERN.search(name)
         else None
     )
+
+
+def _identity_pair_key(source_id: str) -> str:
+    return re.sub(r"[-_](?:front|back)$", "", source_id, flags=re.IGNORECASE)
 
 
 def group_business_licenses(
@@ -78,6 +90,33 @@ def group_business_licenses(
             company_names=tuple(
                 sorted(values.get("business_license.company_name", set()))
             ),
+        )
+        for source_id, values in grouped.items()
+    ]
+
+
+def group_identity_cards(
+    observations: list[FieldObservation],
+) -> list[IdentityCardEvidence]:
+    grouped: dict[str, dict[str, set[str]]] = {}
+    uncertain_sources: set[str] = set()
+    for item in observations:
+        if item.source_type != "image" or item.document_type != "identity_card":
+            continue
+        if not item.field.startswith("identity_card.") or item.value in (None, ""):
+            continue
+        if item.uncertain:
+            uncertain_sources.add(item.source_id)
+        grouped.setdefault(item.source_id, {}).setdefault(item.field, set()).add(
+            str(item.value).strip()
+        )
+    return [
+        IdentityCardEvidence(
+            source_id=source_id,
+            side=next(iter(values.get("identity_card.side", set())), None),
+            name=next(iter(values.get("identity_card.name", set())), None),
+            ambiguous=source_id in uncertain_sources
+            or any(len(field_values) > 1 for field_values in values.values()),
         )
         for source_id, values in grouped.items()
     ]
@@ -166,40 +205,11 @@ def build_affiliation_auxiliary_checks(
     *,
     page_fields: dict[str, object],
     new_owner_type: str | None,
-    new_vehicle_vin: object | None,
     new_owner: object | None,
 ) -> tuple[ReviewCheck, ...]:
-    """Compare the three page safeguards without guessing labels or identities."""
+    """Check customer identity; vehicle VINs are independent field reviews."""
 
-    raw_page_owner_type = page_fields.get("application.owner_type")
-    page_owner_type = normalize_page_owner_type(raw_page_owner_type)
-    owner_type = _auxiliary_check(
-        "AFFILIATION-AUX-OWNER-TYPE",
-        "车辆所有人类型",
-        page_owner_type,
-        new_owner_type,
-        field="application.owner_type",
-        page_source="申请页面车辆所有人类型",
-        material_source="新车主体类型",
-    ).model_copy(
-        update={
-            "values": [
-                ReviewCheckValue(
-                    source="申请页面车辆所有人类型", value=raw_page_owner_type
-                ),
-                ReviewCheckValue(source="新车主体类型", value=new_owner_type),
-            ]
-        }
-    )
-    vin = _auxiliary_check(
-        "AFFILIATION-AUX-NEW-VIN",
-        "OCR新车车架号",
-        page_fields.get("page_ocr.new_vehicle_vin"),
-        new_vehicle_vin,
-        field="new_vehicle.vin",
-        page_source="页面OCR新车车架号",
-        material_source="新车材料车架号",
-    )
+    _ = new_owner_type
     customer = _auxiliary_check(
         "AFFILIATION-AUX-CUSTOMER-NAME",
         "客户名称",
@@ -209,47 +219,197 @@ def build_affiliation_auxiliary_checks(
         page_source="申请页面客户名称",
         material_source="新车材料所有人",
     )
-    return owner_type, vin, customer
+    return (customer,)
 
 
 def build_affiliation_subject_check(
     old_owner: object | None,
     new_owner: object | None,
     observations: list[FieldObservation],
+    page_owner_type: object | None = None,
 ) -> AffiliationCheckResult:
     licenses = group_business_licenses(observations)
+    identities = group_identity_cards(observations)
     old_name = _name(old_owner)
     new_name = _name(new_owner)
     old_type = classify_owner_type(old_owner, licenses)
-    new_type = classify_owner_type(new_owner, licenses)
+    inferred_new_type = classify_owner_type(new_owner, licenses)
+    declared_new_type = normalize_page_owner_type(page_owner_type)
+    new_type = declared_new_type or inferred_new_type
     values = [
         ReviewCheckValue(source="旧车所有人", value=old_owner),
         ReviewCheckValue(source="新车所有人", value=new_owner),
         ReviewCheckValue(source="旧车主体类型", value=old_type),
         ReviewCheckValue(source="新车主体类型", value=new_type),
     ]
-    relevant_sources = {
+    relevant_license_sources = {
         item.source_id
         for item in observations
         if item.field == "business_license.company_name"
         and _name(item.value) in {old_name, new_name}
+    }
+    personal_names = {
+        name
+        for name, owner_type in ((old_name, old_type), (new_name, new_type))
+        if owner_type == "PERSONAL" and name
+    }
+    relevant_identity_sources = {
+        item.source_id
+        for item in identities
+        if item.name in personal_names or item.side == "BACK"
     }
     evidence = observation_evidence(
         [
             item
             for item in observations
             if item.field in {"old_vehicle.owner", "new_vehicle.owner"}
-            or item.source_id in relevant_sources
+            or item.source_id in relevant_license_sources
             and item.field
             in {
                 "business_license.company_name",
                 "business_license.legal_representative",
                 "business_license.unified_social_credit_code",
             }
+            or item.source_id in relevant_identity_sources
+            and item.field in {"identity_card.name", "identity_card.side"}
         ]
     )
     status = "INSUFFICIENT"
     reason = "旧车或新车主体类型无法可靠判断"
+
+    requirements: list[dict[str, object]] = []
+    missing_requirements: list[str] = []
+    distinct_subjects: list[tuple[str, str, str]] = []
+    for party, name, owner_type in (
+        ("OLD_VEHICLE", old_name, old_type),
+        ("NEW_VEHICLE", new_name, new_type),
+    ):
+        if not name or not owner_type:
+            continue
+        existing_index = next(
+            (
+                index
+                for index, (_, existing_name, existing_type) in enumerate(
+                    distinct_subjects
+                )
+                if existing_name == name and existing_type == owner_type
+            ),
+            None,
+        )
+        if existing_index is not None:
+            distinct_subjects[existing_index] = ("SHARED", name, owner_type)
+            continue
+        distinct_subjects.append((party, name, owner_type))
+
+    identity_backs = [
+        item for item in identities if item.side == "BACK" and not item.ambiguous
+    ]
+    personal_subject_count = sum(
+        owner_type == "PERSONAL" for _, _, owner_type in distinct_subjects
+    )
+    same_company_subject = bool(
+        old_type == new_type == "COMPANY"
+        and old_name
+        and old_name == new_name
+    )
+    for party, name, owner_type in distinct_subjects:
+        if owner_type == "COMPANY":
+            matching_licenses = [
+                item
+                for item in licenses
+                if name in {_name(candidate) for candidate in item.company_names or (item.company_name,)}
+            ]
+            license_item = _license_for(name, licenses)
+            requirement_status = (
+                "PRESENT"
+                if license_item
+                and (
+                    same_company_subject
+                    or _person_name(license_item.legal_representative)
+                )
+                else "UNCERTAIN"
+                if matching_licenses
+                else "MISSING"
+            )
+            requirement_reason = (
+                "营业执照名称已确认"
+                if requirement_status == "PRESENT" and same_company_subject
+                else "营业执照名称和法定代表人已确认"
+                if requirement_status == "PRESENT"
+                else "营业执照存在多份、冲突或法定代表人无法确认"
+                if requirement_status == "UNCERTAIN"
+                else f"缺少与{name}对应的营业执照"
+            )
+            requirements.append({
+                "party": party,
+                "subject_name": name,
+                "subject_type": owner_type,
+                "document": "business_license",
+                "status": requirement_status,
+                "image_ids": [item.source_id for item in matching_licenses],
+                "reason": requirement_reason,
+            })
+            if requirement_status != "PRESENT":
+                missing_requirements.append(requirement_reason)
+            continue
+
+        matching_fronts = [
+            item
+            for item in identities
+            if item.side == "FRONT" and _name(item.name) == name and not item.ambiguous
+        ]
+        front_status = "PRESENT" if len(matching_fronts) == 1 else "UNCERTAIN" if matching_fronts else "MISSING"
+        matching_backs = (
+            identity_backs
+            if personal_subject_count == 1
+            else [
+                item
+                for item in identity_backs
+                if any(
+                    _identity_pair_key(item.source_id)
+                    == _identity_pair_key(front.source_id)
+                    for front in matching_fronts
+                )
+            ]
+        )
+        back_status = (
+            "PRESENT"
+            if len(matching_backs) == 1
+            else "UNCERTAIN"
+            if identity_backs
+            else "MISSING"
+        )
+        for document, document_status, image_ids, document_label in (
+            ("identity_card_front", front_status, [item.source_id for item in matching_fronts], "身份证正面"),
+            (
+                "identity_card_back",
+                back_status,
+                [item.source_id for item in matching_backs or identity_backs],
+                "身份证反面",
+            ),
+        ):
+            requirement_reason = (
+                f"{document_label}已确认"
+                if document_status == "PRESENT"
+                else "存在多个个人主体，身份证反面不含姓名，无法确认对应关系"
+                if document == "identity_card_back"
+                and document_status == "UNCERTAIN"
+                and personal_subject_count > 1
+                else f"{document_label}存在冲突或无法确认"
+                if document_status == "UNCERTAIN"
+                else f"{name}缺少{document_label}"
+            )
+            requirements.append({
+                "party": party,
+                "subject_name": name,
+                "subject_type": owner_type,
+                "document": document,
+                "status": document_status,
+                "image_ids": image_ids,
+                "reason": requirement_reason,
+            })
+            if document_status != "PRESENT":
+                missing_requirements.append(requirement_reason)
 
     related_licenses = [
         item
@@ -279,16 +439,26 @@ def build_affiliation_subject_check(
         for name in company_names
     )
 
-    if old_type == new_type == "COMPANY" and old_name and old_name == new_name:
+    type_mismatch = bool(
+        declared_new_type
+        and inferred_new_type
+        and declared_new_type != inferred_new_type
+    )
+    if type_mismatch:
+        requirements = []
+        reason = "页面车辆所有人类型与新车材料主体无法可靠对应，请人工确认"
+    elif missing_requirements:
+        reason = "；".join(dict.fromkeys(missing_requirements))
+    elif old_type == new_type == "COMPANY" and old_name and old_name == new_name:
         status = "MATCH"
-        reason = "新旧车公司法定名称一致"
+        reason = "新旧车公司法定名称一致且营业执照已确认"
     elif invalid_license_evidence or duplicate_license_evidence:
         reason = "对应公司营业执照存在多份、冲突或不确定法人证据，请核对全部来源"
     elif old_type and new_type and old_name and new_name:
         if old_type == new_type == "PERSONAL":
             status = "MATCH" if old_name == new_name else "CONFLICT"
             reason = (
-                "新旧车个人姓名一致"
+                "新旧车个人姓名一致且身份证正反面已确认"
                 if status == "MATCH"
                 else "新旧车均为个人但姓名不同"
             )
@@ -338,6 +508,7 @@ def build_affiliation_subject_check(
             reason=reason,
             values=values,
             evidence=evidence,
+            details={"subject_requirements": requirements},
         ),
         owner_types=(old_type, new_type),
         page_actions=actions,

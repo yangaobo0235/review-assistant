@@ -19,6 +19,7 @@ from app.models.review import (
 )
 from app.rules.aggregate import aggregate_field
 from app.rules.check_results import unique_checks
+from app.rules.field_evidence_policies import MATERIAL_FIELD_BY_PAGE_FIELD, field_policy, filter_allowed_observations
 from app.rules.normalize import normalize_value
 from app.rules.review_step_routing import is_page_interaction_profile
 from app.rules.transfer_sources import (
@@ -76,9 +77,15 @@ def _mark_qr_conflicts(
                 if page_field == "vin"
                 else "scrap_certificate.certificate_no"
             )
-            if candidates and normalize_value(
-                field_name, candidates[0]
-            ) != normalize_value(field_name, page_value):
+            def comparable(value: object) -> str:
+                normalized = normalize_value(field_name, value)
+                # QR pages commonly omit visual separators while the printed
+                # certificate keeps them. This is formatting noise, not a
+                # contradiction in the QR verification result.
+                if page_field == "certificate_no":
+                    return "".join(ch for ch in normalized.upper() if ch.isalnum())
+                return normalized
+            if candidates and comparable(candidates[0]) != comparable(page_value):
                 check.status = FieldStatus.CONFLICT
                 check.message = "二维码网页字段与图片识别结果冲突"
                 has_conflict = True
@@ -94,19 +101,29 @@ def _build_comparisons(
     uncertain_requires_review = is_page_interaction_profile(
         profile.business_type, profile.region, profile.version
     )
+    fields = list(profile.required_fields)
+    if uncertain_requires_review:
+        collected_fields = set(request.page_fields) | {item.field for item in request.review_fields}
+        fields.extend(field for field in MATERIAL_FIELD_BY_PAGE_FIELD if field in collected_fields and field not in fields)
+
+    def field_observations(field_name: str) -> list[FieldObservation]:
+        material_field = MATERIAL_FIELD_BY_PAGE_FIELD.get(field_name, field_name)
+        return [item for item in observations if item.field == (field_name if item.source_type == "page" else material_field)]
+
     comparisons = [
         aggregate_field(
             field_name,
-            [
+            filter_allowed_observations(field_name, [
                 item
                 for item in filter_transfer_observations(field_name, observations)
                 if item.field == field_name
-            ]
+            ])
             if request.business_type.value == "transfer"
-            else [item for item in observations if item.field == field_name],
+            else filter_allowed_observations(field_name, field_observations(field_name)),
             uncertain_requires_review=uncertain_requires_review,
+            single_evidence_requires_review=(field_policy(field_name).allow_single_evidence is False if field_policy(field_name) else True),
         )
-        for field_name in profile.required_fields
+        for field_name in fields
     ]
     if request.business_type.value == "transfer":
         return [
@@ -154,7 +171,7 @@ def build_review_response(
             for section in profile.sections
         ],
         context_summary={
-            "field_count": len(request.page_fields),
+            "field_count": len(request.review_fields) or len(request.page_fields),
             "image_count": len(request.images),
             "image_failed_count": sum(
                 bool(image.collection_error) for image in request.images
@@ -196,7 +213,7 @@ def build_unconfigured_response(
         issues=[message],
         sections=[],
         context_summary={
-            "field_count": len(request.page_fields),
+            "field_count": len(request.review_fields) or len(request.page_fields),
             "image_count": len(request.images),
             "image_failed_count": sum(
                 bool(image.collection_error) for image in request.images

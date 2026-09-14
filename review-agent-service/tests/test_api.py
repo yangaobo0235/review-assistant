@@ -32,6 +32,13 @@ def test_assist_returns_review_structure_for_page_data() -> None:
     assert "comparisons" in body
     assert "qr_checks" in body
     assert body["context_summary"]["image_count"] == 0
+    assert len(body["material_completeness"]["checklist"]) == 6
+    subject_step = next(
+        item
+        for item in body["review_steps"]
+        if item["step_id"] == "BUSINESS-AFFILIATION-SUBJECT-001"
+    )
+    assert "subject_requirements" in subject_step["details"]
 
 
 def test_job_api_creates_and_polls_review() -> None:

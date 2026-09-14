@@ -301,16 +301,18 @@ class ReviewWorkflow:
     ) -> RuleExecutionResult:
         comparisons = {item.field: item for item in context.comparisons}
         result = build_affiliation_subject_check(
-            raw_settled_value(comparisons, "old_vehicle.owner"),
-            raw_settled_value(comparisons, "new_vehicle.owner"),
+            context.request.page_fields.get("old_vehicle.owner")
+            or raw_settled_value(comparisons, "old_vehicle.owner"),
+            context.request.page_fields.get("new_vehicle.owner")
+            or raw_settled_value(comparisons, "new_vehicle.owner"),
             list(context.observations),
+            context.request.page_fields.get("application.owner_type"),
         )
-        new_vin = raw_settled_value(comparisons, "new_vehicle.vin")
         auxiliary_checks = build_affiliation_auxiliary_checks(
             page_fields=context.request.page_fields,
             new_owner_type=result.owner_types[1],
-            new_vehicle_vin=new_vin,
-            new_owner=raw_settled_value(comparisons, "new_vehicle.owner"),
+            new_owner=context.request.page_fields.get("new_vehicle.owner")
+            or raw_settled_value(comparisons, "new_vehicle.owner"),
         )
         return RuleExecutionResult(
             checks=(result.check, *auxiliary_checks),

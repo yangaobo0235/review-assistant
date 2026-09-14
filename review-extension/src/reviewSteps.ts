@@ -14,7 +14,10 @@ export function sortedReviewSteps(steps: readonly ReviewStep[] = []): ReviewStep
 
 /** 后端契约守卫：只有 MATCH 且无需人工处理的步骤允许自动前进（spec §11 规则 1-4）。 */
 export function stepRequiresReviewerAction(step: ReviewStep): boolean {
-  return step.requires_reviewer_action === true || step.result_status !== "MATCH";
+  // 后端可以明确声明 NOT_FOUND/INSUFFICIENT 为非阻塞提示；只有未声明时
+  // 才回退到旧的“非 MATCH 需要处理”兼容语义。
+  return step.requires_reviewer_action === true
+    || (step.requires_reviewer_action !== false && step.result_status !== "MATCH");
 }
 
 export function createReviewStepState(steps: readonly ReviewStep[]): ReviewStepState {

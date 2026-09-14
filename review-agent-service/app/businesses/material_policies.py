@@ -60,10 +60,23 @@ TRANSFER_MATERIAL_POLICY = MaterialPolicy(
     ),
 )
 SCRAP_REPLACEMENT_MATERIAL_POLICY = MaterialPolicy(
-    mode="observe",
+    mode="enforce",
     materials=(
+        MaterialRequirement("vehicle_license", "old_vehicle", display_name="旧车行驶证"),
+        MaterialRequirement(
+            "registration_certificate",
+            "old_vehicle",
+            required_pages=(1, 2),
+            display_name="旧车登记证第 1、2 页",
+        ),
         MaterialRequirement("scrap_certificate", "old_vehicle", display_name="报废证明"),
-        MaterialRequirement("registration_certificate", "old_vehicle", display_name="旧车登记证"),
+        MaterialRequirement("vehicle_license", "new_vehicle", display_name="新车行驶证"),
+        MaterialRequirement(
+            "registration_certificate",
+            "new_vehicle",
+            required_pages=(1, 2),
+            display_name="新车登记证第 1、2 页",
+        ),
         MaterialRequirement("invoice", "new_vehicle", display_name="新车发票"),
     ),
 )

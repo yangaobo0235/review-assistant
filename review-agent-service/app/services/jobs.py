@@ -111,6 +111,8 @@ class ReviewJobManager:
             )
             with self._lock:
                 stored.snapshot.status = JobStatus.FAILED
+                # 对外只返回异常类型；具体原因保留在服务端日志中，避免模型响应、
+                # 页面字段或其他敏感数据随异常文本泄漏到前端。
                 stored.snapshot.message = f"审核任务失败：{type(exc).__name__}"
                 stored.updated_at = time.monotonic()
         finally:

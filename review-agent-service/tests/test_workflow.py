@@ -38,8 +38,6 @@ async def test_workflow_returns_both_cross_checks_and_two_state_advice() -> None
         "POLICY-DISPOSAL-DEADLINE",
         "POLICY-NEW-ORIGIN",
         "AFFILIATION-SUBJECT-001",
-        "AFFILIATION-AUX-OWNER-TYPE",
-        "AFFILIATION-AUX-NEW-VIN",
         "AFFILIATION-AUX-CUSTOMER-NAME",
     }
     assert result.recommendation.value == "REVIEW_REQUIRED"

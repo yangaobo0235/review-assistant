@@ -66,7 +66,7 @@ test("content script sends writable target snapshots", () => {
 
 test("content script keeps field elements in a map replaced only by the active collection", () => {
   assert.match(contentSource, /const reviewFieldElements = new Map\(\);/);
-  assert.match(contentSource, /reviewFieldElements\.set\(field, \{ element, collectionId \}\);/);
+  assert.match(contentSource, /reviewFieldElements\.set\(field, \{ element, collectionId/);
   const expiredGuard = contentSource.indexOf("latestCollectionId !== collectionId");
   const fieldMapReplace = contentSource.indexOf("reviewFieldElements.clear()");
   assert.ok(expiredGuard >= 0);
@@ -77,6 +77,7 @@ test("content script sends field target snapshots without DOM elements", async (
   let handler;
   const element = { isConnected: true };
   const fields = { "application.id": "case-a", "old_vehicle.vin": "OLD-A" };
+  const reviewFields = [{ field: "old_vehicle.vin", label: "报废车辆车架号", value: "OLD-A", controlType: "text", editable: true, order: 1, section: "old_vehicle" }];
   const context = {
     chrome: {
       runtime: {
@@ -98,7 +99,7 @@ test("content script sends field target snapshots without DOM elements", async (
       crypto: { randomUUID: () => "page-instance" },
       ReviewBusinessDetector: { resolve() { return { business: { businessType: "scrap_replacement" } }; } },
       ReviewPageFieldCollector: {
-        collect() { return { pageFields: fields, fieldTargets: [{ field: "old_vehicle.vin", element }], writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
+        collect() { return { pageFields: fields, reviewFields, fieldTargets: [{ field: "old_vehicle.vin", element }], writableTargets: [], unmatchedLabels: [], scannedControls: 1, candidateCount: 0, ambiguousFields: [] }; },
       },
       ReviewBusinessScope: { scopeForLabel() { return null; }, assign() { return []; } },
       ReviewImageCandidates: { select() { return { selected: [], scannedCount: 0, overflow: false }; } },
@@ -116,6 +117,8 @@ test("content script sends field target snapshots without DOM elements", async (
     JSON.stringify([{ field: "old_vehicle.vin", present: true }]),
   );
   assert.equal(Object.hasOwn(responses[0].fieldTargets[0], "element"), false);
+  assert.equal(JSON.stringify(responses[0].reviewFields), JSON.stringify(reviewFields));
+  assert.equal(responses[0].collectionDiagnostics.reviewFieldCount, 1);
 });
 
 test("content script rejects a mismatched page identity before calling the writer", async () => {

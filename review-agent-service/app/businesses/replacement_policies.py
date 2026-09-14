@@ -15,6 +15,7 @@ class ReplacementPolicy:
     invoice_date_to: date
     disposal_deadline: date
     allowed_origins: tuple[str, ...] = ()
+    origin_keywords: tuple[str, ...] = ()
 
 
 QINGDAO_REPLACEMENT_POLICY = ReplacementPolicy(
@@ -24,6 +25,7 @@ QINGDAO_REPLACEMENT_POLICY = ReplacementPolicy(
     invoice_date_from=date(2026, 9, 1),
     invoice_date_to=date(2026, 9, 30),
     disposal_deadline=date(2026, 10, 31),
+    allowed_origins=("青岛", "青岛市", "山东省青岛市"),
 )
 
 CHANGCHUN_REPLACEMENT_POLICY = ReplacementPolicy(
@@ -34,6 +36,7 @@ CHANGCHUN_REPLACEMENT_POLICY = ReplacementPolicy(
     invoice_date_to=date(2026, 9, 30),
     disposal_deadline=date(2026, 12, 31),
     allowed_origins=("长春", "长春市", "吉林省长春市"),
+    origin_keywords=("长春",),
 )
 
 

@@ -15,6 +15,7 @@ from app.models.review import (
     FieldComparison,
     FieldStatus,
     ReviewDisplayTarget,
+    ReviewFieldSnapshot,
     ReviewRequest,
     ReviewStep,
 )
@@ -75,12 +76,14 @@ def build_steps(
     business_checks: list[ReviewCheck] | None = None,
     completeness: MaterialCompletenessReport | None = None,
     limitations: list[str] | None = None,
+    review_fields: list[ReviewFieldSnapshot] | None = None,
 ) -> list[ReviewStep]:
     return build_review_steps(
         request=ReviewRequest(
             page_url="https://admin.forjtruck.com/scrap-replace-qingdao/review/1",
             region="qingdao",
             page_fields=page_fields or {},
+            review_fields=review_fields or [],
         ),
         profile=SCRAP_REPLACEMENT_QINGDAO,
         comparisons=comparisons or [],
@@ -102,6 +105,48 @@ def test_present_comparison_routes_to_assistant_field() -> None:
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
     assert step.requires_reviewer_action is False
+
+
+def test_field_step_counts_only_unique_material_images_as_evidence() -> None:
+    comparison = FieldComparison(
+        field="old_vehicle.type",
+        left_value="重型半挂牵引车",
+        right_value="牵引车",
+        status=FieldStatus.MATCH,
+        message="车辆类型属于同一业务大类",
+        evidence=[
+            {"source": "申请页面字段", "source_id": "page", "value": "牵引车"},
+            {"source": "图片识别", "image_id": "old-license", "value": "重型半挂牵引车"},
+            {"source": "图片识别", "image_id": "scrap-certificate", "value": "重型半挂牵引车"},
+            {"source": "图片识别", "image_id": "old-registration", "value": "重型半挂牵引车"},
+        ],
+    )
+
+    step = next(item for item in build_steps(
+        page_fields={"old_vehicle.type": "牵引车"},
+        comparisons=[comparison],
+    ) if item.step_id == "FIELD-old_vehicle.type")
+
+    assert step.evidence_count == 3
+    assert len(step.evidence) == 3
+    assert all(item.image_id for item in step.evidence)
+
+
+def test_external_step_accepts_legacy_dict_evidence() -> None:
+    steps = build_steps(
+        external_checks=[
+            ReviewCheck(
+                check_id="EXTERNAL-QR",
+                label="二维码官网核验",
+                status="MATCH",
+                reason="官网字段已提取",
+                evidence=[{"source": "二维码官网字段", "value": {"vin": "VIN-1"}}],
+            )
+        ]
+    )
+
+    step = next(item for item in steps if item.step_id == "EXTERNAL-QR")
+    assert step.evidence_sources == ["二维码官网字段"]
 
 
 def test_missing_page_field_routes_comparison_to_assistant() -> None:
@@ -144,11 +189,7 @@ def test_business_rules_route_to_assistant(check_id: str) -> None:
 
 @pytest.mark.parametrize(
     ("check_id", "page_field"),
-    [
-        ("AFFILIATION-AUX-OWNER-TYPE", "application.owner_type"),
-        ("AFFILIATION-AUX-NEW-VIN", "page_ocr.new_vehicle_vin"),
-        ("AFFILIATION-AUX-CUSTOMER-NAME", "application.customer_name"),
-    ],
+    [("AFFILIATION-AUX-CUSTOMER-NAME", "application.customer_name")],
 )
 def test_present_affiliation_safeguard_routes_to_its_page_field(
     check_id: str,
@@ -170,6 +211,26 @@ def test_present_affiliation_safeguard_routes_to_its_page_field(
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
+
+
+def test_owner_type_control_is_a_non_writable_system_field() -> None:
+    steps = build_steps(
+        page_fields={"application.owner_type": "个人"},
+        review_fields=[ReviewFieldSnapshot(
+            field="application.owner_type",
+            label="车辆所有人类型",
+            value="个人",
+            control_type="select",
+            editable=True,
+            order=1,
+            section="申请信息",
+        )],
+    )
+
+    step = next(item for item in steps if item.step_id == "FIELD-application.owner_type")
+    assert step.result_status == "MATCH"
+    assert step.reason == "系统业务字段，无需材料比对"
+    assert step.writable is False
 
 
 def test_external_check_routes_to_assistant() -> None:
@@ -254,8 +315,159 @@ def test_assistant_match_remains_in_contract_but_needs_no_reviewer_action():
         status="MATCH",
         reason="符合政策",
     )])
-    assert steps[0].display_target == "ASSISTANT"
-    assert steps[0].requires_reviewer_action is False
+    step = next(item for item in steps if item.step_id == "BUSINESS-POLICY-INVOICE-DATE")
+    assert step.display_target == "ASSISTANT"
+    assert step.requires_reviewer_action is False
+
+
+def test_scrap_field_catalog_follows_the_current_dom_inventory() -> None:
+    inventory = [
+        ReviewFieldSnapshot(
+            field="new_vehicle.vin",
+            label="新车车架号",
+            value="VIN-1",
+            control_type="text",
+            order=2,
+        ),
+        ReviewFieldSnapshot(
+            field=None,
+            label="页面新增字段",
+            value="新增值",
+            control_type="text",
+            order=1,
+        ),
+        ReviewFieldSnapshot(
+            field="new_vehicle.fuel_type",
+            label="新车燃料类型",
+            value="柴油",
+            control_type="select",
+            order=3,
+        ),
+    ]
+
+    field_steps = [
+        item
+        for item in build_steps(
+            page_fields={"new_vehicle.vin": "VIN-1"},
+            comparisons=[matching_comparison("new_vehicle.vin")],
+            review_fields=inventory,
+        )
+        if item.category == "FIELD"
+    ]
+
+    assert [item.label for item in field_steps] == [
+        "页面新增字段",
+        "新车车架号",
+        "新车燃料类型",
+    ]
+    assert [item.step_id for item in field_steps] == [
+        "FIELD-DOM-1",
+        "FIELD-new_vehicle.vin",
+        "FIELD-new_vehicle.fuel_type",
+    ]
+    assert field_steps[0].result_status == "INSUFFICIENT"
+    assert field_steps[1].result_status == "MATCH"
+    assert field_steps[2].result_status == "INSUFFICIENT"
+
+
+def test_affiliation_controls_are_compared_with_the_subject_type() -> None:
+    subject = ReviewCheck(
+        check_id="AFFILIATION-SUBJECT-001",
+        label="新旧车主体关系",
+        status="MATCH",
+        reason="主体关系通过",
+        values=[
+            {"source": "旧车主体类型", "value": "COMPANY"},
+            {"source": "新车主体类型", "value": "COMPANY"},
+        ],
+    )
+    inventory = [
+        ReviewFieldSnapshot(
+            field="old_vehicle.affiliation",
+            label="报废车挂靠",
+            value="公司",
+            control_type="select",
+            order=1,
+            operation_only=True,
+        ),
+        ReviewFieldSnapshot(
+            field="new_vehicle.affiliation",
+            label="新车挂靠",
+            value="",
+            control_type="select",
+            order=2,
+            operation_only=True,
+        ),
+    ]
+
+    field_steps = [
+        item
+        for item in build_steps(business_checks=[subject], review_fields=inventory)
+        if item.category == "FIELD"
+    ]
+
+    assert [(item.label, item.result_status) for item in field_steps] == [
+        ("报废车挂靠", "MATCH"),
+        ("新车挂靠", "MATCH"),
+    ]
+    assert "自动填写" in field_steps[1].reason
+
+
+def test_affiliation_auxiliary_control_uses_its_material_check() -> None:
+    auxiliary_checks = [
+        ReviewCheck(
+            check_id=check_id,
+            label="主体辅助字段",
+            status="MATCH",
+            reason="页面与主体材料一致",
+        )
+        for check_id in ("AFFILIATION-AUX-CUSTOMER-NAME",)
+    ]
+    field_steps = [
+        item
+        for item in build_steps(
+            page_fields={"application.customer_name": "甲公司"},
+            business_checks=auxiliary_checks,
+            review_fields=[
+                ReviewFieldSnapshot(
+                    field="application.customer_name",
+                    label="客户名称",
+                    value="甲公司",
+                    order=1,
+                )
+            ],
+        )
+        if item.category == "FIELD"
+    ]
+
+    assert len(field_steps) == 1
+    assert field_steps[0].step_id == "FIELD-application.customer_name"
+    assert field_steps[0].result_status == "MATCH"
+
+
+def test_page_only_field_is_visible_but_never_falsely_marked_as_matching() -> None:
+    step = next(
+        item
+        for item in build_steps(
+            review_fields=[
+                ReviewFieldSnapshot(
+                    field="new_vehicle.fuel_type",
+                    label="新车燃料类型",
+                    value="柴油",
+                    control_type="select",
+                    order=1,
+                )
+            ]
+        )
+        if item.step_id == "FIELD-new_vehicle.fuel_type"
+    )
+
+    assert step.label == "新车燃料类型"
+    assert step.result_status == "INSUFFICIENT"
+    assert step.requires_reviewer_action is True
+    assert [(item.source, item.value) for item in step.values] == [
+        ("申请页面字段", "柴油")
+    ]
 
 
 def test_missing_configured_page_field_becomes_actionable_assistant_step():

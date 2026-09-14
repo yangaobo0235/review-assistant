@@ -10,18 +10,47 @@
 
   const labels = new Map([
     ["报废车辆资料", { scope: "old_vehicle", title: "报废车辆资料" }],
+    // 生产报废置换页使用“报废车辆信息”作为分组标题；两种标题
+    // 指向同一个旧车材料槽位，不能因为文案不同而丢失业务分区。
+    ["报废车辆信息", { scope: "old_vehicle", title: "报废车辆信息" }],
+    ["报废车资料", { scope: "old_vehicle", title: "报废车资料" }],
     ["旧车资料", { scope: "old_vehicle", title: "旧车资料" }],
     ["新车资料", { scope: "new_vehicle", title: "新车资料" }],
+    ["新车及发票信息", { scope: "new_vehicle", title: "新车及发票信息" }],
+    ["新车及发票资料", { scope: "new_vehicle", title: "新车及发票资料" }],
     ["发票资料", { scope: "new_vehicle", title: "发票资料" }],
     ["过户资料", { scope: "transfer", title: "过户资料" }],
     ["营业执照", { scope: "business_license", title: "营业执照" }],
-    ["身份证正面", { scope: "other", title: "身份证正面" }],
-    ["身份证反面", { scope: "other", title: "身份证反面" }],
-    ["身份证", { scope: "other", title: "身份证" }],
+    ["身份证正面", { scope: "identity", title: "身份证正面" }],
+    ["身份证反面", { scope: "identity", title: "身份证反面" }],
+    ["身份证", { scope: "identity", title: "身份证" }],
     ["其他图片", { scope: "other", title: "其他图片" }],
   ]);
 
+  const physicalDocumentTypes = new Map([
+    ["scrap_certificate", "scrap_certificate"],
+    ["vehicle_license", "vehicle_license"],
+    ["registration_certificate", "registration_certificate"],
+    ["invoice", "invoice"],
+    ["business_license", "business_license"],
+    ["id_card", "identity_card"],
+    ["identity_card", "identity_card"],
+  ]);
+  const slotDocumentTypes = new Map([
+    ["old_vehicle:1", "vehicle_license"],
+    ["old_vehicle:2", "registration_certificate"],
+    ["old_vehicle:3", "scrap_certificate"],
+    ["new_vehicle:1", "vehicle_license"],
+    ["new_vehicle:2", "registration_certificate"],
+    ["new_vehicle:3", "invoice"],
+  ]);
+
   const scopeForLabel = (text) => labels.get(normalize(text)) || null;
+
+  const documentTypeFor = (businessScope, groupOrder, categoryHint) =>
+    physicalDocumentTypes.get(String(categoryHint || ""))
+    || slotDocumentTypes.get(`${businessScope || "unknown"}:${groupOrder || 0}`)
+    || "unknown";
 
   const assign = (items) => {
     let active = { scope: "unknown", title: "未分类资料" };
@@ -47,5 +76,5 @@
     return assigned;
   };
 
-  globalThis.ReviewBusinessScope = { scopeForLabel, assign };
+  globalThis.ReviewBusinessScope = { scopeForLabel, assign, documentTypeFor };
 })();

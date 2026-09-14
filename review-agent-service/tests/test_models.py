@@ -97,12 +97,24 @@ def test_review_request_accepts_extension_camel_case_payload() -> None:
         pageUrl="https://example.test/review/1",
         pageTitle="审核页面",
         pageFields={"old_vehicle.vin": "ABC123"},
+        reviewFields=[{
+            "field": "old_vehicle.vin",
+            "label": "报废车辆车架号",
+            "value": "ABC123",
+            "controlType": "text",
+            "editable": True,
+            "order": 1,
+            "section": "old_vehicle",
+        }],
+        collectionDiagnostics={"reviewFieldCount": 1},
         images=[{"index": 0, "src": "image", "pagePosition": "10,20"}],
     )
 
     assert str(request.page_url) == "https://example.test/review/1"
     assert request.page_title == "审核页面"
     assert request.page_fields["old_vehicle.vin"] == "ABC123"
+    assert request.review_fields[0].control_type == "text"
+    assert request.collection_diagnostics.review_field_count == 1
     assert request.images[0].page_position == "10,20"
 
 

@@ -54,7 +54,7 @@ def test_invoice_date_policy_boundaries(policy, invoice_date, expected) -> None:
     ] == expected
 
 
-def test_changchun_requires_origin_and_qingdao_does_not() -> None:
+def test_region_policy_requires_matching_origin() -> None:
     changchun = build_replacement_policy_checks(
         CHANGCHUN_REPLACEMENT_POLICY,
         [
@@ -85,9 +85,7 @@ def test_changchun_requires_origin_and_qingdao_does_not() -> None:
     assert {item.check_id: item.status for item in changchun_unreadable}[
         "POLICY-NEW-ORIGIN"
     ] == "INSUFFICIENT"
-    assert {item.check_id: item.status for item in qingdao}[
-        "POLICY-NEW-ORIGIN"
-    ] == "MATCH"
+    assert {item.check_id: item.status for item in qingdao}["POLICY-NEW-ORIGIN"] == "INSUFFICIENT"
 
 
 def test_policy_uses_image_evidence_and_reports_missing_as_insufficient() -> None:
@@ -107,8 +105,7 @@ def test_policy_uses_image_evidence_and_reports_missing_as_insufficient() -> Non
     assert statuses == {
         "POLICY-INVOICE-DATE": "INSUFFICIENT",
         "POLICY-DISPOSAL-DEADLINE": "INSUFFICIENT",
-        # 青岛没有产地规则，产地检查始终仅展示为 MATCH。
-        "POLICY-NEW-ORIGIN": "MATCH",
+        "POLICY-NEW-ORIGIN": "INSUFFICIENT",
     }
 
 
@@ -136,6 +133,9 @@ def test_disposal_deadline_is_inclusive(policy, value, expected):
         ("长春", "MATCH"),
         ("长春市", "MATCH"),
         ("吉林省长春市", "MATCH"),
+        ("中国长春", "MATCH"),
+        ("中国吉林省长春市", "MATCH"),
+        ("产地：中国 / 长 春", "MATCH"),
         ("青岛", "CONFLICT"),
         ("", "INSUFFICIENT"),
         ("无法识别", "INSUFFICIENT"),
@@ -161,8 +161,18 @@ def test_qingdao_origin_is_displayed_with_full_original_image_evidence():
     )
     checks = build_replacement_policy_checks(QINGDAO_REPLACEMENT_POLICY, [origin])
     check = next(item for item in checks if item.check_id == "POLICY-NEW-ORIGIN")
-    assert check.label == "新车发票产地（仅展示）"
+    assert check.label == "新车发票产地"
     assert check.status == "MATCH"
+    assert check.values[0].image_id == "invoice-img"
+    assert check.values[0].image_index == 3
+    assert check.values[0].value == "青岛市"
+    steps = build_review_steps(
+        request=ReviewRequest(page_url="https://example.test/review", region="qingdao"),
+        profile=SCRAP_REPLACEMENT_QINGDAO, comparisons=[], external_checks=[],
+        business_checks=checks, completeness=None, limitations=[],
+    )
+    origin_step = next(step for step in steps if step.step_id == "BUSINESS-POLICY-NEW-ORIGIN")
+    assert origin_step.values[0].image_id == "invoice-img"
     assert check.evidence[0]["source_id"] == "invoice-1"
     assert {
         key: check.evidence[0][key]
@@ -210,10 +220,10 @@ def test_policy_ignores_page_values_and_keeps_conflicting_image_sources():
         ],
     ],
 )
-def test_qingdao_unreadable_origin_still_matches_and_can_reach_pass(
+def test_qingdao_origin_requires_readable_matching_evidence(
     origin_observations,
 ) -> None:
-    """青岛没有产地规则：产地不可读或冲突时不得产生人工步骤或建议 finding。"""
+    """青岛按配置核验发票产地；缺失、不可读或冲突均需人工处理。"""
     checks = build_replacement_policy_checks(
         QINGDAO_REPLACEMENT_POLICY,
         [
@@ -226,8 +236,10 @@ def test_qingdao_unreadable_origin_still_matches_and_can_reach_pass(
     origin_check = next(
         item for item in checks if item.check_id == "POLICY-NEW-ORIGIN"
     )
-    assert origin_check.status == "MATCH"
-    assert all(item.status == "MATCH" for item in checks)
+    expected = "MATCH" if origin_observations and all(item.value == "青岛市" for item in origin_observations) else "INSUFFICIENT"
+    assert origin_check.status == expected
+    assert {item.check_id: item.status for item in checks}["POLICY-INVOICE-DATE"] == "MATCH"
+    assert {item.check_id: item.status for item in checks}["POLICY-DISPOSAL-DEADLINE"] == "MATCH"
 
     steps = build_review_steps(
         request=ReviewRequest(
@@ -241,8 +253,12 @@ def test_qingdao_unreadable_origin_still_matches_and_can_reach_pass(
         completeness=None,
         limitations=[],
     )
-    assert not any(step.requires_reviewer_action for step in steps)
+    origin_step = next(
+        step for step in steps if step.step_id == "BUSINESS-POLICY-NEW-ORIGIN"
+    )
+    assert origin_step.result_status == expected
+    assert origin_step.requires_reviewer_action is (expected != "MATCH")
 
     decision, advice = build_final_advice([], checks, [], [], [], [])
-    assert decision == "PASS"
-    assert advice.findings == []
+    assert decision == ("PASS" if expected == "MATCH" else "REVIEW_REQUIRED")
+    assert bool(advice.findings) is (expected != "MATCH")

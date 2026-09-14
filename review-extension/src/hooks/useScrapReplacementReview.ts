@@ -395,7 +395,9 @@ export function useScrapReplacementReview(
       sessionKey: stepsKey,
       getPageFillIntent: () => reviewRef.current?.page_fill_intent ?? [],
       applyAffiliationFill,
-      autoFillAffiliation: false,
+      // 主体关系及辅助守护全部通过后，自动把规则推导的个人/公司写入
+      // 两个挂靠下拉框；用户仍可在助手中手动修改其它字段。
+      autoFillAffiliation: true,
       affiliationFillLatch: fillLatch,
       // 会话快照只经由 start/decide/dispose 异步驱动，避免 effect 体内同步 setState。
       onChange: (next) => {

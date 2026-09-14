@@ -13,7 +13,7 @@ import {
   fetchReviewJob,
 } from "../reviewClient";
 import { pollReviewJob } from "../reviewJobs";
-import { applyPageFieldValue, applyPageFillIntent, type PageFillResult } from "../pageFillClient";
+import { applyPageFieldValue, applyPageFillIntent, verifyInvoice, type PageFillResult } from "../pageFillClient";
 import { focusReviewImage } from "../imageFocusClient";
 import {
   manualBusinessSelection,
@@ -142,6 +142,19 @@ export function useReviewWorkflow(
       if (finalSnapshot.status === "FAILED") {
         throw new Error(finalSnapshot.message || "审核任务执行失败");
       }
+      const invoiceNumberMatched = finalSnapshot.result?.comparisons?.some(
+        (item) => item.field === "invoice.invoice_no" && item.status === "MATCH",
+      );
+      if (invoiceNumberMatched) {
+        const verification = await verifyInvoice({
+          tabId: data.sourceTabId,
+          pageUrl: data.pageUrl,
+          pageInstanceId: data.pageInstanceId,
+          pageFingerprint: data.pageFingerprint,
+          collectionId: data.collectionId,
+        });
+        setNotice(verification.ok ? "发票号码核验通过，已点击一键验真" : (verification.message || "发票号码已通过比对，但未找到一键验真按钮"));
+      }
       // The client deadline is a presentation boundary: a running snapshot still
       // contains useful partial review results and is not a transport failure.
       setNotice((current) => current || completionNotice(finalSnapshot));
@@ -167,13 +180,17 @@ export function useReviewWorkflow(
 
   const applyFieldValue = useCallback(async (field: string, value: string, expectedValue?: string | null) => {
     if (!pageData) return { ok: false, message: "没有找到原审核页面" };
-    return applyPageFieldValue({ field, value, expectedValue }, {
+    const result = await applyPageFieldValue({ field, value, expectedValue }, {
       tabId: pageData.sourceTabId,
       pageUrl: pageData.pageUrl,
       pageInstanceId: pageData.pageInstanceId,
       pageFingerprint: pageData.pageFingerprint,
       collectionId: pageData.collectionId,
     });
+    if (result.ok || (result.code === "FIELD_VALUE_CHANGED" && result.currentValue != null)) setPageData((current) => current?.collectionId === pageData.collectionId
+      ? { ...current, pageFields: { ...current.pageFields, [field]: result.ok ? result.actions?.[0]?.value ?? value : result.currentValue as string } }
+      : current);
+    return result;
   }, [pageData]);
 
   const focusOriginalImage = useCallback(async (imageId: string) => {

@@ -13,21 +13,10 @@ from app.agent.models import (
 )
 from app.models.review import FieldComparison, FieldStatus, QrCheck
 from app.rules.check_results import qr_review_checks, unique_checks
+from app.rules.review_fields import SCRAP_PAGE_FIELD_LABELS
 
 FIELD_LABELS = {
-    "old_vehicle.recycle_date": "报废交车日期",
-    "scrap_certificate.certificate_no": "报废证明编号",
-    "old_vehicle.vin": "报废车辆车架号",
-    "old_vehicle.plate_no": "报废车辆车牌号",
-    "old_vehicle.owner": "报废车辆所有人",
-    "old_vehicle.engine_model": "报废发动机型号",
-    "invoice.code": "发票代码",
-    "invoice.invoice_no": "发票号码",
-    "invoice.amount": "开票金额",
-    "invoice.invoice_date": "开票日期",
-    "new_vehicle.vin": "新车车架号",
-    "new_vehicle.plate_no": "新车车牌号",
-    "new_vehicle.owner": "新车所有人",
+    **SCRAP_PAGE_FIELD_LABELS,
     "transfer.plate_no": "车牌号",
     "transfer.vin": "车架号",
     "transfer.buyer_name": "过户发票买方名称",
@@ -38,7 +27,17 @@ FIELD_LABELS = {
 
 def _field_finding(comparison: FieldComparison) -> ReviewCheck:
     values = [
-        ReviewCheckValue(source=item.source, value=item.value)
+        ReviewCheckValue(
+            source=item.source,
+            value=item.value,
+            source_id=item.source_id,
+            image_id=item.image_id,
+            image_index=item.image_index,
+            document_type=item.document_type,
+            detail=item.detail,
+            derived_from=item.derived_from,
+            evidence_region=item.evidence_region,
+        )
         for item in comparison.evidence
         if item.value not in (None, "")
     ]

@@ -17,6 +17,47 @@ EVIDENCE_SOURCE_LABELS = {
 }
 
 
+def _deduplicate_sources(
+    field_name: str,
+    observations: list[FieldObservation],
+) -> list[FieldObservation]:
+    """把同一物理图片的重复 OCR 行合并为一个证据来源。"""
+    grouped: dict[tuple[str, str], list[FieldObservation]] = {}
+    order: list[tuple[str, str]] = []
+    for item in observations:
+        # image_index 是同一张材料在请求中的稳定物理标识。它比 source_id
+        # 更可靠，因为兼容 OCR 层可能同时产生 ``ocr-1`` 和 ``1`` 两行。
+        source_key = (
+            f"image-index:{item.image_index}"
+            if item.source_type == "image" and item.image_index is not None
+            else item.image_id or item.source_id or "page"
+        )
+        key = (item.source_type, str(source_key))
+        current = grouped.get(key)
+        if current is None:
+            grouped[key] = [item]
+            order.append(key)
+            continue
+        current.append(item)
+    page_values = [item.value for item in observations if item.source_type == "page"]
+    page_normalized = {normalize_value(field_name, value) for value in page_values}
+    result: list[FieldObservation] = []
+    for key in order:
+        candidates = grouped[key]
+        # 发票票面可能同时被通用 OCR 和专用 OCR 读出。页面已有值时，
+        # 优先保留同页面值的候选，避免另一条低质量 OCR 把一致结果误报冲突。
+        matching = [item for item in candidates if normalize_value(field_name, item.value) in page_normalized]
+        pool = matching or candidates
+        result.append(max(
+            pool,
+            key=lambda item: (
+                item.confidence if item.confidence is not None else -1.0,
+                bool(item.image_id) and not str(item.source_id).startswith("ocr-"),
+            ),
+        ))
+    return result
+
+
 def _mark_conflicting_evidence(
     field_name: str,
     valid: list[FieldObservation],
@@ -52,9 +93,13 @@ def aggregate_field(
     observations: list[FieldObservation],
     *,
     uncertain_requires_review: bool = False,
+    single_evidence_requires_review: bool = True,
 ) -> FieldComparison:
     """Compare all non-empty sources without discarding conflicting values."""
-    valid = [item for item in observations if str(item.value or "").strip()]
+    valid = _deduplicate_sources(
+        field_name,
+        [item for item in observations if str(item.value or "").strip()]
+    )
     image_values = [item.value for item in valid if item.source_type == "image"]
     page_values = [item.value for item in valid if item.source_type == "page"]
     evidence = [
@@ -71,6 +116,9 @@ def aggregate_field(
             group_order=item.group_order,
             document_type=item.document_type,
             value=item.value,
+            normalized_value=normalize_value(field_name, item.value),
+            derived_from=item.derived_from,
+            evidence_region=item.evidence_region,
         )
         for item in valid
     ]
@@ -83,9 +131,15 @@ def aggregate_field(
     elif not valid:
         status = FieldStatus.REVIEW_REQUIRED
         message = "页面与图片均未取得有效值"
-    elif len(valid) == 1:
+    elif len(valid) == 1 and valid[0].source_type == "page":
+        status = FieldStatus.REVIEW_REQUIRED
+        message = "页面字段已采集，但未从材料中取得可核验值"
+    elif len(valid) == 1 and single_evidence_requires_review:
         status = FieldStatus.REVIEW_REQUIRED
         message = "仅有一个有效来源，证据不足"
+    elif len(valid) == 1:
+        status = FieldStatus.MATCH
+        message = "已发现 1 份有效证据，按实际证据核验"
     else:
         normalized = {normalize_value(field_name, item.value) for item in valid}
         if len(normalized) == 1:

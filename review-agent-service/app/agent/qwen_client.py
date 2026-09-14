@@ -44,6 +44,70 @@ REGISTRATION_OWNER_CONTAMINATION = re.compile(
     r"(?:居民身份证|身份证(?:号码?)?|统一社会信用代码|组织机构代码)"
     r"|(?<!\d)\d{17}[\dXx](?!\d)"
 )
+FIELD_LABEL_ECHOES: dict[str, frozenset[str]] = {
+    "old_vehicle.recycle_date": frozenset({"交车日期", "报废交车日期"}),
+    "scrap_certificate.certificate_no": frozenset({"回收证明编号", "报废证明编号"}),
+    "invoice.invoice_no": frozenset({"发票号码", "数电号码"}),
+    "invoice.amount": frozenset({"价税合计", "价税合计小写", "价税合计（小写）", "开票金额"}),
+    "invoice.invoice_date": frozenset({"开票日期"}),
+    "new_vehicle.origin": frozenset({"产地"}),
+    "invoice.terminal_certificate_no": frozenset({"统一社会信用代码", "纳税人识别号", "终端证件号"}),
+    "invoice.phone": frozenset({"电话", "终端客户手机号"}),
+    "vehicle.type": frozenset({"车辆类型"}),
+    "vehicle.vin": frozenset({"车辆识别代号", "车辆识别代号/车架号码", "车架号码"}),
+    "vehicle.plate_no": frozenset({"号牌号码", "车牌号"}),
+    "vehicle.owner": frozenset({"所有人", "机动车所有人", "购买方名称"}),
+    "vehicle.engine_model": frozenset({"发动机型号"}),
+    "vehicle.fuel_type": frozenset({"燃料种类", "燃料类型"}),
+    "vehicle.registration_date": frozenset({"注册日期"}),
+}
+
+
+def _drop_field_name_echoes(normalized: dict[str, Any]) -> None:
+    """Drop model placeholders such as {"invoice.code": "invoice.code"}."""
+    fields = normalized.get("fields")
+    if not isinstance(fields, dict):
+        return
+    normalized["fields"] = {
+        field: value
+        for field, value in fields.items()
+        if not (
+            isinstance(value, str)
+            and (
+                value.strip() == field
+                or value.strip() in FIELD_LABEL_ECHOES.get(field, frozenset())
+            )
+        )
+    }
+
+
+def _restrict_extraction_to_policy(
+    extraction: QwenExtraction,
+    policy: DocumentPolicy,
+    business_scope: str,
+) -> QwenExtraction:
+    """只保留当前材料和业务范围白名单中的字段及证据位置。"""
+    allowed = set(policy.fields_for_scope(business_scope))
+    fields = {
+        field: value
+        for field, value in extraction.fields.items()
+        if field in allowed
+    }
+    uncertain_fields = list(
+        dict.fromkeys(
+            field for field in extraction.uncertain_fields if field in allowed
+        )
+    )
+    evidence_regions = [
+        region for region in extraction.evidence_regions if region.field in allowed
+    ]
+    return extraction.model_copy(
+        update={
+            "fields": fields,
+            "uncertain_fields": uncertain_fields,
+            "evidence_regions": evidence_regions,
+        }
+    )
 
 
 def _normalize_registration_owner(normalized: dict[str, Any]) -> None:
@@ -117,6 +181,7 @@ def parse_qwen_extraction(content: str) -> QwenExtraction:
     if isinstance(uncertain_fields, str):
         uncertain_field = uncertain_fields.strip()
         normalized["uncertain_fields"] = [uncertain_field] if uncertain_field else []
+    _drop_field_name_echoes(normalized)
     _normalize_registration_owner(normalized)
 
     try:
@@ -176,7 +241,12 @@ class QwenClient:
             ),
         )
         try:
-            return parse_qwen_extraction(content)
+            extraction = parse_qwen_extraction(content)
+            return _restrict_extraction_to_policy(
+                extraction,
+                policy,
+                business_scope,
+            )
         except (ValueError, TypeError) as exc:
             if isinstance(exc, json.JSONDecodeError):
                 cause: BaseException = QwenResponseSyntaxError("JSON 解码失败")

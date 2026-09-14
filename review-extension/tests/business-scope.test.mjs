@@ -37,10 +37,10 @@ test("recognizes business licenses as review evidence", () => {
   );
 });
 
-test("recognizes identity headings as non-review scope and ignores container text", () => {
+test("recognizes identity headings as conditional review evidence and ignores container text", () => {
   const { scopeForLabel } = loadBusinessScope();
 
-  assert.deepEqual({ ...scopeForLabel("身份证正面") }, { scope: "other", title: "身份证正面" });
+  assert.deepEqual({ ...scopeForLabel("身份证正面") }, { scope: "identity", title: "身份证正面" });
   assert.equal(scopeForLabel("报废车辆资料 新车资料"), null);
 });
 
@@ -55,4 +55,16 @@ test("assigns transfer documents to an isolated transfer scope", () => {
     { index: 2, businessScope: "transfer", groupTitle: "过户资料", groupOrder: 1, imageId: "transfer-01" },
     { index: 3, businessScope: "transfer", groupTitle: "过户资料", groupOrder: 2, imageId: "transfer-02" },
   ]);
+});
+
+test("maps fixed scrap-replacement upload slots to physical document types", () => {
+  const { documentTypeFor } = loadBusinessScope();
+
+  assert.equal(documentTypeFor("old_vehicle", 1, "old_vehicle"), "vehicle_license");
+  assert.equal(documentTypeFor("old_vehicle", 2, "old_vehicle"), "registration_certificate");
+  assert.equal(documentTypeFor("old_vehicle", 3, "old_vehicle"), "scrap_certificate");
+  assert.equal(documentTypeFor("new_vehicle", 1, "new_vehicle"), "vehicle_license");
+  assert.equal(documentTypeFor("new_vehicle", 2, "new_vehicle"), "registration_certificate");
+  assert.equal(documentTypeFor("new_vehicle", 3, "new_vehicle"), "invoice");
+  assert.equal(documentTypeFor("identity", 1, "id_card"), "identity_card");
 });

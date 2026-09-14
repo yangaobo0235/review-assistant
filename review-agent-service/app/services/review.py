@@ -256,32 +256,66 @@ class ReviewService:
             for document in batch.recognized_documents
             if document.document_type == "scrap_certificate"
         }
+        scanned_scrap_indices: list[int] = []
+        decoded_any = False
+        first_undecoded_index: int | None = None
         for image in request.images:
-            if image.collection_error or (
-                image.category_hint != "scrap_certificate"
-                and image.document_type_hint != "scrap_certificate"
-                and image.index not in scrap_indices
-                and str(image.image_id or image.index) not in scrap_ids
-            ):
+            is_scrap = (
+                image.category_hint == "scrap_certificate"
+                or image.document_type_hint == "scrap_certificate"
+                or image.index in scrap_indices
+                or str(image.image_id or image.index) in scrap_ids
+            )
+            # 分类模型偶尔把回收证明识别为旧车资料。报废置换的二维码只允许
+            # 从旧车区域读取，因此在没有可靠回收证明分类时回退扫描旧车图片，
+            # 避免“有二维码但未进入核验流程”。
+            # 回收证明上的二维码经常在上传时被标成 vehicle_license/unknown，
+            # 或者同一批材料只有部分图片被模型分类为 scrap_certificate。
+            # 报废置换中所有旧车区域图片都属于受控材料范围，统一尝试解码，
+            # 后续仍由官方域名白名单和网页字段完整性决定是否通过。
+            # 页面采集器在部分旧页面无法从 DOM 标签推导业务分组，会把
+            # business_scope 留为 unknown；已知的旧车材料类型仍然是安全的
+            # 二维码扫描候选。官网域名白名单会在后续步骤再次兜底。
+            fallback_old_vehicle = image.business_scope == "old_vehicle" or (
+                image.business_scope in {"unknown", ""}
+                and (
+                    image.category_hint in {
+                        "old_vehicle",
+                        "vehicle_license",
+                        "registration_certificate",
+                        "scrap_certificate",
+                    }
+                    or image.document_type_hint
+                    in {
+                        "old_vehicle",
+                        "vehicle_license",
+                        "registration_certificate",
+                        "scrap_certificate",
+                    }
+                )
+            )
+            if image.collection_error or not (is_scrap or fallback_old_vehicle):
                 continue
+            scanned_scrap_indices.append(image.index)
+            # data_url 是扩展端规范化后的首选来源；兼容直接提交 data URL
+            # 到 src 的旧客户端，避免只因字段名不同而显示“未识别二维码”。
+            image_data = image.data_url or (
+                image.src if str(image.src).startswith("data:") else ""
+            )
             if hasattr(self.qr, "decode_data_url_with_rounds"):
                 decoded, attempts = self.qr.decode_data_url_with_rounds(
-                    image.data_url or "",
+                    image_data,
                     image.index,
                     max_rounds=resolved_profile.retry_policy.qr_decode_max_rounds,
                 )
                 batch.retry_summary.attempts.extend(attempts)
             else:
-                decoded = self.qr.decode_data_url(image.data_url or "", image.index)
+                decoded = self.qr.decode_data_url(image_data, image.index)
             if not decoded:
-                checks.append(
-                    QrCheck(
-                        image_index=image.index,
-                        status=FieldStatus.REVIEW_REQUIRED,
-                        message="未识别到二维码",
-                    )
-                )
+                if first_undecoded_index is None:
+                    first_undecoded_index = image.index
                 continue
+            decoded_any = True
             for item in decoded:
                 if hasattr(self.qr_web, "verify_with_retry"):
                     verified, attempts = await self.qr_web.verify_with_retry(
@@ -313,4 +347,15 @@ class ReviewService:
                         ),
                     )
                 )
+        # 旧车区域通常包含行驶证、登记证和回收证明三张图。没有二维码时
+        # 只生成一条整体结果，避免同一根因在助手中重复三次；一旦任意一张
+        # 图片解码成功，则只保留官网核验结果，不再混入其它图片的“未识别”提示。
+        if scanned_scrap_indices and not decoded_any and not checks:
+            checks.append(
+                QrCheck(
+                    image_index=(first_undecoded_index if first_undecoded_index is not None else scanned_scrap_indices[0]),
+                    status=FieldStatus.REVIEW_REQUIRED,
+                    message="未识别到二维码",
+                )
+            )
         return checks

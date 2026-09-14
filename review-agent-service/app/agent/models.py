@@ -15,10 +15,21 @@ class RecognizedDocument(BaseModel):
     business_scope: str = "unknown"
     covered_pages: list[int] = Field(default_factory=list)
     uncertain_fields: list[str] = Field(default_factory=list)
+    uncertain_values: dict[str, Any] = Field(default_factory=dict)
+
+
+class MaterialFieldDetail(BaseModel):
+    field: str
+    field_label: str
+    material_name: str
+    value: Any = None
+    image_id: str | None = None
+    image_index: int | None = None
 
 
 class MaterialCompletenessIssue(BaseModel):
     code: str
+    field_details: list[MaterialFieldDetail] = Field(default_factory=list)
     reason_code: Literal[
         "material_missing",
         "image_unreadable",
@@ -39,11 +50,27 @@ class MaterialCompletenessIssue(BaseModel):
     suggested_action: str
 
 
+class MaterialChecklistItem(BaseModel):
+    """One configured material requirement and its observed state."""
+
+    key: str
+    display_name: str
+    material_type: str
+    business_scope: str
+    status: Literal["PRESENT", "MISSING", "UNCERTAIN"]
+    required_pages: list[int] = Field(default_factory=list)
+    present_pages: list[int] = Field(default_factory=list)
+    missing_pages: list[int] = Field(default_factory=list)
+    image_ids: list[str] = Field(default_factory=list)
+    reason: str
+
+
 class MaterialCompletenessReport(BaseModel):
     phase: Literal["COLLECTED", "EXTRACTED"]
     status: Literal["COMPLETE", "INCOMPLETE", "UNCERTAIN"]
     enforced: bool = False
     issues: list[MaterialCompletenessIssue] = Field(default_factory=list)
+    checklist: list[MaterialChecklistItem] = Field(default_factory=list)
 
 
 class RetryAttempt(BaseModel):
@@ -170,6 +197,13 @@ class ReviewCheckValue(BaseModel):
 
     source: str
     value: Any = None
+    source_id: str | None = None
+    image_id: str | None = None
+    image_index: int | None = None
+    document_type: str | None = None
+    detail: str | None = None
+    derived_from: str | None = None
+    evidence_region: list[float] | None = None
 
 
 class ReviewCheck(BaseModel):
@@ -181,6 +215,7 @@ class ReviewCheck(BaseModel):
     reason: str
     values: list[ReviewCheckValue] = Field(default_factory=list)
     evidence: list[Any] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentAdvice(BaseModel):

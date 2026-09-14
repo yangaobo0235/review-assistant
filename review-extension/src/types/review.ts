@@ -45,6 +45,18 @@ export interface PageFieldTargetSnapshot {
   present: boolean;
 }
 
+/** 当前页面实际存在的可操作表单控件，顺序和数量以本次 DOM 采集为准。 */
+export interface ReviewFieldSnapshot {
+  field?: string | null;
+  label: string;
+  value: string;
+  controlType: string;
+  editable: boolean;
+  order: number;
+  section: string;
+  operationOnly?: boolean;
+}
+
 export interface PageData {
   pageUrl: string;
   sourceTabId: number;
@@ -54,6 +66,7 @@ export interface PageData {
   pageTitle: string;
   applicationId?: string;
   pageFields: Record<string, string>;
+  reviewFields?: ReviewFieldSnapshot[];
   writableTargets?: WritableTargetSnapshot[];
   fieldTargets?: PageFieldTargetSnapshot[];
   pageText: string;
@@ -69,6 +82,7 @@ export interface PageData {
   collectionDiagnostics?: {
     scannedControls: number;
     matchedFields: number;
+    reviewFieldCount?: number;
     unmatchedLabels: string[];
     candidateCount?: number;
     ambiguousFields?: string[];
@@ -84,6 +98,14 @@ export interface PageData {
 
 export interface MaterialCompletenessIssue {
   code: string;
+  field_details?: Array<{
+    field: string;
+    field_label: string;
+    material_name: string;
+    value: unknown;
+    image_id?: string | null;
+    image_index?: number | null;
+  }>;
   reason_code?: "material_missing" | "image_unreadable" | "recognition_failed" | "recognition_uncertain" | "evidence_not_extracted" | "page_field_missing" | null;
   reason_detail?: string | null;
   material_type?: string | null;
@@ -97,11 +119,25 @@ export interface MaterialCompletenessIssue {
   suggested_action: string;
 }
 
+export interface MaterialChecklistItem {
+  key: string;
+  display_name: string;
+  material_type: string;
+  business_scope: string;
+  status: "PRESENT" | "MISSING" | "UNCERTAIN";
+  required_pages: number[];
+  present_pages: number[];
+  missing_pages: number[];
+  image_ids: string[];
+  reason: string;
+}
+
 export interface MaterialCompletenessReport {
   phase: "COLLECTED" | "EXTRACTED";
   status: "COMPLETE" | "INCOMPLETE" | "UNCERTAIN";
   enforced: boolean;
   issues: MaterialCompletenessIssue[];
+  checklist?: MaterialChecklistItem[];
 }
 
 export interface RetryAttempt {
@@ -129,6 +165,13 @@ export type ReviewCheckStatus = "MATCH" | "CONFLICT" | "INSUFFICIENT";
 export interface ReviewCheckValue {
   source: string;
   value?: unknown;
+  source_id?: string | null;
+  image_id?: string | null;
+  image_index?: number | null;
+  document_type?: string | null;
+  detail?: string | null;
+  derived_from?: string | null;
+  evidence_region?: number[] | null;
 }
 
 export interface ReviewCheck {
@@ -138,6 +181,30 @@ export interface ReviewCheck {
   reason: string;
   values: ReviewCheckValue[];
   evidence?: Evidence[];
+  details?: ReviewStepDetails;
+}
+
+export interface SubjectEvidenceRequirement {
+  party: "OLD_VEHICLE" | "NEW_VEHICLE" | "SHARED";
+  subject_name: string;
+  subject_type: "PERSONAL" | "COMPANY";
+  document: "identity_card_front" | "identity_card_back" | "business_license";
+  status: "PRESENT" | "MISSING" | "UNCERTAIN";
+  image_ids: string[];
+  reason: string;
+}
+
+export interface ReviewStepDetails {
+  subject_requirements?: SubjectEvidenceRequirement[];
+  auxiliary_checks?: AuxiliaryCheckSummary[];
+  affiliation_subject_status?: ReviewCheckStatus;
+}
+
+export interface AuxiliaryCheckSummary {
+  check_id: string;
+  label: string;
+  status: ReviewCheckStatus;
+  reason: string;
 }
 
 export interface Evidence {
@@ -153,6 +220,9 @@ export interface Evidence {
   group_order?: number | null;
   document_type?: string | null;
   value?: unknown;
+  normalized_value?: string | null;
+  derived_from?: string | null;
+  evidence_region?: number[] | null;
   conflicting?: boolean;
 }
 
@@ -229,12 +299,21 @@ export interface ReviewStep {
   category: "FIELD" | "EXTERNAL" | "BUSINESS_RULE" | "MATERIAL";
   display_target: ReviewDisplayTarget;
   page_field?: string | null;
+  page_value?: unknown;
+  control_type?: string | null;
+  writable?: boolean;
   requires_reviewer_action: boolean;
   label: string;
   result_status: ReviewCheckStatus;
   reason: string;
   values: ReviewCheckValue[];
   evidence: Evidence[];
+  details?: ReviewStepDetails;
+  evidence_count?: number;
+  evidence_mode?: string | null;
+  evidence_sources?: string[];
+  not_found_sources?: string[];
+  normalized_page_value?: string | null;
 }
 
 export interface PageFillAction {

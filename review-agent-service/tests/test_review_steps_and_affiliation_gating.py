@@ -1,12 +1,25 @@
+import pytest
+
 from app.agent.models import AgentBatchResult, ReviewCheck
 from app.agent.workflow import ReviewWorkflow
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
 from app.models.review import (
     FieldComparison,
+    FieldObservation,
     FieldStatus,
     ReviewDisplayTarget,
     ReviewRequest,
 )
+
+
+def evidence(field: str, value: str, source_id: str, document_type: str) -> FieldObservation:
+    return FieldObservation(
+        field=field,
+        value=value,
+        source_type="image",
+        source_id=source_id,
+        document_type=document_type,
+    )
 
 
 def comparison(field: str, value: str) -> FieldComparison:
@@ -19,19 +32,23 @@ def comparison(field: str, value: str) -> FieldComparison:
     )
 
 
-def test_affiliation_auxiliary_checks_gate_actions_but_keep_subject_match() -> None:
+def test_affiliation_auxiliary_checks_gate_actions_without_owner_type_comparison() -> None:
     request = ReviewRequest(
         page_url="https://example.test/scrap",
         page_fields={
-            "application.owner_type": "企业",
+            "application.owner_type": "个人",
             "page_ocr.new_vehicle_vin": "VIN-NEW",
-            "application.customer_name": "张三",
+            "application.customer_name": "李四",
         },
     )
     state = {
         "request": request,
         "profile": SCRAP_REPLACEMENT_QINGDAO,
-        "batch": AgentBatchResult(),
+        "batch": AgentBatchResult(observations=[
+            evidence("identity_card.name", "张三", "id-front", "identity_card"),
+            evidence("identity_card.side", "FRONT", "id-front", "identity_card"),
+            evidence("identity_card.side", "BACK", "id-back", "identity_card"),
+        ]),
         "response": type("Response", (), {
             "comparisons": [
                 comparison("old_vehicle.owner", "张三"),
@@ -47,26 +64,28 @@ def test_affiliation_auxiliary_checks_gate_actions_but_keep_subject_match() -> N
     assert result.checks[0].check_id == "AFFILIATION-SUBJECT-001"
     assert result.checks[0].status == "MATCH"
     assert {item.check_id: item.status for item in result.checks[1:]} == {
-        "AFFILIATION-AUX-OWNER-TYPE": "CONFLICT",
-        "AFFILIATION-AUX-NEW-VIN": "MATCH",
-        "AFFILIATION-AUX-CUSTOMER-NAME": "MATCH",
+        "AFFILIATION-AUX-CUSTOMER-NAME": "CONFLICT",
     }
     assert result.page_action_candidates == ()
 
 
-def test_affiliation_actions_require_every_auxiliary_match_and_accept_company_labels() -> None:
+@pytest.mark.parametrize("ocr_vin", ["vin-new", "WRONG-VIN", "", None])
+def test_affiliation_actions_ignore_ocr_vin_and_accept_company_labels(ocr_vin) -> None:
     request = ReviewRequest(
         page_url="https://example.test/scrap",
         page_fields={
             "application.owner_type": "公司",
-            "page_ocr.new_vehicle_vin": "vin-new",
+            **({"page_ocr.new_vehicle_vin": ocr_vin} if ocr_vin is not None else {}),
             "application.customer_name": "甲运输有限公司",
         },
     )
     state = {
         "request": request,
         "profile": SCRAP_REPLACEMENT_QINGDAO,
-        "batch": AgentBatchResult(),
+        "batch": AgentBatchResult(observations=[
+            evidence("business_license.company_name", "甲运输有限公司", "license-a", "business_license"),
+            evidence("business_license.legal_representative", "张三", "license-a", "business_license"),
+        ]),
         "response": type("Response", (), {
             "comparisons": [
                 comparison("old_vehicle.owner", "甲运输有限公司"),
@@ -79,7 +98,8 @@ def test_affiliation_actions_require_every_auxiliary_match_and_accept_company_la
 
     result = ReviewWorkflow._run_affiliation_subject(ReviewWorkflow.__new__(ReviewWorkflow)._execution_context(state))
 
-    assert [item.status for item in result.checks] == ["MATCH", "MATCH", "MATCH", "MATCH"]
+    assert [item.status for item in result.checks] == ["MATCH", "MATCH"]
+    assert all("VIN" not in item.check_id for item in result.checks)
     assert [action.field for action in result.page_action_candidates] == [
         "old_vehicle.affiliation",
         "new_vehicle.affiliation",
@@ -140,8 +160,6 @@ def test_scrap_missing_auxiliary_values_are_independent_steps_and_block_final_in
     })["review_steps"]
 
     assert {step.step_id for step in steps} >= {
-        "BUSINESS-AFFILIATION-AUX-OWNER-TYPE",
-        "BUSINESS-AFFILIATION-AUX-NEW-VIN",
         "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME",
     }
     assert all(step.result_status == "INSUFFICIENT" for step in steps if "AFFILIATION-AUX" in step.step_id)

@@ -1,11 +1,10 @@
 import ssl
 
+import app.services.qr as qr_module
 import httpx
 import pytest
-
-import app.services.qr as qr_module
 from app.agent.models import AgentBatchResult
-from app.models.review import FieldObservation, ImageInput, ReviewRequest
+from app.models.review import FieldObservation, FieldStatus, ImageInput, ReviewRequest
 from app.services.qr import (
     QrCodeResult,
     QrWebVerifier,
@@ -60,6 +59,26 @@ def test_extract_recycling_certificate_number_and_vin_from_html():
     assert extract_page_fields(html) == {
         "certificate_no": "回收-2026-001",
         "vin": "LSVAA123456789012",
+    }
+
+
+def test_extract_recycling_certificate_fields_from_embedded_json_and_common_aliases():
+    html = '''
+    <script type="application/json">
+      {"certificateNo":"回收-2026-002","vehicleIdentificationNo":"LSVBB123456789012"}
+    </script>
+    '''
+    assert extract_page_fields(html) == {
+        "certificate_no": "回收-2026-002",
+        "vin": "LSVBB123456789012",
+    }
+
+
+def test_extract_recycling_certificate_fields_from_equals_and_vehicle_identification_code():
+    html = "<div>报废证明编号 = A-2026-003</div><div>车辆识别码 = LSVCC123456789012</div>"
+    assert extract_page_fields(html) == {
+        "certificate_no": "A-2026-003",
+        "vin": "LSVCC123456789012",
     }
 
 
@@ -188,3 +207,106 @@ async def test_review_scans_image_when_agent_identifies_scrap_certificate():
     assert len(checks) == 1
     assert checks[0].url == "https://qclt.mofcom.gov.cn/x"
     assert checks[0].page_fields["vin"] == "LSVAA123456789012"
+
+
+@pytest.mark.asyncio
+async def test_one_decoded_qr_does_not_create_missing_results_for_other_old_images():
+    """Only the image containing the certificate QR is an external check target.
+
+    Vehicle-license and registration images in the old-vehicle group do not
+    carry the recycling-certificate QR. Their decode misses must not create
+    additional REVIEW_REQUIRED cards once one QR has been found.
+    """
+
+    class FakeQr:
+        def decode_data_url(self, data_url, image_index):
+            if image_index == 3:
+                return [
+                    QrCodeResult(
+                        image_index=image_index,
+                        raw_value="http://qclt.mofcom.gov.cn:80/x",
+                    )
+                ]
+            return []
+
+    service = ReviewService(qr=FakeQr())
+    service.qr_web = QrWebVerifier(
+        allowed_hosts=["qclt.mofcom.gov.cn"],
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                text="回收证明编号：A1 车架号：LSVAA123456789012",
+            )
+        ),
+    )
+    request = ReviewRequest(
+        page_url="https://example.test",
+        region="qingdao",
+        images=[
+            ImageInput(
+                index=1,
+                src="data:image/jpeg;base64,AA==",
+                categoryHint="vehicle_license",
+                businessScope="old_vehicle",
+            ),
+            ImageInput(
+                index=2,
+                src="data:image/jpeg;base64,AA==",
+                categoryHint="registration_certificate",
+                businessScope="old_vehicle",
+            ),
+            ImageInput(
+                index=3,
+                src="data:image/jpeg;base64,AA==",
+                categoryHint="scrap_certificate",
+                businessScope="old_vehicle",
+            ),
+        ],
+    )
+
+    checks = await service._collect_qr_checks(request, AgentBatchResult())
+
+    assert len(checks) == 1
+    assert checks[0].image_index == 3
+    assert checks[0].status is FieldStatus.MATCH
+
+
+@pytest.mark.asyncio
+async def test_qr_uses_legacy_src_data_url_when_data_url_is_missing():
+    class FakeQr:
+        def decode_data_url(self, data_url, image_index):
+            assert data_url.startswith("data:image/")
+            return [
+                QrCodeResult(
+                    image_index=image_index,
+                    raw_value="http://qclt.mofcom.gov.cn:80/x",
+                )
+            ]
+
+    service = ReviewService(qr=FakeQr())
+    service.qr_web = QrWebVerifier(
+        allowed_hosts=["qclt.mofcom.gov.cn"],
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                text="回收证明编号：A1 车架号：LSVAA123456789012",
+            )
+        ),
+    )
+    request = ReviewRequest(
+        page_url="https://example.test",
+        region="qingdao",
+        images=[
+            ImageInput(
+                index=4,
+                src="data:image/png;base64,AA==",
+                categoryHint="scrap_certificate",
+                businessScope="unknown",
+            )
+        ],
+    )
+
+    checks = await service._collect_qr_checks(request, AgentBatchResult())
+
+    assert len(checks) == 1
+    assert checks[0].status is FieldStatus.MATCH

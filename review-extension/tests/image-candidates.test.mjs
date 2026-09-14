@@ -19,23 +19,38 @@ const candidate = (index, overrides = {}) => ({
   className: "document-preview",
   role: "",
   ariaHidden: false,
+  emptySlot: false,
   hint: "旧车资料",
   categoryHint: "old_vehicle",
   ...overrides
 });
 
-test("excludes decorations, hidden images, and identity cards", () => {
+test("excludes decorations and hidden images but keeps identity cards", () => {
   const select = loadSelector();
   const result = select([
     candidate(0, { visible: false }),
     candidate(1, { className: "company-logo", hint: "", categoryHint: "unknown" }),
     candidate(2, { role: "presentation", hint: "", categoryHint: "unknown" }),
+    candidate(5, { emptySlot: true, hint: "新车资料 暂无图片", categoryHint: "new_vehicle" }),
     candidate(3, { hint: "身份证", categoryHint: "id_card" }),
     candidate(4),
   ], 6);
 
-  assert.deepEqual(Array.from(result.selected, (item) => item.index), [4]);
+  assert.deepEqual(Array.from(result.selected, (item) => item.index), [3, 4]);
   assert.equal(result.overflow, false);
+});
+
+test("does not discard a real image only because its broader hint mentions an empty slot", () => {
+  const select = loadSelector();
+  const result = select([
+    candidate(1, {
+      emptySlot: false,
+      hint: "新车资料 已上传 机动车行驶证 暂无图片",
+      categoryHint: "new_vehicle",
+    }),
+  ]);
+
+  assert.deepEqual(Array.from(result.selected, (item) => item.index), [1]);
 });
 
 test("keeps at most six original indices while covering available document types", () => {
@@ -144,10 +159,10 @@ test("fills remaining slots with the highest-ranked extra pages", () => {
   assert.deepEqual(Array.from(result.selected, (item) => item.index), [1, 2, 4]);
 });
 
-test("content collector requests at most ten images", () => {
+test("content collector reserves enough capacity for fixed and conditional materials", () => {
   const content = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
 
-  assert.match(content, /const MAX_REVIEW_IMAGES = 10;/);
+  assert.match(content, /const MAX_REVIEW_IMAGES = 16;/);
   assert.match(content, /ReviewImageCandidates\.select\(imageCandidates, MAX_REVIEW_IMAGES\)/);
   assert.match(content, /候选资料超过 \$\{MAX_REVIEW_IMAGES\} 张/);
 });

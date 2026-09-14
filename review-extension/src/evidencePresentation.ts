@@ -98,5 +98,14 @@ export function evidencePresentation(evidence: Evidence) {
   if (evidence.document_type === "vehicle_license") {
     return { kind: "image" as const, label: "行驶证", value };
   }
+  if (evidence.document_type === "scrap_certificate") {
+    return { kind: "image" as const, label: "报废机动车回收证明", value };
+  }
+  if (evidence.document_type === "business_license") {
+    return { kind: "image" as const, label: "营业执照", value };
+  }
+  if (evidence.document_type === "identity_card") {
+    return { kind: "image" as const, label: "身份证", value };
+  }
   return { kind: "image" as const, label: "图片证据", value };
 }

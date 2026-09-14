@@ -117,6 +117,30 @@ def test_aggregate_does_not_mark_normalized_equivalent_values() -> None:
     assert [item.conflicting for item in comparison.evidence] == [False, False]
 
 
+def test_invoice_code_matches_the_same_numeric_invoice_number() -> None:
+    comparison = aggregate_field(
+        "invoice.code",
+        [
+            observation("invoice.code", "26320000000801433801", "invoice-1"),
+            observation("invoice.code", "26320000000801433801", "review_page", "page"),
+        ],
+    )
+
+    assert comparison.status is FieldStatus.MATCH
+
+
+def test_invoice_number_ignores_label_and_hidden_formatting_noise() -> None:
+    comparison = aggregate_field(
+        "invoice.invoice_no",
+        [
+            observation("invoice.invoice_no", "数电号码：2632 0000 0008 0143 3801", "invoice-1"),
+            observation("invoice.invoice_no", "26320000000801433801", "review_page", "page"),
+        ],
+    )
+
+    assert comparison.status is FieldStatus.MATCH
+
+
 def test_aggregate_owner_display_removes_appended_social_credit_code() -> None:
     comparison = aggregate_field(
         "old_vehicle.owner",
@@ -142,7 +166,7 @@ def test_aggregate_requires_review_for_one_source() -> None:
     )
 
     assert comparison.status is FieldStatus.REVIEW_REQUIRED
-    assert comparison.message == "仅有一个有效来源，证据不足"
+    assert comparison.message == "页面字段已采集，但未从材料中取得可核验值"
     assert [item.conflicting for item in comparison.evidence] == [False]
 
 

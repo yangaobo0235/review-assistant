@@ -44,23 +44,26 @@ async def test_qwen_client_uses_policy_prompt_and_preserves_evidence_box() -> No
         payload = json.loads(request.content)
         prompt = payload["messages"][0]["content"][0]["text"]
         assert "机动车销售发票" in prompt
-        assert "invoice.code" in prompt
-        assert "old_vehicle.vin" not in prompt
+        assert '"invoice.invoice_no"' in prompt
+        assert '"invoice.code"' not in prompt.split("仅允许输出字段：", 1)[1].split("。", 1)[0]
         result = {
             "document_type": "invoice",
-            "fields": {"invoice.code": "123"},
+            "fields": {"invoice.invoice_no": "123"},
             "confidence": 0.9,
             "evidence_regions": [
-                {"field": "invoice.code", "image_index": 2, "box": [1, 2, 3, 4]}
+                {"field": "invoice.invoice_no", "image_index": 2, "box": [1, 2, 3, 4]}
             ],
             "uncertain_fields": [],
         }
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
 
     client = QwenClient(CONFIG, transport=httpx.MockTransport(handler))
-    result = await client.extract_fields(IMAGE, DOCUMENT_POLICIES["invoice"])
+    result = await client.extract_fields(
+        {**IMAGE, "business_scope": "new_vehicle"},
+        DOCUMENT_POLICIES["invoice"],
+    )
 
-    assert result.fields == {"invoice.code": "123"}
+    assert result.fields == {"invoice.invoice_no": "123"}
     assert result.evidence_regions[0].box == [1.0, 2.0, 3.0, 4.0]
 
 
@@ -257,6 +260,18 @@ async def test_qwen_client_drops_null_extraction_field_values() -> None:
     assert extraction.fields == {"vehicle_license.vin": "TESTVIN"}
 
 
+def test_parser_drops_a_field_path_echoed_as_its_own_value() -> None:
+    extraction = parse_qwen_extraction(json.dumps({
+        "document_type": "invoice",
+        "fields": {
+            "invoice.code": "invoice.code",
+            "invoice.amount": "355000",
+        },
+    }))
+
+    assert extraction.fields == {"invoice.amount": "355000"}
+
+
 @pytest.mark.asyncio
 async def test_qwen_client_rejects_extraction_without_json_object() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
@@ -280,17 +295,32 @@ async def test_qwen_client_retries_rate_limit_once() -> None:
         attempts += 1
         if attempts == 1:
             return httpx.Response(429, json={"message": "rate limited"})
-        result = {"document_type": "invoice", "fields": {"invoice.code": "123"}}
+        result = {"document_type": "invoice", "fields": {"invoice.invoice_no": "123"}}
         return httpx.Response(
             200,
             json={"choices": [{"message": {"content": json.dumps(result)}}]},
         )
 
     client = QwenClient(CONFIG, transport=httpx.MockTransport(handler))
-    result = await client.extract_fields(IMAGE, DOCUMENT_POLICIES["invoice"])
+    result = await client.extract_fields(
+        {**IMAGE, "business_scope": "new_vehicle"},
+        DOCUMENT_POLICIES["invoice"],
+    )
 
     assert attempts == 2
-    assert result.fields == {"invoice.code": "123"}
+    assert result.fields == {"invoice.invoice_no": "123"}
+
+
+def test_qwen_parser_drops_common_field_label_echoes() -> None:
+    extraction = parse_qwen_extraction(json.dumps({
+        "document_type": "invoice",
+        "fields": {
+            "invoice.amount": "价税合计（小写）",
+            "invoice.invoice_no": "123",
+        },
+    }))
+
+    assert extraction.fields == {"invoice.invoice_no": "123"}
 
 
 def test_qwen_extraction_accepts_field_to_boxes_evidence_mapping() -> None:

@@ -152,6 +152,9 @@ class Evidence(BaseModel):
     group_order: int | None = None
     document_type: str | None = None
     value: Any = None
+    normalized_value: str | None = None
+    derived_from: str | None = None
+    evidence_region: list[float] | None = None
     conflicting: bool = False
 
 
@@ -162,6 +165,8 @@ class FieldObservation(BaseModel):
     source_type: str
     source_id: str
     value: Any = None
+    derived_from: str | None = None
+    evidence_region: list[float] | None = None
     uncertain: bool = False
     document_type: str | None = None
     image_index: int | None = None
@@ -208,12 +213,21 @@ class ReviewStep(BaseModel):
     category: Literal["FIELD", "EXTERNAL", "BUSINESS_RULE", "MATERIAL"]
     display_target: ReviewDisplayTarget
     page_field: str | None = None
+    page_value: Any = None
+    control_type: str | None = None
+    writable: bool = False
     requires_reviewer_action: bool
     label: str
     result_status: Literal["MATCH", "CONFLICT", "INSUFFICIENT"]
     reason: str
     values: list[ReviewCheckValue] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+    evidence_count: int = 0
+    evidence_mode: str | None = None
+    evidence_sources: list[str] = Field(default_factory=list)
+    not_found_sources: list[str] = Field(default_factory=list)
+    normalized_page_value: str | None = None
 
     @model_validator(mode="after")
     def validate_display_contract(self) -> "ReviewStep":
@@ -224,9 +238,31 @@ class ReviewStep(BaseModel):
             and self.page_field is not None
         ):
             raise ValueError("ASSISTANT review steps cannot declare page_field")
-        if self.requires_reviewer_action != (self.result_status != "MATCH"):
-            raise ValueError("requires_reviewer_action must match result_status")
+        if self.result_status == "MATCH" and self.requires_reviewer_action:
+            raise ValueError("MATCH review steps cannot require reviewer action")
+        if self.result_status != "MATCH" and not self.requires_reviewer_action:
+            raise ValueError("non-MATCH review steps must require reviewer action")
         return self
+
+
+class ReviewFieldSnapshot(BaseModel):
+    """One editable logical form control collected from the current page DOM."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    field: str | None = None
+    label: str
+    value: Any = None
+    control_type: str = Field(
+        default="text", validation_alias=AliasChoices("control_type", "controlType")
+    )
+    editable: bool = True
+    order: int = Field(default=1, ge=1)
+    section: str = "unknown"
+    operation_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("operation_only", "operationOnly"),
+    )
 
 
 class ReviewRequest(BaseModel):
@@ -264,6 +300,10 @@ class ReviewRequest(BaseModel):
         default_factory=dict,
         validation_alias=AliasChoices("page_fields", "pageFields"),
     )
+    review_fields: list[ReviewFieldSnapshot] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("review_fields", "reviewFields"),
+    )
     images: list[ImageInput] = Field(default_factory=list)
     collection_diagnostics: "CollectionDiagnostics" = Field(
         default_factory=lambda: CollectionDiagnostics(),
@@ -285,6 +325,11 @@ class CollectionDiagnostics(BaseModel):
         default=0,
         ge=0,
         validation_alias=AliasChoices("matched_fields", "matchedFields"),
+    )
+    review_field_count: int = Field(
+        default=0,
+        ge=0,
+        validation_alias=AliasChoices("review_field_count", "reviewFieldCount"),
     )
     unmatched_labels: list[str] = Field(
         default_factory=list,

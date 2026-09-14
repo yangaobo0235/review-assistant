@@ -47,6 +47,7 @@ def image(
     index: int = 0,
     category_hint: str = "unknown",
     business_scope: str | None = None,
+    group_order: int | None = None,
 ) -> ImageInput:
     values = {
         "index": index,
@@ -56,24 +57,35 @@ def image(
     }
     if business_scope is not None:
         values["business_scope"] = business_scope
+    if group_order is not None:
+        values["group_order"] = group_order
     return ImageInput(**values)
 
 
-def test_identity_card_is_skipped_without_qwen_call() -> None:
-    fake = FakeQwenClient()
+def test_identity_card_is_extracted_without_sensitive_number() -> None:
+    fake = FakeQwenClient(
+        extraction=QwenExtraction(
+            document_type="identity_card",
+            fields={"identity_card.name": "张三", "identity_card.side": "FRONT"},
+            confidence=0.96,
+        )
+    )
 
     recognized, limitations, confidences = AgentService(fake).extract(
         [image(category_hint="id_card")]
     )
 
-    assert recognized == {}
-    assert confidences == []
+    assert recognized == {
+        "identity_card.name": ("张三", 0),
+        "identity_card.side": ("FRONT", 0),
+    }
+    assert confidences == [0.96]
     assert fake.classification_calls == []
-    assert fake.extraction_calls == []
-    assert "身份证资料按策略跳过" in limitations
+    assert fake.extraction_calls == [(0, "identity_card")]
+    assert limitations == []
 
 
-def test_unavailable_identity_card_is_still_reported_as_policy_skip() -> None:
+def test_unavailable_identity_card_is_reported_as_unreadable() -> None:
     fake = FakeQwenClient()
     identity_card = ImageInput(
         index=0,
@@ -84,14 +96,14 @@ def test_unavailable_identity_card_is_still_reported_as_policy_skip() -> None:
 
     _, limitations, _ = AgentService(fake).extract([identity_card])
 
-    assert limitations == ["身份证资料按策略跳过"]
+    assert limitations == ["图片 0 内容不可用"]
 
 
 def test_known_invoice_uses_one_extraction_call() -> None:
     fake = FakeQwenClient(
         extraction=QwenExtraction(
             document_type="invoice",
-            fields={"invoice.code": "123"},
+            fields={"invoice.invoice_no": "123"},
             confidence=0.9,
         )
     )
@@ -100,11 +112,41 @@ def test_known_invoice_uses_one_extraction_call() -> None:
         [image(category_hint="invoice")]
     )
 
-    assert recognized == {"invoice.code": ("123", 0)}
+    assert recognized == {
+        "invoice.invoice_no": ("123", 0),
+        "invoice.code": ("123", 0),
+    }
     assert limitations == []
     assert confidences == [0.9]
     assert fake.classification_calls == []
     assert fake.extraction_calls == [(0, "invoice")]
+
+
+@pytest.mark.asyncio
+async def test_invoice_number_derives_page_code_and_preserves_evidence_region() -> None:
+    fake = FakeQwenClient(
+        extraction=QwenExtraction(
+            document_type="invoice",
+            fields={"invoice.invoice_no": "2632000000731322946"},
+            evidence_regions=[
+                {
+                    "field": "invoice.invoice_no",
+                    "image_index": 3,
+                    "box": [10, 20, 300, 80],
+                }
+            ],
+        )
+    )
+
+    result = await AgentService(fake).extract_async(
+        [image(index=3, category_hint="invoice", business_scope="new_vehicle")]
+    )
+
+    observations = {item.field: item for item in result.observations}
+    assert observations["invoice.invoice_no"].derived_from is None
+    assert observations["invoice.code"].derived_from == "invoice.invoice_no"
+    assert observations["invoice.invoice_no"].evidence_region == [10, 20, 300, 80]
+    assert observations["invoice.code"].evidence_region == [10, 20, 300, 80]
 
 
 def test_unknown_image_is_classified_then_extracted() -> None:
@@ -112,7 +154,7 @@ def test_unknown_image_is_classified_then_extracted() -> None:
         classification=QwenClassification(document_type="invoice", confidence=0.98),
         extraction=QwenExtraction(
             document_type="invoice",
-            fields={"invoice.code": "123"},
+            fields={"invoice.invoice_no": "123"},
             confidence=0.9,
         ),
     )
@@ -121,7 +163,7 @@ def test_unknown_image_is_classified_then_extracted() -> None:
         [image(business_scope="new_vehicle")]
     )
 
-    assert recognized == {"invoice.code": ("123", 0)}
+    assert recognized == {"invoice.invoice_no": ("123", 0), "invoice.code": ("123", 0)}
     assert limitations == []
     assert fake.classification_calls == [0]
     assert fake.extraction_calls == [(0, "invoice")]
@@ -162,13 +204,13 @@ def test_non_allowlisted_fields_are_discarded() -> None:
     fake = FakeQwenClient(
         extraction=QwenExtraction(
             document_type="invoice",
-            fields={"invoice.code": "123", "old_vehicle.engine_model": "OUT-OF-SCOPE"},
+            fields={"invoice.invoice_no": "123", "old_vehicle.engine_model": "OUT-OF-SCOPE"},
         )
     )
 
     recognized, _, _ = AgentService(fake).extract([image(category_hint="invoice")])
 
-    assert recognized == {"invoice.code": ("123", 0)}
+    assert recognized == {"invoice.invoice_no": ("123", 0), "invoice.code": ("123", 0)}
 
 
 def test_classified_unknown_image_keeps_resolved_policy_allowlist() -> None:
@@ -176,7 +218,7 @@ def test_classified_unknown_image_keeps_resolved_policy_allowlist() -> None:
         classification=QwenClassification(document_type="invoice", confidence=0.98),
         extraction=QwenExtraction(
             document_type="invoice",
-            fields={"invoice.code": "123", "old_vehicle.engine_model": "OUT-OF-SCOPE"},
+            fields={"invoice.invoice_no": "123", "old_vehicle.engine_model": "OUT-OF-SCOPE"},
         ),
     )
 
@@ -184,14 +226,14 @@ def test_classified_unknown_image_keeps_resolved_policy_allowlist() -> None:
         [image(category_hint="unknown", business_scope="new_vehicle")]
     )
 
-    assert recognized == {"invoice.code": ("123", 0)}
+    assert recognized == {"invoice.invoice_no": ("123", 0), "invoice.code": ("123", 0)}
 
 
 def test_one_image_failure_does_not_stop_the_next_image() -> None:
     fake = FakeQwenClient(
         extraction=QwenExtraction(
             document_type="invoice",
-            fields={"invoice.code": "123"},
+            fields={"invoice.invoice_no": "123"},
         ),
         fail_indices={0},
     )
@@ -200,7 +242,7 @@ def test_one_image_failure_does_not_stop_the_next_image() -> None:
         [image(0, "invoice"), image(1, "invoice")]
     )
 
-    assert recognized == {"invoice.code": ("123", 1)}
+    assert recognized == {"invoice.invoice_no": ("123", 1), "invoice.code": ("123", 1)}
     assert limitations
     assert fake.extraction_calls == [(0, "invoice"), (1, "invoice")]
 
@@ -279,37 +321,36 @@ async def test_six_images_start_concurrently() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_image_uses_one_combined_extraction_call() -> None:
-    class CombinedClient(FakeQwenClient):
-        def __init__(self) -> None:
-            super().__init__()
-            self.combined_calls: list[int] = []
-
-        async def extract_unknown(self, image: dict[str, object]) -> QwenExtraction:
-            self.combined_calls.append(int(image["index"]))
-            return QwenExtraction(
-                document_type="invoice",
-                fields={"invoice.code": "123", "old_vehicle.vin": "OUT-OF-SCOPE"},
-                confidence=0.9,
-            )
-
-    client = CombinedClient()
+async def test_unknown_image_is_classified_then_uses_targeted_extraction() -> None:
+    client = FakeQwenClient(
+        classification=QwenClassification(document_type="invoice", confidence=0.98),
+        extraction=QwenExtraction(
+            document_type="invoice",
+            fields={
+                "invoice.invoice_no": "123",
+                "old_vehicle.engine_model": "OUT-OF-SCOPE",
+            },
+            confidence=0.9,
+        ),
+    )
     result = await AgentService(client).extract_async(
         [image(category_hint="unknown", business_scope="new_vehicle")]
     )
 
-    assert client.combined_calls == [0]
-    assert client.classification_calls == []
+    assert client.classification_calls == [0]
+    assert client.extraction_calls == [(0, "invoice")]
     assert [(item.field, item.value) for item in result.observations] == [
+        ("invoice.invoice_no", "123"),
         ("invoice.code", "123"),
-        ("new_vehicle.vin", "OUT-OF-SCOPE"),
     ]
 
 
 @pytest.mark.asyncio
 async def test_business_scope_rejects_incompatible_model_document_type() -> None:
     class CombinedClient(FakeQwenClient):
-        async def extract_unknown(self, image: dict[str, object]) -> QwenExtraction:
+        async def extract_fields(
+            self, image: dict[str, object], policy: object
+        ) -> QwenExtraction:
             return QwenExtraction(
                 document_type="invoice",
                 fields={
@@ -324,13 +365,15 @@ async def test_business_scope_rejects_incompatible_model_document_type() -> None
     )
 
     assert result.observations == []
-    assert any("发票位于报废车辆资料区域" in item for item in result.limitations)
+    assert any("资料类型不一致" in item for item in result.limitations)
 
 
 @pytest.mark.asyncio
 async def test_identical_vehicle_documents_are_routed_by_page_business_scope() -> None:
     class VehicleLicenseClient(FakeQwenClient):
-        async def extract_unknown(self, image: dict[str, object]) -> QwenExtraction:
+        async def extract_fields(
+            self, image: dict[str, object], policy: object
+        ) -> QwenExtraction:
             return QwenExtraction(
                 document_type="vehicle_license",
                 fields={"vehicle.vin": f"VIN-{image['index']}"},
@@ -371,7 +414,9 @@ async def test_identical_vehicle_documents_are_routed_by_page_business_scope() -
 @pytest.mark.asyncio
 async def test_registration_certificate_fields_follow_page_business_scope() -> None:
     class RegistrationCertificateClient(FakeQwenClient):
-        async def extract_unknown(self, image: dict[str, object]) -> QwenExtraction:
+        async def extract_fields(
+            self, image: dict[str, object], policy: object
+        ) -> QwenExtraction:
             return QwenExtraction(
                 document_type="registration_certificate",
                 fields={
@@ -384,8 +429,8 @@ async def test_registration_certificate_fields_follow_page_business_scope() -> N
 
     result = await AgentService(RegistrationCertificateClient()).extract_async(
         [
-            image(index=3, business_scope="old_vehicle"),
-            image(index=6, business_scope="new_vehicle"),
+            image(index=3, business_scope="old_vehicle", group_order=2),
+            image(index=6, business_scope="new_vehicle", group_order=2),
         ]
     )
 
@@ -394,7 +439,6 @@ async def test_registration_certificate_fields_follow_page_business_scope() -> N
         for item in result.observations
     }
     assert observations == {
-        ("old_vehicle.owner", "OWNER-3", "old_vehicle", "registration_certificate"),
         ("old_vehicle.vin", "VIN-3", "old_vehicle", "registration_certificate"),
         (
             "old_vehicle.engine_model",
@@ -402,9 +446,28 @@ async def test_registration_certificate_fields_follow_page_business_scope() -> N
             "old_vehicle",
             "registration_certificate",
         ),
-        ("new_vehicle.owner", "OWNER-6", "new_vehicle", "registration_certificate"),
-        ("new_vehicle.vin", "VIN-6", "new_vehicle", "registration_certificate"),
+            ("new_vehicle.vin", "VIN-6", "new_vehicle", "registration_certificate"),
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page_value", [[1, 2], "第1页、第2页", "第 1 页 / 第 2 页"])
+async def test_registration_page_numbers_are_normalized_for_scrap_documents(page_value) -> None:
+    class RegistrationPagesClient(FakeQwenClient):
+        async def extract_fields(
+            self, image: dict[str, object], policy: object
+        ) -> QwenExtraction:
+            return QwenExtraction(
+                document_type="registration_certificate",
+                fields={"registration.covered_pages": page_value},
+                confidence=0.9,
+            )
+
+    result = await AgentService(RegistrationPagesClient()).extract_async(
+        [image(category_hint="registration_certificate", business_scope="old_vehicle")]
+    )
+
+    assert result.recognized_documents[0].covered_pages == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -464,7 +527,7 @@ async def test_deadline_returns_completed_observations_and_marks_pending_timeout
                 await asyncio.sleep(1)
             return QwenExtraction(
                 document_type="invoice",
-                fields={"invoice.code": str(image["index"])},
+                fields={"invoice.invoice_no": str(image["index"])},
             )
 
     progress: list[tuple[int, int]] = []
@@ -480,7 +543,8 @@ async def test_deadline_returns_completed_observations_and_marks_pending_timeout
     )
 
     assert [(item.field, item.value) for item in result.observations] == [
-        ("invoice.code", "0")
+        ("invoice.invoice_no", "0"),
+        ("invoice.code", "0"),
     ]
     assert result.completed_count == 1
     assert result.timed_out_count == 1

@@ -1,0 +1,4160 @@
+{
+  "business_type": "scrap_replacement",
+  "region": "changchun",
+  "profile_version": "1.0",
+  "recommendation": "REVIEW_REQUIRED",
+  "risk_level": "HIGH",
+  "summary": "发现 8 项需要审核人员确认",
+  "comparisons": [
+    {
+      "field": "old_vehicle.type",
+      "left_value": "重型半挂牵引车",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.9833333333333334,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.type",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "重型半挂牵引车",
+          "normalized_value": "牵引车",
+          "derived_from": null,
+          "evidence_region": [
+            256.0,
+            105.0,
+            405.0,
+            135.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.type",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "重型半挂牵引车",
+          "normalized_value": "牵引车",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            380.0,
+            620.0,
+            410.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "2",
+          "field": "old_vehicle.type",
+          "uncertain": false,
+          "image_index": 2,
+          "detail": "2",
+          "image_id": "2",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 2,
+          "document_type": "registration_certificate",
+          "value": "重型半挂牵引车",
+          "normalized_value": "牵引车",
+          "derived_from": null,
+          "evidence_region": [
+            155.0,
+            595.0,
+            330.0,
+            615.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "多个来源字段一致"
+    },
+    {
+      "field": "old_vehicle.recycle_date",
+      "left_value": "2026-08-21",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.98,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.recycle_date",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "2026-08-21",
+          "normalized_value": "2026-08-21",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            290.0,
+            620.0,
+            320.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "scrap_certificate.certificate_no",
+      "left_value": "HS-230000-3100-20260821-29",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.98,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "scrap_certificate.certificate_no",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "HS-230000-3100-20260821-29",
+          "normalized_value": "HS-230000-3100-20260821-29",
+          "derived_from": null,
+          "evidence_region": [
+            620.0,
+            130.0,
+            900.0,
+            160.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "old_vehicle.vin",
+      "left_value": "LRDS6PEB4FR014407",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.9833333333333334,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.vin",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "LRDS6PEB4FR014407",
+          "normalized_value": "LRDS6PEB4FR014407",
+          "derived_from": null,
+          "evidence_region": [
+            256.0,
+            295.0,
+            405.0,
+            325.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.vin",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "LRDS6PEB4FR014407",
+          "normalized_value": "LRDS6PEB4FR014407",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            470.0,
+            650.0,
+            500.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "2",
+          "field": "old_vehicle.vin",
+          "uncertain": false,
+          "image_index": 2,
+          "detail": "2",
+          "image_id": "2",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 2,
+          "document_type": "registration_certificate",
+          "value": "LRDS6PEB4FR014407",
+          "normalized_value": "LRDS6PEB4FR014407",
+          "derived_from": null,
+          "evidence_region": [
+            155.0,
+            635.0,
+            385.0,
+            655.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "多个来源字段一致"
+    },
+    {
+      "field": "old_vehicle.plate_no",
+      "left_value": "黑BT8397",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.plate_no",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "黑BT8397",
+          "normalized_value": "黑BT8397",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            105.0,
+            165.0,
+            135.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "old_vehicle.owner",
+      "left_value": "齐齐哈尔润达运输有限公司",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.985,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.owner",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            175.0,
+            255.0,
+            205.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.owner",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            220.0,
+            200.0,
+            380.0,
+            230.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "多个来源字段一致"
+    },
+    {
+      "field": "old_vehicle.engine_model",
+      "left_value": "ISGe4-460",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.98,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "2",
+          "field": "old_vehicle.engine_model",
+          "uncertain": false,
+          "image_index": 2,
+          "detail": "2",
+          "image_id": "2",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 2,
+          "document_type": "registration_certificate",
+          "value": "ISGe4-460",
+          "normalized_value": "ISGE4460",
+          "derived_from": null,
+          "evidence_region": [
+            530.0,
+            635.0,
+            700.0,
+            655.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "new_vehicle.fuel_type",
+      "left_value": "天然气",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "5",
+          "field": "new_vehicle.fuel_type",
+          "uncertain": false,
+          "image_index": 5,
+          "detail": "5",
+          "image_id": "5",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 5,
+          "document_type": "registration_certificate",
+          "value": "天然气",
+          "normalized_value": "天然气",
+          "derived_from": null,
+          "evidence_region": [
+            190.0,
+            690.0,
+            430.0,
+            715.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "invoice.code",
+      "left_value": "26232000000731322946",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.code",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "26232000000731322946",
+          "normalized_value": "26232000000731322946",
+          "derived_from": "invoice.invoice_no",
+          "evidence_region": [
+            760.0,
+            45.0,
+            950.0,
+            65.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "invoice.invoice_no",
+      "left_value": "26232000000731322946",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.invoice_no",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "26232000000731322946",
+          "normalized_value": "26232000000731322946",
+          "derived_from": null,
+          "evidence_region": [
+            760.0,
+            45.0,
+            950.0,
+            65.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "invoice.amount",
+      "left_value": "355000.00",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.amount",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "355000.00",
+          "normalized_value": "355000",
+          "derived_from": null,
+          "evidence_region": [
+            850.0,
+            460.0,
+            950.0,
+            480.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "invoice.invoice_date",
+      "left_value": "2026年07月13日",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.invoice_date",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "2026年07月13日",
+          "normalized_value": "2026-07-13",
+          "derived_from": null,
+          "evidence_region": [
+            790.0,
+            75.0,
+            950.0,
+            95.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "new_vehicle.vin",
+      "left_value": "LFWSRX9L7TAA15881",
+      "right_value": null,
+      "status": "CONFLICT",
+      "source": "rule_engine",
+      "confidence": 0.9866666666666667,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "5",
+          "field": "new_vehicle.vin",
+          "uncertain": false,
+          "image_index": 5,
+          "detail": "5",
+          "image_id": "5",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 5,
+          "document_type": "registration_certificate",
+          "value": "LFWSRX9L7TAA15881",
+          "normalized_value": "LFWSRX9L7TAA15881",
+          "derived_from": null,
+          "evidence_region": [
+            62.0,
+            630.0,
+            430.0,
+            655.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.vin",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "LFWSRX9L7TAA15881",
+          "normalized_value": "LFWSRX9L7TAA15881",
+          "derived_from": null,
+          "evidence_region": [
+            410.0,
+            335.0,
+            730.0,
+            365.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "new_vehicle.vin",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "LFWSRURU7TAA15881",
+          "normalized_value": "LFWSRURU7TAA15881",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            395.0,
+            800.0,
+            415.0
+          ],
+          "conflicting": true
+        }
+      ],
+      "message": "多个来源存在不同值"
+    },
+    {
+      "field": "new_vehicle.plate_no",
+      "left_value": "黑BT7683",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.98,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.plate_no",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "黑BT7683",
+          "normalized_value": "黑BT7683",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            105.0,
+            310.0,
+            135.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "new_vehicle.owner",
+      "left_value": "齐齐哈尔润达运输有限公司",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.985,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.owner",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            185.0,
+            560.0,
+            220.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "new_vehicle.owner",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "多个来源字段一致"
+    },
+    {
+      "field": "new_vehicle.registration_date",
+      "left_value": "2026-07-23",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.98,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.registration_date",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "2026-07-23",
+          "normalized_value": "2026-07-23",
+          "derived_from": null,
+          "evidence_region": [
+            315.0,
+            445.0,
+            490.0,
+            475.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "application.terminal_certificate_no",
+      "left_value": "91230204MA1B1EE444",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "application.terminal_certificate_no",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "91230204MA1B1EE444",
+          "normalized_value": "91230204MA1B1EE444",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            205.0,
+            800.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "application.customer_name",
+      "left_value": "齐齐哈尔润达运输有限公司",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "application.customer_name",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    },
+    {
+      "field": "application.terminal_phone",
+      "left_value": "15246152979",
+      "right_value": null,
+      "status": "MATCH",
+      "source": "rule_engine",
+      "confidence": 0.99,
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "application.terminal_phone",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "15246152979",
+          "normalized_value": "15246152979",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            535.0,
+            750.0,
+            555.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "message": "已发现 1 份有效证据，按实际证据核验"
+    }
+  ],
+  "qr_checks": [
+    {
+      "image_index": 1,
+      "raw_value": null,
+      "url": null,
+      "domain_valid": null,
+      "accessible": null,
+      "page_fields": {},
+      "status": "REVIEW_REQUIRED",
+      "message": "未识别到二维码"
+    }
+  ],
+  "cross_checks": [
+    {
+      "check_id": "POLICY-INVOICE-DATE",
+      "label": "新车发票日期",
+      "status": "MATCH",
+      "reason": "新车发票日期符合政策范围：2026-07-01 至 2026-09-30",
+      "values": [
+        {
+          "source": "新车发票日期",
+          "value": "2026年07月13日",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "field": "invoice.invoice_date",
+          "source_type": "image",
+          "source_id": "6",
+          "value": "2026年07月13日",
+          "derived_from": null,
+          "evidence_region": [
+            790.0,
+            75.0,
+            950.0,
+            95.0
+          ],
+          "uncertain": false,
+          "document_type": "invoice",
+          "image_index": 6,
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "confidence": 0.99
+        }
+      ],
+      "details": {}
+    },
+    {
+      "check_id": "POLICY-DISPOSAL-DEADLINE",
+      "label": "回收证明交车日期",
+      "status": "MATCH",
+      "reason": "回收证明交车日期符合政策范围：不晚于 2026-12-31",
+      "values": [
+        {
+          "source": "回收证明交车日期",
+          "value": "2026-08-21",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "field": "old_vehicle.recycle_date",
+          "source_type": "image",
+          "source_id": "3",
+          "value": "2026-08-21",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            290.0,
+            620.0,
+            320.0
+          ],
+          "uncertain": false,
+          "document_type": "scrap_certificate",
+          "image_index": 3,
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "confidence": 0.98
+        }
+      ],
+      "details": {}
+    },
+    {
+      "check_id": "POLICY-NEW-ORIGIN",
+      "label": "新车发票产地",
+      "status": "CONFLICT",
+      "reason": "新车销售发票产地不符合当前地区规则（允许：长春、长春市、吉林省长春市）",
+      "values": [
+        {
+          "source": "新车销售发票",
+          "value": "青岛",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "field": "new_vehicle.origin",
+          "source_type": "image",
+          "source_id": "6",
+          "value": "青岛",
+          "derived_from": null,
+          "evidence_region": [
+            810.0,
+            315.0,
+            840.0,
+            335.0
+          ],
+          "uncertain": false,
+          "document_type": "invoice",
+          "image_index": 6,
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "confidence": 0.99
+        }
+      ],
+      "details": {}
+    },
+    {
+      "check_id": "AFFILIATION-SUBJECT-001",
+      "label": "新旧车挂靠主体关系",
+      "status": "INSUFFICIENT",
+      "reason": "缺少与齐齐哈尔润达运输有限公司对应的营业执照",
+      "values": [
+        {
+          "source": "旧车所有人",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车所有人",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "旧车主体类型",
+          "value": "COMPANY",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车主体类型",
+          "value": "COMPANY",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "field": "old_vehicle.owner",
+          "source_type": "image",
+          "source_id": "1",
+          "value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            175.0,
+            255.0,
+            205.0
+          ],
+          "uncertain": false,
+          "document_type": "vehicle_license",
+          "image_index": 1,
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "confidence": 0.99
+        },
+        {
+          "source": "图片识别",
+          "field": "new_vehicle.owner",
+          "source_type": "image",
+          "source_id": "4",
+          "value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            185.0,
+            560.0,
+            220.0
+          ],
+          "uncertain": false,
+          "document_type": "vehicle_license",
+          "image_index": 4,
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "confidence": 0.98
+        },
+        {
+          "source": "图片识别",
+          "field": "old_vehicle.owner",
+          "source_type": "image",
+          "source_id": "3",
+          "value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            220.0,
+            200.0,
+            380.0,
+            230.0
+          ],
+          "uncertain": false,
+          "document_type": "scrap_certificate",
+          "image_index": 3,
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "confidence": 0.98
+        },
+        {
+          "source": "图片识别",
+          "field": "new_vehicle.owner",
+          "source_type": "image",
+          "source_id": "6",
+          "value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ],
+          "uncertain": false,
+          "document_type": "invoice",
+          "image_index": 6,
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "confidence": 0.99
+        }
+      ],
+      "details": {
+        "subject_requirements": [
+          {
+            "party": "SHARED",
+            "subject_name": "齐齐哈尔润达运输有限公司",
+            "subject_type": "COMPANY",
+            "document": "business_license",
+            "status": "MISSING",
+            "image_ids": [],
+            "reason": "缺少与齐齐哈尔润达运输有限公司对应的营业执照"
+          }
+        ]
+      }
+    },
+    {
+      "check_id": "AFFILIATION-AUX-NEW-VIN",
+      "label": "OCR新车车架号",
+      "status": "INSUFFICIENT",
+      "reason": "页面或材料未取得可比较的明确值",
+      "values": [
+        {
+          "source": "页面OCR新车车架号",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车材料车架号",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [],
+      "details": {}
+    },
+    {
+      "check_id": "AFFILIATION-AUX-CUSTOMER-NAME",
+      "label": "客户名称",
+      "status": "INSUFFICIENT",
+      "reason": "页面或材料未取得可比较的明确值",
+      "values": [
+        {
+          "source": "申请页面客户名称",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车材料所有人",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [],
+      "details": {}
+    }
+  ],
+  "issues": [
+    "未采集到右侧申请字段"
+  ],
+  "sections": [
+    {
+      "id": "old_vehicle",
+      "title": "报废车辆信息",
+      "fields": [
+        "old_vehicle.type",
+        "old_vehicle.recycle_date",
+        "scrap_certificate.certificate_no",
+        "old_vehicle.vin",
+        "old_vehicle.plate_no",
+        "old_vehicle.owner",
+        "old_vehicle.engine_model"
+      ]
+    },
+    {
+      "id": "new_vehicle",
+      "title": "新车及发票信息",
+      "fields": [
+        "new_vehicle.fuel_type",
+        "invoice.code",
+        "invoice.invoice_no",
+        "invoice.amount",
+        "invoice.invoice_date",
+        "new_vehicle.vin",
+        "new_vehicle.plate_no",
+        "new_vehicle.owner",
+        "new_vehicle.registration_date",
+        "application.terminal_certificate_no",
+        "application.customer_name",
+        "application.terminal_phone"
+      ]
+    }
+  ],
+  "context_summary": {
+    "field_count": 0,
+    "image_count": 6,
+    "image_failed_count": 0,
+    "completed_count": 6,
+    "failed_count": 0,
+    "timed_out_count": 0
+  },
+  "agent_advice": {
+    "decision": "REVIEW_REQUIRED",
+    "title": "建议人工复核",
+    "summary": "发现 8 项需要审核人员确认",
+    "findings": [
+      {
+        "check_id": "FIELD-new_vehicle.vin",
+        "label": "新车车架号",
+        "status": "CONFLICT",
+        "reason": "多个来源存在不同值",
+        "values": [
+          {
+            "source": "图片识别",
+            "value": "LFWSRX9L7TAA15881",
+            "source_id": "5",
+            "image_id": "5",
+            "image_index": 5,
+            "document_type": "registration_certificate",
+            "detail": "5",
+            "derived_from": null,
+            "evidence_region": [
+              62.0,
+              630.0,
+              430.0,
+              655.0
+            ]
+          },
+          {
+            "source": "图片识别",
+            "value": "LFWSRX9L7TAA15881",
+            "source_id": "4",
+            "image_id": "4",
+            "image_index": 4,
+            "document_type": "vehicle_license",
+            "detail": "4",
+            "derived_from": null,
+            "evidence_region": [
+              410.0,
+              335.0,
+              730.0,
+              365.0
+            ]
+          },
+          {
+            "source": "图片识别",
+            "value": "LFWSRURU7TAA15881",
+            "source_id": "6",
+            "image_id": "6",
+            "image_index": 6,
+            "document_type": "invoice",
+            "detail": "6",
+            "derived_from": null,
+            "evidence_region": [
+              660.0,
+              395.0,
+              800.0,
+              415.0
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "source": "图片识别",
+            "source_id": "5",
+            "field": "new_vehicle.vin",
+            "uncertain": false,
+            "image_index": 5,
+            "detail": "5",
+            "image_id": "5",
+            "business_scope": "new_vehicle",
+            "group_title": "新车资料",
+            "group_order": 5,
+            "document_type": "registration_certificate",
+            "value": "LFWSRX9L7TAA15881",
+            "normalized_value": "LFWSRX9L7TAA15881",
+            "derived_from": null,
+            "evidence_region": [
+              62.0,
+              630.0,
+              430.0,
+              655.0
+            ],
+            "conflicting": false
+          },
+          {
+            "source": "图片识别",
+            "source_id": "4",
+            "field": "new_vehicle.vin",
+            "uncertain": false,
+            "image_index": 4,
+            "detail": "4",
+            "image_id": "4",
+            "business_scope": "new_vehicle",
+            "group_title": "新车资料",
+            "group_order": 4,
+            "document_type": "vehicle_license",
+            "value": "LFWSRX9L7TAA15881",
+            "normalized_value": "LFWSRX9L7TAA15881",
+            "derived_from": null,
+            "evidence_region": [
+              410.0,
+              335.0,
+              730.0,
+              365.0
+            ],
+            "conflicting": false
+          },
+          {
+            "source": "图片识别",
+            "source_id": "6",
+            "field": "new_vehicle.vin",
+            "uncertain": false,
+            "image_index": 6,
+            "detail": "6",
+            "image_id": "6",
+            "business_scope": "new_vehicle",
+            "group_title": "新车资料",
+            "group_order": 6,
+            "document_type": "invoice",
+            "value": "LFWSRURU7TAA15881",
+            "normalized_value": "LFWSRURU7TAA15881",
+            "derived_from": null,
+            "evidence_region": [
+              660.0,
+              395.0,
+              800.0,
+              415.0
+            ],
+            "conflicting": true
+          }
+        ],
+        "details": {}
+      },
+      {
+        "check_id": "POLICY-NEW-ORIGIN",
+        "label": "新车发票产地",
+        "status": "CONFLICT",
+        "reason": "新车销售发票产地不符合当前地区规则（允许：长春、长春市、吉林省长春市）",
+        "values": [
+          {
+            "source": "新车销售发票",
+            "value": "青岛",
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          }
+        ],
+        "evidence": [
+          {
+            "source": "图片识别",
+            "field": "new_vehicle.origin",
+            "source_type": "image",
+            "source_id": "6",
+            "value": "青岛",
+            "derived_from": null,
+            "evidence_region": [
+              810.0,
+              315.0,
+              840.0,
+              335.0
+            ],
+            "uncertain": false,
+            "document_type": "invoice",
+            "image_index": 6,
+            "image_id": "6",
+            "business_scope": "new_vehicle",
+            "group_title": "新车资料",
+            "group_order": 6,
+            "confidence": 0.99
+          }
+        ],
+        "details": {}
+      },
+      {
+        "check_id": "AFFILIATION-SUBJECT-001",
+        "label": "新旧车挂靠主体关系",
+        "status": "INSUFFICIENT",
+        "reason": "缺少与齐齐哈尔润达运输有限公司对应的营业执照",
+        "values": [
+          {
+            "source": "旧车所有人",
+            "value": "齐齐哈尔润达运输有限公司",
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          },
+          {
+            "source": "新车所有人",
+            "value": "齐齐哈尔润达运输有限公司",
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          },
+          {
+            "source": "旧车主体类型",
+            "value": "COMPANY",
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          },
+          {
+            "source": "新车主体类型",
+            "value": "COMPANY",
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          }
+        ],
+        "evidence": [
+          {
+            "source": "图片识别",
+            "field": "old_vehicle.owner",
+            "source_type": "image",
+            "source_id": "1",
+            "value": "齐齐哈尔润达运输有限公司",
+            "derived_from": null,
+            "evidence_region": [
+              85.0,
+              175.0,
+              255.0,
+              205.0
+            ],
+            "uncertain": false,
+            "document_type": "vehicle_license",
+            "image_index": 1,
+            "image_id": "1",
+            "business_scope": "old_vehicle",
+            "group_title": "旧车资料",
+            "group_order": 1,
+            "confidence": 0.99
+          },
+          {
+            "source": "图片识别",
+            "field": "new_vehicle.owner",
+            "source_type": "image",
+            "source_id": "4",
+            "value": "齐齐哈尔润达运输有限公司",
+            "derived_from": null,
+            "evidence_region": [
+              145.0,
+              185.0,
+              560.0,
+              220.0
+            ],
+            "uncertain": false,
+            "document_type": "vehicle_license",
+            "image_index": 4,
+            "image_id": "4",
+            "business_scope": "new_vehicle",
+            "group_title": "新车资料",
+            "group_order": 4,
+            "confidence": 0.98
+          },
+          {
+            "source": "图片识别",
+            "field": "old_vehicle.owner",
+            "source_type": "image",
+            "source_id": "3",
+            "value": "齐齐哈尔润达运输有限公司",
+            "derived_from": null,
+            "evidence_region": [
+              220.0,
+              200.0,
+              380.0,
+              230.0
+            ],
+            "uncertain": false,
+            "document_type": "scrap_certificate",
+            "image_index": 3,
+            "image_id": "3",
+            "business_scope": "old_vehicle",
+            "group_title": "旧车资料",
+            "group_order": 3,
+            "confidence": 0.98
+          },
+          {
+            "source": "图片识别",
+            "field": "new_vehicle.owner",
+            "source_type": "image",
+            "source_id": "6",
+            "value": "齐齐哈尔润达运输有限公司",
+            "derived_from": null,
+            "evidence_region": [
+              210.0,
+              205.0,
+              400.0,
+              225.0
+            ],
+            "uncertain": false,
+            "document_type": "invoice",
+            "image_index": 6,
+            "image_id": "6",
+            "business_scope": "new_vehicle",
+            "group_title": "新车资料",
+            "group_order": 6,
+            "confidence": 0.99
+          }
+        ],
+        "details": {
+          "subject_requirements": [
+            {
+              "party": "SHARED",
+              "subject_name": "齐齐哈尔润达运输有限公司",
+              "subject_type": "COMPANY",
+              "document": "business_license",
+              "status": "MISSING",
+              "image_ids": [],
+              "reason": "缺少与齐齐哈尔润达运输有限公司对应的营业执照"
+            }
+          ]
+        }
+      },
+      {
+        "check_id": "AFFILIATION-AUX-NEW-VIN",
+        "label": "OCR新车车架号",
+        "status": "INSUFFICIENT",
+        "reason": "页面或材料未取得可比较的明确值",
+        "values": [
+          {
+            "source": "页面OCR新车车架号",
+            "value": null,
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          },
+          {
+            "source": "新车材料车架号",
+            "value": null,
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          }
+        ],
+        "evidence": [],
+        "details": {}
+      },
+      {
+        "check_id": "AFFILIATION-AUX-CUSTOMER-NAME",
+        "label": "客户名称",
+        "status": "INSUFFICIENT",
+        "reason": "页面或材料未取得可比较的明确值",
+        "values": [
+          {
+            "source": "申请页面客户名称",
+            "value": null,
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          },
+          {
+            "source": "新车材料所有人",
+            "value": "齐齐哈尔润达运输有限公司",
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          }
+        ],
+        "evidence": [],
+        "details": {}
+      },
+      {
+        "check_id": "QR-1",
+        "label": "二维码官网核验",
+        "status": "INSUFFICIENT",
+        "reason": "未识别到二维码",
+        "values": [
+          {
+            "source": "二维码内容",
+            "value": null,
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          },
+          {
+            "source": "二维码官网",
+            "value": null,
+            "source_id": null,
+            "image_id": null,
+            "image_index": null,
+            "document_type": null,
+            "detail": null,
+            "derived_from": null,
+            "evidence_region": null
+          }
+        ],
+        "evidence": [
+          {
+            "source": "二维码官网字段",
+            "image_index": 1,
+            "detail": null,
+            "value": {}
+          }
+        ],
+        "details": {}
+      },
+      {
+        "check_id": "MATERIAL-MISSING_REGISTRATION_PAGES-1",
+        "label": "资料完整性",
+        "status": "INSUFFICIENT",
+        "reason": "新车登记证第 1、2 页第1、2页未能确认；请检查对应页原图；如图片模糊、遮挡或缺页，请补充清晰完整图片",
+        "values": [],
+        "evidence": [],
+        "details": {}
+      },
+      {
+        "check_id": "ISSUE-1",
+        "label": "资料完整性",
+        "status": "INSUFFICIENT",
+        "reason": "未采集到右侧申请字段",
+        "values": [],
+        "evidence": [],
+        "details": {}
+      }
+    ],
+    "recognition_confidence": 0.985,
+    "confidence": 0.985,
+    "basis": [
+      "资料图片识别",
+      "二维码官网核验",
+      "确定性审核规则"
+    ],
+    "limitations": []
+  },
+  "material_completeness": {
+    "phase": "EXTRACTED",
+    "status": "INCOMPLETE",
+    "enforced": true,
+    "issues": [
+      {
+        "code": "MISSING_REGISTRATION_PAGES",
+        "reason_code": "evidence_not_extracted",
+        "reason_detail": "已收到登记证图片，但未提取到这些页码，无法确认图片是否包含对应页面",
+        "material_type": "registration_certificate",
+        "business_scope": "new_vehicle",
+        "field": null,
+        "required_pages": [
+          1,
+          2
+        ],
+        "present_pages": [],
+        "missing_pages": [
+          1,
+          2
+        ],
+        "missing_sources": [],
+        "message": "新车登记证第 1、2 页第1、2页未能确认",
+        "suggested_action": "请检查对应页原图；如图片模糊、遮挡或缺页，请补充清晰完整图片"
+      }
+    ],
+    "checklist": [
+      {
+        "key": "old_vehicle:vehicle_license",
+        "display_name": "旧车行驶证",
+        "material_type": "vehicle_license",
+        "business_scope": "old_vehicle",
+        "status": "PRESENT",
+        "required_pages": [],
+        "present_pages": [],
+        "missing_pages": [],
+        "image_ids": [
+          "1"
+        ],
+        "reason": "材料类型和必需页码已确认"
+      },
+      {
+        "key": "old_vehicle:registration_certificate",
+        "display_name": "旧车登记证第 1、2 页",
+        "material_type": "registration_certificate",
+        "business_scope": "old_vehicle",
+        "status": "PRESENT",
+        "required_pages": [
+          1,
+          2
+        ],
+        "present_pages": [
+          1,
+          2
+        ],
+        "missing_pages": [],
+        "image_ids": [
+          "2"
+        ],
+        "reason": "材料类型和必需页码已确认"
+      },
+      {
+        "key": "old_vehicle:scrap_certificate",
+        "display_name": "报废证明",
+        "material_type": "scrap_certificate",
+        "business_scope": "old_vehicle",
+        "status": "PRESENT",
+        "required_pages": [],
+        "present_pages": [],
+        "missing_pages": [],
+        "image_ids": [
+          "3"
+        ],
+        "reason": "材料类型和必需页码已确认"
+      },
+      {
+        "key": "new_vehicle:vehicle_license",
+        "display_name": "新车行驶证",
+        "material_type": "vehicle_license",
+        "business_scope": "new_vehicle",
+        "status": "PRESENT",
+        "required_pages": [],
+        "present_pages": [],
+        "missing_pages": [],
+        "image_ids": [
+          "4"
+        ],
+        "reason": "材料类型和必需页码已确认"
+      },
+      {
+        "key": "new_vehicle:registration_certificate",
+        "display_name": "新车登记证第 1、2 页",
+        "material_type": "registration_certificate",
+        "business_scope": "new_vehicle",
+        "status": "UNCERTAIN",
+        "required_pages": [
+          1,
+          2
+        ],
+        "present_pages": [],
+        "missing_pages": [
+          1,
+          2
+        ],
+        "image_ids": [
+          "5"
+        ],
+        "reason": "第1、2页未能确认"
+      },
+      {
+        "key": "new_vehicle:invoice",
+        "display_name": "新车发票",
+        "material_type": "invoice",
+        "business_scope": "new_vehicle",
+        "status": "PRESENT",
+        "required_pages": [],
+        "present_pages": [],
+        "missing_pages": [],
+        "image_ids": [
+          "6"
+        ],
+        "reason": "材料类型和必需页码已确认"
+      }
+    ]
+  },
+  "retry_summary": {
+    "attempts": [
+      {
+        "target_id": "1",
+        "stage": "qr_decode",
+        "attempt_number": 1,
+        "reason_code": "initial_decode",
+        "strategy": "round_1",
+        "result": "failed",
+        "duration_ms": 78
+      },
+      {
+        "target_id": "1",
+        "stage": "qr_decode",
+        "attempt_number": 2,
+        "reason_code": "decode_retry",
+        "strategy": "round_2",
+        "result": "failed",
+        "duration_ms": 78
+      },
+      {
+        "target_id": "1",
+        "stage": "qr_decode",
+        "attempt_number": 3,
+        "reason_code": "decode_retry",
+        "strategy": "round_3",
+        "result": "failed",
+        "duration_ms": 77
+      },
+      {
+        "target_id": "2",
+        "stage": "qr_decode",
+        "attempt_number": 1,
+        "reason_code": "initial_decode",
+        "strategy": "round_1",
+        "result": "failed",
+        "duration_ms": 78
+      },
+      {
+        "target_id": "2",
+        "stage": "qr_decode",
+        "attempt_number": 2,
+        "reason_code": "decode_retry",
+        "strategy": "round_2",
+        "result": "failed",
+        "duration_ms": 125
+      },
+      {
+        "target_id": "2",
+        "stage": "qr_decode",
+        "attempt_number": 3,
+        "reason_code": "decode_retry",
+        "strategy": "round_3",
+        "result": "failed",
+        "duration_ms": 62
+      },
+      {
+        "target_id": "3",
+        "stage": "qr_decode",
+        "attempt_number": 1,
+        "reason_code": "initial_decode",
+        "strategy": "round_1",
+        "result": "failed",
+        "duration_ms": 46
+      },
+      {
+        "target_id": "3",
+        "stage": "qr_decode",
+        "attempt_number": 2,
+        "reason_code": "decode_retry",
+        "strategy": "round_2",
+        "result": "failed",
+        "duration_ms": 62
+      },
+      {
+        "target_id": "3",
+        "stage": "qr_decode",
+        "attempt_number": 3,
+        "reason_code": "decode_retry",
+        "strategy": "round_3",
+        "result": "failed",
+        "duration_ms": 31
+      }
+    ],
+    "qwen_retries": 0,
+    "qr_decode_rounds": 9,
+    "qr_web_retries": 0,
+    "total_retries": 0
+  },
+  "page_fill_intent": [],
+  "review_steps": [
+    {
+      "step_id": "FIELD-old_vehicle.type",
+      "sequence": 1,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废车辆类型",
+      "result_status": "INSUFFICIENT",
+      "reason": "多个来源字段一致；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "重型半挂牵引车",
+          "source_id": "1",
+          "image_id": "1",
+          "image_index": 1,
+          "document_type": "vehicle_license",
+          "detail": "1",
+          "derived_from": null,
+          "evidence_region": [
+            256.0,
+            105.0,
+            405.0,
+            135.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "重型半挂牵引车",
+          "source_id": "3",
+          "image_id": "3",
+          "image_index": 3,
+          "document_type": "scrap_certificate",
+          "detail": "3",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            380.0,
+            620.0,
+            410.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "重型半挂牵引车",
+          "source_id": "2",
+          "image_id": "2",
+          "image_index": 2,
+          "document_type": "registration_certificate",
+          "detail": "2",
+          "derived_from": null,
+          "evidence_region": [
+            155.0,
+            595.0,
+            330.0,
+            615.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.type",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "重型半挂牵引车",
+          "normalized_value": "牵引车",
+          "derived_from": null,
+          "evidence_region": [
+            256.0,
+            105.0,
+            405.0,
+            135.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.type",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "重型半挂牵引车",
+          "normalized_value": "牵引车",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            380.0,
+            620.0,
+            410.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "2",
+          "field": "old_vehicle.type",
+          "uncertain": false,
+          "image_index": 2,
+          "detail": "2",
+          "image_id": "2",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 2,
+          "document_type": "registration_certificate",
+          "value": "重型半挂牵引车",
+          "normalized_value": "牵引车",
+          "derived_from": null,
+          "evidence_region": [
+            155.0,
+            595.0,
+            330.0,
+            615.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 3,
+        "evidence_mode": "PARALLEL",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 3,
+      "evidence_mode": "PARALLEL",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-old_vehicle.recycle_date",
+      "sequence": 2,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废交车日期",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "2026-08-21",
+          "source_id": "3",
+          "image_id": "3",
+          "image_index": 3,
+          "document_type": "scrap_certificate",
+          "detail": "3",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            290.0,
+            620.0,
+            320.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.recycle_date",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "2026-08-21",
+          "normalized_value": "2026-08-21",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            290.0,
+            620.0,
+            320.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-scrap_certificate.certificate_no",
+      "sequence": 3,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废证明编号",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "HS-230000-3100-20260821-29",
+          "source_id": "3",
+          "image_id": "3",
+          "image_index": 3,
+          "document_type": "scrap_certificate",
+          "detail": "3",
+          "derived_from": null,
+          "evidence_region": [
+            620.0,
+            130.0,
+            900.0,
+            160.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "scrap_certificate.certificate_no",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "HS-230000-3100-20260821-29",
+          "normalized_value": "HS-230000-3100-20260821-29",
+          "derived_from": null,
+          "evidence_region": [
+            620.0,
+            130.0,
+            900.0,
+            160.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-old_vehicle.vin",
+      "sequence": 4,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废车辆车架号",
+      "result_status": "INSUFFICIENT",
+      "reason": "多个来源字段一致；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "LRDS6PEB4FR014407",
+          "source_id": "1",
+          "image_id": "1",
+          "image_index": 1,
+          "document_type": "vehicle_license",
+          "detail": "1",
+          "derived_from": null,
+          "evidence_region": [
+            256.0,
+            295.0,
+            405.0,
+            325.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "LRDS6PEB4FR014407",
+          "source_id": "3",
+          "image_id": "3",
+          "image_index": 3,
+          "document_type": "scrap_certificate",
+          "detail": "3",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            470.0,
+            650.0,
+            500.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "LRDS6PEB4FR014407",
+          "source_id": "2",
+          "image_id": "2",
+          "image_index": 2,
+          "document_type": "registration_certificate",
+          "detail": "2",
+          "derived_from": null,
+          "evidence_region": [
+            155.0,
+            635.0,
+            385.0,
+            655.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.vin",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "LRDS6PEB4FR014407",
+          "normalized_value": "LRDS6PEB4FR014407",
+          "derived_from": null,
+          "evidence_region": [
+            256.0,
+            295.0,
+            405.0,
+            325.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.vin",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "LRDS6PEB4FR014407",
+          "normalized_value": "LRDS6PEB4FR014407",
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            470.0,
+            650.0,
+            500.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "2",
+          "field": "old_vehicle.vin",
+          "uncertain": false,
+          "image_index": 2,
+          "detail": "2",
+          "image_id": "2",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 2,
+          "document_type": "registration_certificate",
+          "value": "LRDS6PEB4FR014407",
+          "normalized_value": "LRDS6PEB4FR014407",
+          "derived_from": null,
+          "evidence_region": [
+            155.0,
+            635.0,
+            385.0,
+            655.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 3,
+        "evidence_mode": "PARALLEL",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 3,
+      "evidence_mode": "PARALLEL",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-old_vehicle.plate_no",
+      "sequence": 5,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废车辆车牌号",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "黑BT8397",
+          "source_id": "1",
+          "image_id": "1",
+          "image_index": 1,
+          "document_type": "vehicle_license",
+          "detail": "1",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            105.0,
+            165.0,
+            135.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.plate_no",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "黑BT8397",
+          "normalized_value": "黑BT8397",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            105.0,
+            165.0,
+            135.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-old_vehicle.owner",
+      "sequence": 6,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废车辆所有人",
+      "result_status": "INSUFFICIENT",
+      "reason": "多个来源字段一致；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": "1",
+          "image_id": "1",
+          "image_index": 1,
+          "document_type": "vehicle_license",
+          "detail": "1",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            175.0,
+            255.0,
+            205.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": "3",
+          "image_id": "3",
+          "image_index": 3,
+          "document_type": "scrap_certificate",
+          "detail": "3",
+          "derived_from": null,
+          "evidence_region": [
+            220.0,
+            200.0,
+            380.0,
+            230.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.owner",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": "1",
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            175.0,
+            255.0,
+            205.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.owner",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": "3",
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            220.0,
+            200.0,
+            380.0,
+            230.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 2,
+        "evidence_mode": "PARALLEL",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 2,
+      "evidence_mode": "PARALLEL",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-old_vehicle.engine_model",
+      "sequence": 7,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "报废发动机型号",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "ISGe4-460",
+          "source_id": "2",
+          "image_id": "2",
+          "image_index": 2,
+          "document_type": "registration_certificate",
+          "detail": "2",
+          "derived_from": null,
+          "evidence_region": [
+            530.0,
+            635.0,
+            700.0,
+            655.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "2",
+          "field": "old_vehicle.engine_model",
+          "uncertain": false,
+          "image_index": 2,
+          "detail": "2",
+          "image_id": "2",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 2,
+          "document_type": "registration_certificate",
+          "value": "ISGe4-460",
+          "normalized_value": "ISGE4460",
+          "derived_from": null,
+          "evidence_region": [
+            530.0,
+            635.0,
+            700.0,
+            655.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-new_vehicle.fuel_type",
+      "sequence": 8,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "新车燃料类型",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "天然气",
+          "source_id": "5",
+          "image_id": "5",
+          "image_index": 5,
+          "document_type": "registration_certificate",
+          "detail": "5",
+          "derived_from": null,
+          "evidence_region": [
+            190.0,
+            690.0,
+            430.0,
+            715.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "5",
+          "field": "new_vehicle.fuel_type",
+          "uncertain": false,
+          "image_index": 5,
+          "detail": "5",
+          "image_id": "5",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 5,
+          "document_type": "registration_certificate",
+          "value": "天然气",
+          "normalized_value": "天然气",
+          "derived_from": null,
+          "evidence_region": [
+            190.0,
+            690.0,
+            430.0,
+            715.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-invoice.code",
+      "sequence": 9,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "发票代码",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段；发票代码由票面数电号码适配",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "26232000000731322946",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": "invoice.invoice_no",
+          "evidence_region": [
+            760.0,
+            45.0,
+            950.0,
+            65.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.code",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "26232000000731322946",
+          "normalized_value": "26232000000731322946",
+          "derived_from": "invoice.invoice_no",
+          "evidence_region": [
+            760.0,
+            45.0,
+            950.0,
+            65.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-invoice.invoice_no",
+      "sequence": 10,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "发票号码",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "26232000000731322946",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            760.0,
+            45.0,
+            950.0,
+            65.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.invoice_no",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "26232000000731322946",
+          "normalized_value": "26232000000731322946",
+          "derived_from": null,
+          "evidence_region": [
+            760.0,
+            45.0,
+            950.0,
+            65.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-invoice.amount",
+      "sequence": 11,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "开票金额",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "355000.00",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            850.0,
+            460.0,
+            950.0,
+            480.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.amount",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "355000.00",
+          "normalized_value": "355000",
+          "derived_from": null,
+          "evidence_region": [
+            850.0,
+            460.0,
+            950.0,
+            480.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-invoice.invoice_date",
+      "sequence": 12,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "开票日期",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "2026年07月13日",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            790.0,
+            75.0,
+            950.0,
+            95.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.invoice_date",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "2026年07月13日",
+          "normalized_value": "2026-07-13",
+          "derived_from": null,
+          "evidence_region": [
+            790.0,
+            75.0,
+            950.0,
+            95.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-new_vehicle.vin",
+      "sequence": 13,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "新车车架号",
+      "result_status": "CONFLICT",
+      "reason": "多个来源存在不同值",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "LFWSRX9L7TAA15881",
+          "source_id": "5",
+          "image_id": "5",
+          "image_index": 5,
+          "document_type": "registration_certificate",
+          "detail": "5",
+          "derived_from": null,
+          "evidence_region": [
+            62.0,
+            630.0,
+            430.0,
+            655.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "LFWSRX9L7TAA15881",
+          "source_id": "4",
+          "image_id": "4",
+          "image_index": 4,
+          "document_type": "vehicle_license",
+          "detail": "4",
+          "derived_from": null,
+          "evidence_region": [
+            410.0,
+            335.0,
+            730.0,
+            365.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "LFWSRURU7TAA15881",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            395.0,
+            800.0,
+            415.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "5",
+          "field": "new_vehicle.vin",
+          "uncertain": false,
+          "image_index": 5,
+          "detail": "5",
+          "image_id": "5",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 5,
+          "document_type": "registration_certificate",
+          "value": "LFWSRX9L7TAA15881",
+          "normalized_value": "LFWSRX9L7TAA15881",
+          "derived_from": null,
+          "evidence_region": [
+            62.0,
+            630.0,
+            430.0,
+            655.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.vin",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "LFWSRX9L7TAA15881",
+          "normalized_value": "LFWSRX9L7TAA15881",
+          "derived_from": null,
+          "evidence_region": [
+            410.0,
+            335.0,
+            730.0,
+            365.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "new_vehicle.vin",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "LFWSRURU7TAA15881",
+          "normalized_value": "LFWSRURU7TAA15881",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            395.0,
+            800.0,
+            415.0
+          ],
+          "conflicting": true
+        }
+      ],
+      "details": {
+        "evidence_count": 3,
+        "evidence_mode": "PARALLEL",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 3,
+      "evidence_mode": "PARALLEL",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-new_vehicle.plate_no",
+      "sequence": 14,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "新车车牌号",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "黑BT7683",
+          "source_id": "4",
+          "image_id": "4",
+          "image_index": 4,
+          "document_type": "vehicle_license",
+          "detail": "4",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            105.0,
+            310.0,
+            135.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.plate_no",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "黑BT7683",
+          "normalized_value": "黑BT7683",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            105.0,
+            310.0,
+            135.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-new_vehicle.owner",
+      "sequence": 15,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "新车所有人",
+      "result_status": "INSUFFICIENT",
+      "reason": "多个来源字段一致；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": "4",
+          "image_id": "4",
+          "image_index": 4,
+          "document_type": "vehicle_license",
+          "detail": "4",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            185.0,
+            560.0,
+            220.0
+          ]
+        },
+        {
+          "source": "图片识别",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.owner",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            185.0,
+            560.0,
+            220.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "new_vehicle.owner",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 2,
+        "evidence_mode": "PARALLEL",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 2,
+      "evidence_mode": "PARALLEL",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-new_vehicle.registration_date",
+      "sequence": 16,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "注册日期",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "2026-07-23",
+          "source_id": "4",
+          "image_id": "4",
+          "image_index": 4,
+          "document_type": "vehicle_license",
+          "detail": "4",
+          "derived_from": null,
+          "evidence_region": [
+            315.0,
+            445.0,
+            490.0,
+            475.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.registration_date",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": "4",
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "2026-07-23",
+          "normalized_value": "2026-07-23",
+          "derived_from": null,
+          "evidence_region": [
+            315.0,
+            445.0,
+            490.0,
+            475.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-application.terminal_certificate_no",
+      "sequence": 17,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "终端证件号",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "91230204MA1B1EE444",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            205.0,
+            800.0,
+            225.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "application.terminal_certificate_no",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "91230204MA1B1EE444",
+          "normalized_value": "91230204MA1B1EE444",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            205.0,
+            800.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-application.customer_name",
+      "sequence": 18,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "客户名称",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "application.customer_name",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": "齐齐哈尔润达运输有限公司",
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "FIELD-application.terminal_phone",
+      "sequence": 19,
+      "category": "FIELD",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "终端客户手机号",
+      "result_status": "INSUFFICIENT",
+      "reason": "已发现 1 份有效证据，按实际证据核验；页面字段缺失或存在歧义，请人工核对该字段",
+      "values": [
+        {
+          "source": "图片识别",
+          "value": "15246152979",
+          "source_id": "6",
+          "image_id": "6",
+          "image_index": 6,
+          "document_type": "invoice",
+          "detail": "6",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            535.0,
+            750.0,
+            555.0
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "application.terminal_phone",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": "6",
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "15246152979",
+          "normalized_value": "15246152979",
+          "derived_from": null,
+          "evidence_region": [
+            660.0,
+            535.0,
+            750.0,
+            555.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "evidence_count": 1,
+        "evidence_mode": "SINGLE_SOURCE",
+        "evidence_sources": [
+          "图片识别"
+        ],
+        "not_found_sources": [],
+        "normalized_page_value": null
+      },
+      "evidence_count": 1,
+      "evidence_mode": "SINGLE_SOURCE",
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "QR-1",
+      "sequence": 20,
+      "category": "EXTERNAL",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "二维码官网核验",
+      "result_status": "INSUFFICIENT",
+      "reason": "未识别到二维码",
+      "values": [
+        {
+          "source": "二维码内容",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "二维码官网",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "二维码官网字段",
+          "source_id": null,
+          "field": null,
+          "uncertain": false,
+          "image_index": 1,
+          "detail": null,
+          "image_id": null,
+          "business_scope": null,
+          "group_title": null,
+          "group_order": null,
+          "document_type": null,
+          "value": {},
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": null,
+          "conflicting": false
+        }
+      ],
+      "details": {},
+      "evidence_count": 1,
+      "evidence_mode": null,
+      "evidence_sources": [
+        "二维码官网字段"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "BUSINESS-POLICY-INVOICE-DATE",
+      "sequence": 21,
+      "category": "BUSINESS_RULE",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": false,
+      "label": "新车发票日期",
+      "result_status": "MATCH",
+      "reason": "新车发票日期符合政策范围：2026-07-01 至 2026-09-30",
+      "values": [
+        {
+          "source": "新车发票日期",
+          "value": "2026年07月13日",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "invoice.invoice_date",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": null,
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "2026年07月13日",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            790.0,
+            75.0,
+            950.0,
+            95.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {},
+      "evidence_count": 1,
+      "evidence_mode": null,
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "BUSINESS-POLICY-DISPOSAL-DEADLINE",
+      "sequence": 22,
+      "category": "BUSINESS_RULE",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": false,
+      "label": "回收证明交车日期",
+      "result_status": "MATCH",
+      "reason": "回收证明交车日期符合政策范围：不晚于 2026-12-31",
+      "values": [
+        {
+          "source": "回收证明交车日期",
+          "value": "2026-08-21",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.recycle_date",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": null,
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "2026-08-21",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            520.0,
+            290.0,
+            620.0,
+            320.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {},
+      "evidence_count": 1,
+      "evidence_mode": null,
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "BUSINESS-POLICY-NEW-ORIGIN",
+      "sequence": 23,
+      "category": "BUSINESS_RULE",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "新车发票产地",
+      "result_status": "CONFLICT",
+      "reason": "新车销售发票产地不符合当前地区规则（允许：长春、长春市、吉林省长春市）",
+      "values": [
+        {
+          "source": "新车销售发票",
+          "value": "青岛",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "new_vehicle.origin",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": null,
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "青岛",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            810.0,
+            315.0,
+            840.0,
+            335.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {},
+      "evidence_count": 1,
+      "evidence_mode": null,
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "BUSINESS-AFFILIATION-SUBJECT-001",
+      "sequence": 24,
+      "category": "BUSINESS_RULE",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "新旧车挂靠主体关系",
+      "result_status": "INSUFFICIENT",
+      "reason": "缺少与齐齐哈尔润达运输有限公司对应的营业执照",
+      "values": [
+        {
+          "source": "旧车所有人",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车所有人",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "旧车主体类型",
+          "value": "COMPANY",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车主体类型",
+          "value": "COMPANY",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [
+        {
+          "source": "图片识别",
+          "source_id": "1",
+          "field": "old_vehicle.owner",
+          "uncertain": false,
+          "image_index": 1,
+          "detail": null,
+          "image_id": "1",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 1,
+          "document_type": "vehicle_license",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            85.0,
+            175.0,
+            255.0,
+            205.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "4",
+          "field": "new_vehicle.owner",
+          "uncertain": false,
+          "image_index": 4,
+          "detail": null,
+          "image_id": "4",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 4,
+          "document_type": "vehicle_license",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            145.0,
+            185.0,
+            560.0,
+            220.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "3",
+          "field": "old_vehicle.owner",
+          "uncertain": false,
+          "image_index": 3,
+          "detail": null,
+          "image_id": "3",
+          "business_scope": "old_vehicle",
+          "group_title": "旧车资料",
+          "group_order": 3,
+          "document_type": "scrap_certificate",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            220.0,
+            200.0,
+            380.0,
+            230.0
+          ],
+          "conflicting": false
+        },
+        {
+          "source": "图片识别",
+          "source_id": "6",
+          "field": "new_vehicle.owner",
+          "uncertain": false,
+          "image_index": 6,
+          "detail": null,
+          "image_id": "6",
+          "business_scope": "new_vehicle",
+          "group_title": "新车资料",
+          "group_order": 6,
+          "document_type": "invoice",
+          "value": "齐齐哈尔润达运输有限公司",
+          "normalized_value": null,
+          "derived_from": null,
+          "evidence_region": [
+            210.0,
+            205.0,
+            400.0,
+            225.0
+          ],
+          "conflicting": false
+        }
+      ],
+      "details": {
+        "subject_requirements": [
+          {
+            "party": "SHARED",
+            "subject_name": "齐齐哈尔润达运输有限公司",
+            "subject_type": "COMPANY",
+            "document": "business_license",
+            "status": "MISSING",
+            "image_ids": [],
+            "reason": "缺少与齐齐哈尔润达运输有限公司对应的营业执照"
+          }
+        ]
+      },
+      "evidence_count": 4,
+      "evidence_mode": null,
+      "evidence_sources": [
+        "图片识别"
+      ],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "BUSINESS-AFFILIATION-AUX-NEW-VIN",
+      "sequence": 25,
+      "category": "BUSINESS_RULE",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "OCR新车车架号",
+      "result_status": "INSUFFICIENT",
+      "reason": "页面或材料未取得可比较的明确值",
+      "values": [
+        {
+          "source": "页面OCR新车车架号",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车材料车架号",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [],
+      "details": {},
+      "evidence_count": 0,
+      "evidence_mode": null,
+      "evidence_sources": [],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME",
+      "sequence": 26,
+      "category": "BUSINESS_RULE",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "客户名称",
+      "result_status": "INSUFFICIENT",
+      "reason": "页面或材料未取得可比较的明确值",
+      "values": [
+        {
+          "source": "申请页面客户名称",
+          "value": null,
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        },
+        {
+          "source": "新车材料所有人",
+          "value": "齐齐哈尔润达运输有限公司",
+          "source_id": null,
+          "image_id": null,
+          "image_index": null,
+          "document_type": null,
+          "detail": null,
+          "derived_from": null,
+          "evidence_region": null
+        }
+      ],
+      "evidence": [],
+      "details": {},
+      "evidence_count": 0,
+      "evidence_mode": null,
+      "evidence_sources": [],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    },
+    {
+      "step_id": "MATERIAL-MISSING_REGISTRATION_PAGES-1",
+      "sequence": 27,
+      "category": "MATERIAL",
+      "display_target": "ASSISTANT",
+      "page_field": null,
+      "page_value": null,
+      "control_type": null,
+      "writable": false,
+      "requires_reviewer_action": true,
+      "label": "资料完整性",
+      "result_status": "INSUFFICIENT",
+      "reason": "新车登记证第 1、2 页第1、2页未能确认；请检查对应页原图；如图片模糊、遮挡或缺页，请补充清晰完整图片",
+      "values": [],
+      "evidence": [],
+      "details": {},
+      "evidence_count": 0,
+      "evidence_mode": null,
+      "evidence_sources": [],
+      "not_found_sources": [],
+      "normalized_page_value": null
+    }
+  ]
+}

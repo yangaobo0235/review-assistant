@@ -8,11 +8,12 @@ from collections.abc import Mapping
 from typing import Any
 
 # 只有这三个车辆通用字段可在旧车与新车命名空间之间按页面范围路由。
-VEHICLE_FIELDS = {"vin", "plate_no", "owner"}
+VEHICLE_FIELDS = {"vin", "plate_no", "owner", "type", "registration_date", "fuel_type"}
 # 兼容旧版前端把业务角色当作文档类型提交的请求。
 LEGACY_DOCUMENT_TYPES = {
     "old_vehicle": "vehicle_license",
     "new_vehicle": "vehicle_license",
+    "id_card": "identity_card",
 }
 
 
@@ -36,6 +37,13 @@ def route_fields(
 ) -> tuple[dict[str, Any], str | None]:
     """按页面确定的业务范围路由字段，并返回需要人工复核的限制说明。"""
     normalized_type = normalize_document_type(document_type)
+    if normalized_type == "identity_card":
+        allowed = {"identity_card.name", "identity_card.side"}
+        return {
+            field: value
+            for field, value in fields.items()
+            if field in allowed and value not in (None, "", [], {})
+        }, None
     if normalized_type == "business_license":
         allowed = {
             "business_license.company_name",
@@ -80,12 +88,12 @@ def route_fields(
         return {}, "回收证明位于新车资料区域，请人工复核"
     if normalized_type == "invoice" and business_scope != "new_vehicle":
         return {}, "发票位于报废车辆资料区域，请人工复核"
-    routed: dict[str, str] = {}
+    routed: dict[str, Any] = {}
     for field_name, value in fields.items():
         if not value:
             continue
         if normalized_type == "registration_certificate":
-            if field_name in {"vehicle.owner", "vehicle.vin"}:
+            if field_name == "vehicle.vin":
                 suffix = field_name.removeprefix("vehicle.")
                 routed[f"{business_scope}.{suffix}"] = value
             elif business_scope == "old_vehicle" and field_name in {
@@ -93,6 +101,18 @@ def route_fields(
                 "old_vehicle.engine_model",
             }:
                 routed["old_vehicle.engine_model"] = value
+            elif field_name in {"vehicle.type", "vehicle.fuel_type", "vehicle.registration_date"}:
+                target = {
+                    "vehicle.type": f"{business_scope}.type",
+                    "vehicle.fuel_type": f"{business_scope}.fuel_type",
+                    "vehicle.registration_date": f"{business_scope}.registration_date",
+                }[field_name]
+                routed[target] = value
+            continue
+        if normalized_type == "invoice" and business_scope == "new_vehicle" and field_name == "vehicle.owner":
+            # 发票购买方名称同时支撑新车所有人和客户名称，避免客户名称因没有独立 OCR 键而被判信息不足。
+            routed["new_vehicle.owner"] = value
+            routed["application.customer_name"] = value
             continue
         suffix = _vehicle_suffix(field_name)
         if suffix is not None:
@@ -100,20 +120,31 @@ def route_fields(
             continue
         is_allowed_passthrough = (
             normalized_type == "scrap_certificate"
-            and field_name == "old_vehicle.recycle_date"
+            and field_name in {"old_vehicle.recycle_date", "vehicle.type"}
         ) or (
             normalized_type == "scrap_certificate"
             and field_name == "scrap_certificate.certificate_no"
         ) or (
             normalized_type == "invoice"
             and field_name in {
-                "invoice.code",
                 "invoice.invoice_no",
                 "invoice.amount",
                 "invoice.invoice_date",
                 "new_vehicle.origin",
+                "invoice.terminal_certificate_no",
+                "invoice.phone",
             }
         )
         if is_allowed_passthrough:
-            routed[field_name] = value
+            target_field = {
+                "invoice.terminal_certificate_no": "application.terminal_certificate_no",
+                "invoice.phone": "application.terminal_phone",
+            }.get(field_name, field_name)
+            routed[target_field] = value
+    if normalized_type == "invoice" and business_scope == "new_vehicle":
+        # 数电机动车销售发票票面只有一个“数电号码”。模型只提取一次，
+        # 页面“发票代码”由确定性兼容层派生，避免模型分别生成两个可能冲突的值。
+        invoice_number = routed.get("invoice.invoice_no")
+        if invoice_number not in (None, "", [], {}):
+            routed["invoice.code"] = invoice_number
     return routed, None

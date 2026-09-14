@@ -106,7 +106,7 @@ def test_document_type_must_be_compatible_with_business_scope() -> None:
     assert "发票" in str(invoice_limitation)
 
 
-def test_old_registration_certificate_routes_owner_vin_and_engine_model() -> None:
+def test_old_registration_certificate_does_not_route_owner() -> None:
     routed, limitation = route_fields(
         "old_vehicle",
         "registration_certificate",
@@ -118,14 +118,13 @@ def test_old_registration_certificate_routes_owner_vin_and_engine_model() -> Non
     )
 
     assert routed == {
-        "old_vehicle.owner": "OWNER",
         "old_vehicle.vin": "VIN",
         "old_vehicle.engine_model": "ENGINE",
     }
     assert limitation is None
 
 
-def test_new_registration_certificate_routes_owner_and_vin_only() -> None:
+def test_new_registration_certificate_routes_vin_but_not_owner() -> None:
     routed, limitation = route_fields(
         "new_vehicle",
         "registration_certificate",
@@ -137,13 +136,12 @@ def test_new_registration_certificate_routes_owner_and_vin_only() -> None:
     )
 
     assert routed == {
-        "new_vehicle.owner": "OWNER",
         "new_vehicle.vin": "VIN",
     }
     assert limitation is None
 
 
-def test_registration_certificate_drops_fields_outside_exact_allowlist() -> None:
+def test_registration_certificate_drops_owner_and_other_fields_outside_exact_allowlist() -> None:
     routed, limitation = route_fields(
         "new_vehicle",
         "registration_certificate",
@@ -157,7 +155,6 @@ def test_registration_certificate_drops_fields_outside_exact_allowlist() -> None
     )
 
     assert routed == {
-        "new_vehicle.owner": "OWNER",
         "new_vehicle.vin": "VIN",
     }
     assert limitation is None
@@ -171,13 +168,30 @@ def test_routes_invoice_policy_fields_only_from_new_vehicle_scope() -> None:
             "invoice.invoice_no": "INV-001",
             "invoice.invoice_date": "2026-09-10",
             "new_vehicle.origin": "长春市",
+            "invoice.phone": "0431-12345678",
         },
     )
 
     assert routed == {
+        "invoice.code": "INV-001",
         "invoice.invoice_no": "INV-001",
         "invoice.invoice_date": "2026-09-10",
         "new_vehicle.origin": "长春市",
+        "application.terminal_phone": "0431-12345678",
+    }
+    assert limitation is None
+
+
+def test_invoice_buyer_name_supports_customer_name_and_new_vehicle_owner() -> None:
+    routed, limitation = route_fields(
+        "new_vehicle",
+        "invoice",
+        {"vehicle.owner": "甲运输有限公司"},
+    )
+
+    assert routed == {
+        "new_vehicle.owner": "甲运输有限公司",
+        "application.customer_name": "甲运输有限公司",
     }
     assert limitation is None
 
@@ -198,5 +212,25 @@ def test_routes_business_license_fields_without_vehicle_scope() -> None:
         "business_license.company_name": "甲运输有限公司",
         "business_license.legal_representative": "张三",
         "business_license.unified_social_credit_code": "91230000ABC",
+    }
+    assert limitation is None
+
+
+def test_routes_identity_card_name_and_side_without_sensitive_fields() -> None:
+    routed, limitation = route_fields(
+        "identity",
+        "id_card",
+        {
+            "identity_card.name": "张三",
+            "identity_card.side": "FRONT",
+            "identity_card.number": "MUST-BE-DROPPED",
+            "identity_card.address": "MUST-BE-DROPPED",
+        },
+    )
+
+    assert normalize_document_type("id_card") == "identity_card"
+    assert routed == {
+        "identity_card.name": "张三",
+        "identity_card.side": "FRONT",
     }
     assert limitation is None

@@ -2,16 +2,29 @@
 
 from collections.abc import Iterable
 
+from app.agent.field_routing import route_fields
+
 from app.agent.models import (
     AgentBatchResult,
+    MaterialChecklistItem,
     MaterialCompletenessIssue,
     MaterialCompletenessReport,
+    MaterialFieldDetail,
 )
 from app.businesses.material_policies import SourceSelector
 from app.businesses.profiles import BusinessProfile
 from app.models.review import FieldObservation, ReviewRequest
+from app.rules.review_fields import SCRAP_PAGE_FIELD_LABELS
 
 FIELD_LABELS = {
+    **SCRAP_PAGE_FIELD_LABELS,
+    "registration.covered_pages": "登记证页码",
+    "new_vehicle.origin": "新车发票产地",
+    "identity_card.name": "身份证姓名",
+    "identity_card.side": "身份证正反面",
+    "business_license.company_name": "企业名称",
+    "business_license.legal_representative": "法定代表人",
+    "business_license.unified_social_credit_code": "统一社会信用代码",
     "transfer.plate_no": "车牌号",
     "transfer.vin": "车架号",
     "transfer.buyer_name": "买方名称",
@@ -22,6 +35,14 @@ SOURCE_LABELS = {
     "page": "申请页面",
     "invoice": "二手车发票",
     "registration_certificate": "登记证第2页",
+}
+MATERIAL_LABELS = {
+    "scrap_certificate": "报废证明",
+    "vehicle_license": "行驶证",
+    "registration_certificate": "机动车登记证",
+    "invoice": "发票",
+    "business_license": "营业执照",
+    "identity_card": "身份证",
 }
 UNCERTAIN_FIELD_ROUTES = {
     "invoice": {
@@ -45,7 +66,14 @@ def _dedupe(items: Iterable[MaterialCompletenessIssue]) -> list[MaterialComplete
     seen: set[tuple[object, ...]] = set()
     result = []
     for item in items:
-        key = (item.code, item.material_type, item.field, tuple(item.missing_pages), tuple(item.missing_sources))
+        key = (
+            item.code,
+            item.material_type,
+            item.business_scope,
+            item.field,
+            tuple(item.missing_pages),
+            tuple(item.missing_sources),
+        )
         if key not in seen:
             seen.add(key)
             result.append(item)
@@ -56,11 +84,16 @@ def _status(issues: list[MaterialCompletenessIssue]) -> str:
     return "COMPLETE" if not issues else "UNCERTAIN" if any(item.code in {"AMBIGUOUS_REQUIRED_FIELD", "IMAGE_SELECTION_OVERFLOW", "UNCERTAIN_MATERIAL", "UNCERTAIN_REQUIRED_FIELD"} for item in issues) else "INCOMPLETE"
 
 
+def _material_key(document_type: str, business_scope: str) -> str:
+    return f"{business_scope}:{document_type}"
+
+
 def evaluate_collected(request: ReviewRequest, profile: BusinessProfile) -> MaterialCompletenessReport:
     policy = profile.material_policy
     if policy is None or policy.mode == "disabled":
         return MaterialCompletenessReport(phase="COLLECTED", status="COMPLETE", enforced=False)
     issues: list[MaterialCompletenessIssue] = []
+    checklist: list[MaterialChecklistItem] = []
     diagnostics = request.collection_diagnostics
     if diagnostics.image_overflow:
         issues.append(_issue("IMAGE_SELECTION_OVERFLOW", "候选资料超过选择上限，请确认是否漏审", "请确认未被截断的审核材料"))
@@ -74,13 +107,17 @@ def evaluate_collected(request: ReviewRequest, profile: BusinessProfile) -> Mate
             and image.category_hint == requirement.document_type
         ]
         matches = [image for image in candidates if not image.collection_error]
+        status = "PRESENT"
+        reason = "页面已采集到对应材料图片"
         if len(matches) < requirement.minimum_count:
             if candidates and any(image.collection_error for image in candidates):
+                status = "UNCERTAIN"
                 reason_code = "image_unreadable"
                 reason_detail = f"{requirement.display_name.removeprefix('机动车')}图片读取失败，系统未取得可识别的原图内容"
                 message = f"{requirement.display_name}图片无法读取"
                 action = "请重新加载原图或补充可正常打开的图片"
             else:
+                status = "MISSING"
                 reason_code = "material_missing"
                 reason_detail = "页面未采集到对应材料图片"
                 message = f"缺少{requirement.display_name}"
@@ -94,9 +131,26 @@ def evaluate_collected(request: ReviewRequest, profile: BusinessProfile) -> Mate
                 material_type=requirement.document_type,
                 business_scope=requirement.business_scope,
             ))
+            reason = message
+        checklist.append(MaterialChecklistItem(
+            key=_material_key(requirement.document_type, requirement.business_scope),
+            display_name=requirement.display_name,
+            material_type=requirement.document_type,
+            business_scope=requirement.business_scope,
+            status=status,
+            required_pages=list(requirement.required_pages),
+            image_ids=[str(image.image_id or image.index) for image in candidates],
+            reason=reason,
+        ))
     if diagnostics.collection_issues:
         issues.append(_issue("COLLECTION_FAILURE", "图片采集存在异常", "请重新采集审核材料"))
-    return MaterialCompletenessReport(phase="COLLECTED", status=_status(issues), enforced=policy.mode == "enforce", issues=_dedupe(issues))
+    return MaterialCompletenessReport(
+        phase="COLLECTED",
+        status=_status(issues),
+        enforced=policy.mode == "enforce",
+        issues=_dedupe(issues),
+        checklist=checklist,
+    )
 
 
 def _matches(selector: SourceSelector, observation: FieldObservation, batch: AgentBatchResult) -> bool:
@@ -173,10 +227,11 @@ def _missing_pages_reason(
     matching: list[object],
     request: ReviewRequest,
     batch: AgentBatchResult,
+    business_scope: str,
 ) -> tuple[str, str]:
     if any("registration.covered_pages" in getattr(document, "uncertain_fields", []) for document in matching):
         return "recognition_uncertain", "图片可能模糊、遮挡，导致页码区域或页面内容不可辨认"
-    selector = SourceSelector("image", "registration_certificate", "transfer")
+    selector = SourceSelector("image", "registration_certificate", business_scope)
     image_ids = _image_ids_for_selector(selector, request)
     if image_ids & (set(batch.failed_image_ids) | set(batch.timed_out_image_ids)):
         return "recognition_failed", "登记证图片识别失败或超时，未能确认页面范围"
@@ -188,16 +243,60 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
     if policy is None or policy.mode == "disabled":
         return MaterialCompletenessReport(phase="EXTRACTED", status="COMPLETE", enforced=False)
     issues: list[MaterialCompletenessIssue] = []
+    checklist: list[MaterialChecklistItem] = []
     documents = [document for document in batch.recognized_documents if document.business_scope]
     for requirement in policy.materials:
         matching = [document for document in documents if document.document_type == requirement.document_type and document.business_scope == requirement.business_scope]
         present_pages = sorted({page for document in matching for page in document.covered_pages})
         missing_pages = sorted(set(requirement.required_pages) - set(present_pages))
+        candidate_images = [
+            image for image in request.images
+            if image.category_hint == requirement.document_type
+            and image.business_scope == requirement.business_scope
+        ]
+        image_ids = [str(image.image_id or image.index) for image in candidate_images]
+        failed_ids = set(batch.failed_image_ids) | set(batch.timed_out_image_ids)
+        status = "PRESENT"
+        reason = "材料类型和必需页码已确认"
         if len(matching) < requirement.minimum_count:
-            issues.append(_issue("MISSING_MATERIAL", f"缺少{requirement.display_name}", f"请补充{requirement.display_name}", material_type=requirement.document_type, business_scope=requirement.business_scope))
-        if missing_pages:
+            status = "UNCERTAIN" if candidate_images else "MISSING"
+            issue_code = (
+                "UNCERTAIN_MATERIAL" if status == "UNCERTAIN" else "MISSING_MATERIAL"
+            )
+            recognition_failed = bool(set(image_ids) & failed_ids)
+            reason = (
+                f"{requirement.display_name}识别失败或超时"
+                if recognition_failed
+                else f"{requirement.display_name}已上传，但材料类型无法确认"
+                if status == "UNCERTAIN"
+                else f"缺少{requirement.display_name}"
+            )
+            issues.append(_issue(
+                issue_code,
+                reason,
+                (
+                    "请检查对应原图并确认材料类型；如图片模糊，请补充清晰图片"
+                    if status == "UNCERTAIN"
+                    else f"请补充{requirement.display_name}"
+                ),
+                reason_code=(
+                    "recognition_failed"
+                    if recognition_failed
+                    else "recognition_uncertain"
+                    if status == "UNCERTAIN"
+                    else "material_missing"
+                ),
+                material_type=requirement.document_type,
+                business_scope=requirement.business_scope,
+            ))
+        if missing_pages and matching:
             page_text = "、".join(str(page) for page in missing_pages)
-            reason_code, reason_detail = _missing_pages_reason(matching, request, batch)
+            reason_code, reason_detail = _missing_pages_reason(
+                matching,
+                request,
+                batch,
+                requirement.business_scope,
+            )
             issues.append(_issue(
                 "MISSING_REGISTRATION_PAGES",
                 f"{requirement.display_name}第{page_text}页未能确认",
@@ -210,6 +309,20 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
                 present_pages=present_pages,
                 missing_pages=missing_pages,
             ))
+            status = "UNCERTAIN"
+            reason = f"第{page_text}页未能确认"
+        checklist.append(MaterialChecklistItem(
+            key=_material_key(requirement.document_type, requirement.business_scope),
+            display_name=requirement.display_name,
+            material_type=requirement.document_type,
+            business_scope=requirement.business_scope,
+            status=status,
+            required_pages=list(requirement.required_pages),
+            present_pages=present_pages,
+            missing_pages=missing_pages,
+            image_ids=[document.target_id for document in matching] or image_ids,
+            reason=reason,
+        ))
     for requirement in policy.field_sources:
         observations = [item for item in batch.observations if isinstance(item, FieldObservation) and item.field == requirement.field]
         missing_selectors = []
@@ -254,8 +367,11 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
             ))
     for document in documents:
         if document.uncertain_fields:
-            already_explained = any(
-                issue.reason_code == "recognition_uncertain"
+            matching_issue = next((
+                issue
+                for issue in issues
+                if issue.reason_code == "recognition_uncertain"
+                and issue.business_scope in {None, document.business_scope}
                 and (
                     issue.material_type == document.document_type
                     or (
@@ -263,16 +379,48 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
                         and _field_is_uncertain(document, issue.field)
                     )
                 )
-                for issue in issues
-            )
-            if not already_explained:
+            ), None)
+            material_name = next((
+                item.display_name for item in policy.materials
+                if item.document_type == document.document_type and item.business_scope == document.business_scope
+            ), MATERIAL_LABELS.get(document.document_type, "审核材料"))
+            details = []
+            for raw_field in dict.fromkeys(document.uncertain_fields):
+                routed, _ = route_fields(document.business_scope, document.document_type, {raw_field: "待核对"})
+                field = next(iter(routed), raw_field)
+                candidates = [item for item in batch.observations
+                              if item.source_type == "image" and item.field in {field, raw_field}
+                              and (document.target_id in {item.source_id, item.image_id}
+                                   or document.image_index is not None and item.image_index == document.image_index)]
+                value = document.uncertain_values.get(raw_field)
+                if raw_field not in document.uncertain_values and candidates:
+                    value = candidates[0].value
+                image = next((item for item in request.images
+                              if str(item.image_id or item.index) == document.target_id
+                              or document.image_index is not None and item.index == document.image_index), None)
+                details.append(MaterialFieldDetail(
+                    field=field, field_label=FIELD_LABELS.get(field, "未明确的识别字段"),
+                    material_name=material_name, value=value,
+                    image_id=str(image.image_id or image.index) if image else document.target_id,
+                    image_index=image.index if image else document.image_index,
+                ))
+            if matching_issue is not None:
+                matching_issue.field_details.extend(details)
+            else:
                 issues.append(_issue(
                     "UNCERTAIN_REQUIRED_FIELD",
-                    f"{document.document_type}存在无法确认的字段",
-                    "请查看原图；如图片模糊或遮挡，请补充清晰图片",
+                    f"{material_name}存在无法确认的字段",
+                    "请核对以下字段和对应原图；确实无法辨认时再补充清晰图片",
+                    field_details=details,
                     reason_code="recognition_uncertain",
                     reason_detail="图片可能模糊、遮挡或关键信息不可辨认",
                     material_type=document.document_type,
                     business_scope=document.business_scope,
                 ))
-    return MaterialCompletenessReport(phase="EXTRACTED", status=_status(issues), enforced=policy.mode == "enforce", issues=_dedupe(issues))
+    return MaterialCompletenessReport(
+        phase="EXTRACTED",
+        status=_status(issues),
+        enforced=policy.mode == "enforce",
+        issues=_dedupe(issues),
+        checklist=checklist,
+    )

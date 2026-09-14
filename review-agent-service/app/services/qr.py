@@ -6,6 +6,7 @@
 """
 
 import base64
+import json
 import re
 import ssl
 import time
@@ -64,18 +65,45 @@ def create_official_ssl_context() -> ssl.SSLContext:
 
 
 def extract_page_fields(html: str) -> dict[str, str]:
-    """Extract the two official recycling-certificate fields from simple HTML pages."""
-    text = unescape(re.sub(r"<[^>]+>", " ", html))
+    """Extract certificate number/VIN from common official HTML or embedded JSON."""
+    raw = unescape(html)
+    result: dict[str, str] = {}
+
+    # Some versions of the official page render values in JSON before hydration.
+    # Parse JSON-looking script/text fragments first so labels need not be adjacent.
+    json_keys = {
+        "certificate_no": ("certificate_no", "certificateNo", "recycleCertificateNo", "回收证明编号", "证明编号"),
+        "vin": ("vin", "vehicleVin", "vehicleIdentificationNo", "车架号", "车辆识别代号"),
+    }
+    for candidate in re.findall(r"(?:\{|\[)[^<>]{0,20000}(?:\}|\])", raw, flags=re.DOTALL):
+        try:
+            values = json.loads(candidate)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        objects = values if isinstance(values, list) else [values]
+        for obj in objects:
+            if not isinstance(obj, dict):
+                continue
+            for field_name, keys in json_keys.items():
+                if field_name in result:
+                    continue
+                for key in keys:
+                    value = obj.get(key)
+                    if isinstance(value, (str, int, float)) and str(value).strip():
+                        result[field_name] = str(value).strip()
+                        break
+
+    text = re.sub(r"<[^>]+>", " ", raw)
     text = re.sub(r"\s+", " ", text).strip()
     patterns = {
-        "certificate_no": r"(?:回收证明编号|证明编号|回收证明号)\s*[:：]?\s*([A-Za-z0-9一-龥][A-Za-z0-9一-龥\-/]*)",
-        "vin": r"(?:车架号|车辆识别代号|VIN)\s*[:：]?\s*([A-Za-z0-9]{6,32})",
+        "certificate_no": r"(?:回收证明编号|报废证明编号|证明编号|回收证明号|certificate[_\s-]*no|certificateNo)\s*[:：=]?\s*([A-Za-z0-9一-龥][A-Za-z0-9一-龥\-/]*)",
+        "vin": r"(?:车架号|车辆识别代号|车辆识别码|VIN|vehicle[_\s-]*vin)\s*[:：=]?\s*([A-Za-z0-9]{6,32})",
     }
-    result: dict[str, str] = {}
     for field_name, pattern in patterns.items():
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            result[field_name] = match.group(1).strip()
+        if field_name not in result:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                result[field_name] = match.group(1).strip()
     return result
 
 
@@ -136,6 +164,11 @@ class QrCodeService:
         yield image
         gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
         yield gray_image
+        # 上传材料通常会把整张回收证明缩小到较窄的侧栏；先放大整图，
+        # 让二维码定位器在二维码很小、但仍清晰可见时也能读取。
+        height, width = gray_image.shape[:2]
+        if max(height, width) < 2400:
+            yield cv2.resize(gray_image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
         rotation_codes = (
             None,
             cv2.ROTATE_90_CLOCKWISE,
@@ -145,24 +178,22 @@ class QrCodeService:
         for rotation_code in rotation_codes:
             rotated = image if rotation_code is None else cv2.rotate(image, rotation_code)
             height, width = rotated.shape[:2]
-            roi = rotated[int(height * 0.45) : height, : int(width * 0.48)]
+            # 回收证明的二维码通常在左下区域。旧实现固定从 45% 开始，
+            # 会把二维码上方的定位点裁掉；从 40% 开始并限制到左半侧，
+            # 可避开表格文字干扰，同时把候选总数限制在 12 个以内。
+            roi = rotated[int(height * 0.40) : height, : int(width * 0.52)]
             if roi.size == 0:
                 continue
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY) if roi.ndim == 3 else roi
             yield gray
-            yield cv2.resize(
-                gray,
-                None,
-                fx=2,
-                fy=2,
-                interpolation=cv2.INTER_CUBIC,
-            )
+            # 小二维码在页面缩略图/手机拍照中常低于 ZXing 的定位阈值。
+            yield cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
 
     @staticmethod
     def _opencv_candidates(image: np.ndarray) -> Iterator[np.ndarray]:
         yield image
         height, width = image.shape[:2]
-        roi = image[int(height * 0.45) : height, : int(width * 0.48)]
+        roi = image[int(height * 0.40) : height, : int(width * 0.52)]
         if roi.size:
             yield roi
 

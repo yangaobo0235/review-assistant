@@ -143,6 +143,84 @@ test("fills both empty native affiliation controls only after joint preflight", 
   assert.deepEqual(Array.from(result.actions, (item) => item.status), ["FILLED", "FILLED"]);
 });
 
+test("fills radio-style affiliation controls when a deployed shell renders radios instead of a select", async () => {
+  function radioField(label, labels) {
+    const item = {
+      isConnected: true,
+      querySelector(selector) {
+        if (selector.includes("label")) return { textContent: label, innerText: label };
+        return null;
+      },
+      querySelectorAll(selector) {
+        return selector.includes("radio") ? controls : [];
+      },
+    };
+    const controls = labels.map((choice) => {
+      const wrapper = {
+        tagName: "LABEL",
+        textContent: choice,
+        innerText: choice,
+        parentElement: item,
+        getAttribute: () => null,
+      };
+      const control = {
+        tagName: "INPUT",
+        type: "radio",
+        value: choice,
+        checked: false,
+        isConnected: true,
+        parentElement: wrapper,
+        getAttribute(name) { return name === "type" ? "radio" : null; },
+        closest(selector) {
+          if (selector.includes("label")) return wrapper;
+          if (selector.includes("radiogroup")) return item;
+          return null;
+        },
+        click() {
+          controls.forEach((other) => { other.checked = false; });
+          control.checked = true;
+        },
+        dispatchEvent() {},
+      };
+      return control;
+    });
+    return { item, controls };
+  }
+
+  const oldField = radioField("报废车挂靠", ["个人", "公司"]);
+  const newField = radioField("新车挂靠", ["个人", "企业"]);
+  const root = {
+    defaultView: { Event: class Event {} },
+    querySelectorAll(selector) {
+      return selector.includes("form-item") ? [oldField.item, newField.item] : [];
+    },
+  };
+
+  const result = await loadWriter().execute(root, actions);
+
+  assert.equal(result.ok, true);
+  assert.equal(oldField.controls.find((control) => control.checked).value, "个人");
+  assert.equal(newField.controls.find((control) => control.checked).value, "企业");
+});
+
+test("ignores hidden duplicate forms and writes only the visible affiliation controls", async () => {
+  const hiddenOld = nativeField("报废车挂靠", ["个人", "公司"]);
+  hiddenOld.item.style = { display: "none" };
+  const visibleOld = nativeField("报废车挂靠", ["个人", "公司"]);
+  const visibleNew = nativeField("新车挂靠", ["个人", "企业"]);
+
+  const result = await loadWriter().execute(nativeRoot([
+    hiddenOld,
+    visibleOld,
+    visibleNew,
+  ]), actions);
+
+  assert.equal(result.ok, true);
+  assert.equal(hiddenOld.select.value, "");
+  assert.equal(visibleOld.select.value, "个人");
+  assert.equal(visibleNew.select.value, "企业");
+});
+
 test("fills the Ant Design controls used by the production review page", async () => {
   const definitions = [
     { label: "报废车挂靠", values: ["个人", "公司"] },
@@ -627,6 +705,36 @@ function valueInput(initial = "") {
   };
 }
 
+test("manual values are read back before centering, focusing and highlighting the target", async () => {
+  const input = valueInput("HS-OLD");
+  const calls = [];
+  input.scrollIntoView = (options) => { assert.equal(input.value, "HS-MANUAL"); calls.push(options.block); };
+  input.focus = () => calls.push("focus");
+  input.animate = () => calls.push("highlight");
+  const result = await loadWriter({ setTimeout }).executeValue(
+    { defaultView: { Event: class Event {} } }, input,
+    { field: "scrap_certificate.certificate_no", value: "HS-MANUAL", expectedValue: "HS-OLD" },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, ["center", "focus", "highlight"]);
+  assert.equal(result.actions[0].value, "HS-MANUAL");
+});
+
+test("manual input supports phone fields and does not focus a failed or readonly write", async () => {
+  const input = valueInput("13800000000");
+  let focused = false;
+  input.focus = () => { focused = true; };
+  const writer = loadWriter({ setTimeout });
+  const root = { defaultView: { Event: class Event {} } };
+  input.readOnly = true;
+  assert.equal((await writer.executeValue(root, input, { field: "application.terminal_phone", value: "13900000000" })).ok, false);
+  assert.equal(focused, false);
+  input.readOnly = false;
+  assert.equal((await writer.executeValue(root, input, { field: "application.terminal_phone", value: "13900000000" })).ok, true);
+  assert.equal(input.value, "13900000000");
+  assert.equal(focused, true);
+});
+
 test("single-field writer enforces the scrap field allowlist and collected value", async () => {
   const writer = loadWriter({ setTimeout });
   const input = valueInput("VIN-OLD");
@@ -638,7 +746,7 @@ test("single-field writer enforces the scrap field allowlist and collected value
 
   const stale = await writer.executeValue(root, input, { field: "new_vehicle.vin", value: "VIN-NEW", expectedValue: "VIN-OTHER" });
   assert.equal(stale.ok, false);
-  assert.match(stale.message, /原值已变化/);
+  assert.match(stale.message, /当前值与采集时不同/);
   assert.equal(input.value, "VIN-OLD");
 });
 

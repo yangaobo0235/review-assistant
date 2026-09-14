@@ -361,17 +361,17 @@ def test_transfer_compatibility_does_not_allow_other_route_contexts(
 
 
 @pytest.mark.parametrize(
-    "kind",
+    "kind,expected",
     [
-        "missing",
-        "uncertain",
-        "same_source_conflict",
-        "company_name_conflict",
-        "masked",
-        "clear_conflict",
+        ("missing", "MATCH"),
+        ("uncertain", "INSUFFICIENT"),
+        ("same_source_conflict", "INSUFFICIENT"),
+        ("company_name_conflict", "INSUFFICIENT"),
+        ("masked", "INSUFFICIENT"),
+        ("clear_conflict", "INSUFFICIENT"),
     ],
 )
-def test_identical_company_legal_names_do_not_require_representative_evidence(kind):
+def test_identical_company_requires_one_unambiguous_matching_license(kind, expected):
     observations = (
         [
             FieldObservation(
@@ -386,8 +386,5 @@ def test_identical_company_legal_names_do_not_require_representative_evidence(ki
         else mixed_licenses(kind)
     )
     result = build_affiliation_subject_check("甲有限公司", "甲有限公司", observations)
-    assert result.check.status == "MATCH"
-    assert [action.owner_type for action in result.page_actions] == [
-        "COMPANY",
-        "COMPANY",
-    ]
+    assert result.check.status == expected
+    assert bool(result.page_actions) == (expected == "MATCH")

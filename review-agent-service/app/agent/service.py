@@ -8,6 +8,7 @@
 import asyncio
 import inspect
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -32,6 +33,53 @@ IMAGE_TIMEOUT_SECONDS = 50.0
 REVIEW_DEADLINE_SECONDS = 55.0
 CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.70
 logger = logging.getLogger("uvicorn.error")
+
+SLOT_DOCUMENT_TYPES = {
+    ("old_vehicle", 1): "vehicle_license",
+    ("old_vehicle", 2): "registration_certificate",
+    ("old_vehicle", 3): "scrap_certificate",
+    ("new_vehicle", 1): "vehicle_license",
+    ("new_vehicle", 2): "registration_certificate",
+    ("new_vehicle", 3): "invoice",
+}
+GENERIC_SCOPE_HINTS = {"", "unknown", "old_vehicle", "new_vehicle"}
+
+
+def _covered_pages(value: Any) -> list[int]:
+    """Normalize page numbers returned as arrays or common OCR text variants."""
+
+    values = value if isinstance(value, list) else [value]
+    pages: set[int] = set()
+    for item in values:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, (int, float)):
+            number = int(item)
+            if number > 0:
+                pages.add(number)
+            continue
+        for raw in re.findall(r"(?:第\s*)?(\d{1,2})(?:\s*页)?", str(item)):
+            number = int(raw)
+            if number > 0:
+                pages.add(number)
+    return sorted(pages)
+
+
+def _expected_document_type(image: Any) -> str | None:
+    """Resolve a physical document type from an explicit label or fixed upload slot."""
+    for raw_hint in (
+        getattr(image, "document_type_hint", "unknown"),
+        getattr(image, "category_hint", "unknown"),
+    ):
+        hint = str(raw_hint or "").strip()
+        if hint in GENERIC_SCOPE_HINTS:
+            continue
+        normalized = normalize_document_type(hint)
+        if normalized in DOCUMENT_POLICIES:
+            return normalized
+    return SLOT_DOCUMENT_TYPES.get(
+        (getattr(image, "business_scope", "unknown"), getattr(image, "group_order", None))
+    )
 
 ProgressCallback = Callable[[AgentBatchResult], Any]
 
@@ -81,13 +129,6 @@ class AgentService:
         async def run_one(image: Any) -> None:
             """处理单张图片，并在每个终态向调用方发送进度快照。"""
             image_name = image.image_id or image.index
-            if image.category_hint == "id_card":
-                result.limitations.append("身份证资料按策略跳过")
-                result.completed_count += 1
-                result.completed_image_ids.append(str(image_name))
-                logger.info("Agent image skipped: image=%s type=id_card", image_name)
-                await self._notify(on_progress, result)
-                return
             if image.business_scope == "other":
                 result.limitations.append(
                     f"图片 {image_name} 不属于车辆审核资料，已跳过"
@@ -178,9 +219,9 @@ class AgentService:
             result.recognized_documents.append(RecognizedDocument(
                 target_id=str(image_name), image_index=image.index,
                 document_type=policy.document_type, business_scope=image.business_scope,
-                covered_pages=list(extraction.fields.get("registration.covered_pages", []))
-                if isinstance(extraction.fields.get("registration.covered_pages", []), list) else [],
+                covered_pages=_covered_pages(extraction.fields.get("registration.covered_pages")),
                 uncertain_fields=list(extraction.uncertain_fields),
+                uncertain_values={field: extraction.fields.get(field) for field in extraction.uncertain_fields},
             ))
 
             routed_fields, routing_limitation = route_fields(
@@ -188,6 +229,15 @@ class AgentService:
                 policy.document_type,
                 extraction.fields,
             )
+            routed_regions: dict[str, list[float]] = {}
+            for region in extraction.evidence_regions:
+                region_fields, _ = route_fields(
+                    image.business_scope,
+                    policy.document_type,
+                    {region.field: "__evidence_region__"},
+                )
+                for routed_field in region_fields:
+                    routed_regions.setdefault(routed_field, list(region.box))
             if routing_limitation:
                 result.limitations.append(f"图片 {image_name}：{routing_limitation}")
             accepted = 0
@@ -205,6 +255,13 @@ class AgentService:
                             group_title=image.group_title,
                             group_order=image.group_order,
                             value=value,
+                            derived_from=(
+                                "invoice.invoice_no"
+                                if field_name == "invoice.code"
+                                and "invoice.invoice_no" in extraction.fields
+                                else None
+                            ),
+                            evidence_region=routed_regions.get(field_name),
                             confidence=extraction.confidence,
                         )
                     )
@@ -260,29 +317,9 @@ class AgentService:
         *,
         retry_reason: str | None = None,
     ) -> tuple[QwenExtraction, DocumentPolicy | None]:
-        """选择合并或分阶段识别路径，并返回与实际材料类型匹配的策略。"""
-        # 页面分组只是启发式提示，可能把相邻的新车/发票图片误标成旧车资料。
-        # 支持合并分类提取的客户端以模型实际 document_type 作为字段路由依据，
-        # 同时保持每张图片只有一次模型调用。
-        if hasattr(self.client, "extract_unknown"):
-            extract_unknown = self.client.extract_unknown
-            extraction = await extract_unknown(
-                image.model_dump(),
-                **self._retry_kwargs(extract_unknown, retry_reason),
-            )
-            normalized_type = normalize_document_type(extraction.document_type)
-            normalized = extraction.model_copy(
-                update={"document_type": normalized_type}
-            )
-            return normalized, DOCUMENT_POLICIES.get(normalized_type)
-
-        hinted_type = (
-            image.document_type_hint
-            if image.document_type_hint != "unknown"
-            else image.category_hint
-        )
-        category = normalize_document_type(hinted_type or "unknown")
-        policy = DOCUMENT_POLICIES.get(category)
+        """已知槽位使用专属提示词；真正未知的图片先分类再专属提取。"""
+        expected_type = _expected_document_type(image)
+        policy = DOCUMENT_POLICIES.get(expected_type or "")
         if policy is not None:
             extract_fields = self.client.extract_fields
             extraction = await extract_fields(
@@ -290,7 +327,13 @@ class AgentService:
                 policy,
                 **self._retry_kwargs(extract_fields, retry_reason),
             )
-            return extraction, policy
+            return extraction.model_copy(
+                update={
+                    "document_type": normalize_document_type(
+                        extraction.document_type
+                    )
+                }
+            ), policy
 
         classification = await self.client.classify_document(image.model_dump())
         classified_type = normalize_document_type(classification.document_type)

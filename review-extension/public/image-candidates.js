@@ -6,14 +6,13 @@
  */
 
 (() => {
-  const knownTypes = new Set(["scrap_certificate", "old_vehicle", "registration_certificate", "new_vehicle", "invoice", "business_license"]);
+  const knownTypes = new Set(["scrap_certificate", "old_vehicle", "registration_certificate", "new_vehicle", "invoice", "business_license", "id_card"]);
   const decorativePattern = /(?:^|[-_\s])(logo|icon|avatar|favicon|badge|spinner)(?:$|[-_\s])/i;
-  const businessPattern = /回收证明|报废证明|报废车辆资料|旧车资料|登记证书|机动车登记证|新车资料|发票|营业执照/;
-
+  const businessPattern = /回收证明|报废证明|报废车辆资料|旧车资料|登记证书|机动车登记证|新车资料|发票|营业执照|身份证/;
   const eligible = (candidate) => {
     if (!candidate.src || !candidate.visible || candidate.ariaHidden) return false;
     if (candidate.businessScope === "other") return false;
-    if (candidate.role === "presentation" || candidate.categoryHint === "id_card") return false;
+    if (candidate.role === "presentation" || candidate.emptySlot) return false;
     if (decorativePattern.test(candidate.className || "")) return false;
     const width = Number(candidate.naturalWidth || 0);
     const height = Number(candidate.naturalHeight || 0);
@@ -30,7 +29,7 @@
   };
 
   const coverageKey = (candidate) =>
-    `${candidate.businessScope || "unknown"}::${candidate.categoryHint || "unknown"}`;
+    `${candidate.businessScope || "unknown"}::${candidate.categoryHint || "unknown"}::${candidate.groupTitle || ""}`;
 
   const select = (candidates, limit = 10) => {
     const ranked = candidates

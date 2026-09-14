@@ -122,26 +122,30 @@ def build_replacement_policy_checks(
     allowed = {
         normalize_value("new_vehicle.origin", item) for item in policy.allowed_origins
     }
-    if not allowed:
-        # 本地区没有产地规则：仅展示识别值，不对可读性提出要求。
-        status = "MATCH"
-        reason = "产地仅展示识别值，本地区不限制产地"
+    keywords = tuple(filter(None, (normalize_value("new_vehicle.origin", item) for item in policy.origin_keywords)))
+    rule_description = f"包含：{'、'.join(policy.origin_keywords)}" if keywords else f"允许：{'、'.join(policy.allowed_origins)}"
+    if not allowed and not keywords:
+        status = "INSUFFICIENT"
+        reason = "当前地区未配置新车发票产地规则"
     elif not normalized_origin:
         status = "INSUFFICIENT"
         reason = "未从新车销售发票取得唯一有效的产地"
-    elif normalized_origin in allowed:
+    elif normalized_origin in allowed or any(keyword in normalized_origin for keyword in keywords):
         status = "MATCH"
-        reason = "新车销售发票产地符合长春政策"
+        reason = f"新车销售发票产地符合当前地区规则（{rule_description}）"
     else:
         status = "CONFLICT"
-        reason = "新车销售发票产地不是长春"
+        reason = f"新车销售发票产地不符合当前地区规则（{rule_description}）"
     checks.append(
         ReviewCheck(
             check_id="POLICY-NEW-ORIGIN",
-            label="新车发票产地" if allowed else "新车发票产地（仅展示）",
+            label="新车发票产地",
             status=status,
             reason=reason,
-            values=[ReviewCheckValue(source="新车销售发票", value=origin)],
+            values=[
+                ReviewCheckValue.model_validate({**item, "source": "新车销售发票"})
+                for item in origin_evidence
+            ] or [ReviewCheckValue(source="新车销售发票", value=origin)],
             evidence=origin_evidence,
         )
     )

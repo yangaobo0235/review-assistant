@@ -41,7 +41,7 @@ function candidateFixture(candidates) {
   return { candidates };
 }
 
-function control({ label = "", value = "", section = "unknown" } = {}) {
+function control({ label = "", value = "", section = "unknown", type = "text" } = {}) {
   return {
     tagName: "INPUT",
     value,
@@ -50,6 +50,7 @@ function control({ label = "", value = "", section = "unknown" } = {}) {
     dataset: { reviewSection: section },
     getAttribute(name) {
       if (name === "aria-label") return label || null;
+      if (name === "type") return type;
       return null;
     },
     closest: () => null,
@@ -469,6 +470,34 @@ test("collects select and plaintext-only contenteditable controls", () => {
   assert.equal(result.pageFields["old_vehicle.recycle_date"], "2026-07-20");
 });
 
+test("collects a role=combobox affiliation control from a custom form shell", () => {
+  const collector = loadCollector();
+  const combo = element({ tag: "div", label: "报废车挂靠", section: "old_vehicle" });
+  combo.getAttribute = (name) => {
+    if (name === "aria-label") return "报废车挂靠";
+    if (name === "role") return "combobox";
+    return null;
+  };
+  combo.closest = () => null;
+  const root = {
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return [combo];
+      return [];
+    },
+  };
+
+  const result = collector.collect(root, "scrap_replacement");
+
+  assert.deepEqual(Array.from(result.writableTargets, (target) => ({ ...target })), [{
+    field: "old_vehicle.affiliation",
+    label: "报废车挂靠",
+    present: true,
+    currentValue: null,
+  }]);
+  assert.equal(result.reviewFields[0].field, "old_vehicle.affiliation");
+  assert.equal(result.reviewFields[0].controlType, "select");
+});
+
 test("collects a readonly two-node container through DOM extraction", () => {
   const collector = loadCollector();
   const label = element({ tag: "span", text: "报废车日期" });
@@ -590,6 +619,133 @@ test("collects auxiliary page fields and preserves empty affiliation targets", (
   ]);
 });
 
+test("collects all page-only scrap fields that have no direct material comparison", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "申请时间", value: "2026-08-27 16:49:24", section: "unknown", source: "control" },
+    { label: "报废车辆类型", value: "牵引车", section: "old_vehicle", source: "control" },
+    { label: "经销商", value: "武汉昭和商业运营管理有限公司", section: "old_vehicle", source: "control" },
+    { label: "新车燃料类型", value: "柴油", section: "new_vehicle", source: "control" },
+    { label: "注册日期", value: "2026-06-30", section: "new_vehicle", source: "control" },
+    { label: "终端证件号", value: "110101197104249636", section: "new_vehicle", source: "control" },
+    { label: "终端客户手机号", value: "17761991004", section: "new_vehicle", source: "control" },
+  ]);
+
+  assert.deepEqual({ ...result.pageFields }, {
+    "application.submitted_at": "2026-08-27 16:49:24",
+    "old_vehicle.type": "牵引车",
+    "application.dealer_name": "武汉昭和商业运营管理有限公司",
+    "new_vehicle.fuel_type": "柴油",
+    "new_vehicle.registration_date": "2026-06-30",
+    "application.terminal_certificate_no": "110101197104249636",
+    "application.terminal_phone": "17761991004",
+  });
+});
+
+test("builds the review catalog from editable controls instead of fixed page text", () => {
+  const submittedAt = control({ label: "申请时间", value: "2026-08-27 16:49:24" });
+  const vehicleType = control({ label: "报废车辆类型", value: "", section: "old_vehicle" });
+  const addedField = control({ label: "页面新增字段", value: "新增值", section: "new_vehicle" });
+  const affiliation = control({ label: "新车挂靠", value: "", section: "new_vehicle" });
+  const readonlyField = control({ label: "只读说明", value: "系统生成" });
+  readonlyField.readOnly = true;
+
+  const result = loadCollector().collect(
+    fixture(submittedAt, vehicleType, addedField, affiliation, readonlyField),
+    "scrap_replacement",
+  );
+
+  assert.deepEqual(Array.from(result.reviewFields, (item) => ({ ...item })), [
+    {
+      field: "old_vehicle.type",
+      label: "报废车辆类型",
+      value: "",
+      controlType: "text",
+      editable: true,
+      section: "old_vehicle",
+      operationOnly: false,
+      order: 1,
+    },
+    {
+      field: null,
+      label: "页面新增字段",
+      value: "新增值",
+      controlType: "text",
+      editable: true,
+      section: "new_vehicle",
+      operationOnly: false,
+      order: 2,
+    },
+    {
+      field: "new_vehicle.affiliation",
+      label: "新车挂靠",
+      value: "",
+      controlType: "text",
+      editable: true,
+      section: "new_vehicle",
+      operationOnly: true,
+      order: 3,
+    },
+  ]);
+});
+
+test("normalizes duplicated affiliation labels and excludes system result controls", () => {
+  const oldAffiliation = control({ label: "报废车挂靠 报废车挂靠", value: "", section: "old_vehicle" });
+  const newAffiliation = control({ label: "新车挂靠 新车挂靠", value: "", section: "new_vehicle" });
+  const reviewResult = control({ label: "审核结果 通过", value: "true" });
+
+  const result = loadCollector().collect(
+    fixture(oldAffiliation, newAffiliation, reviewResult),
+    "scrap_replacement",
+  );
+
+  assert.deepEqual(Array.from(result.reviewFields, (item) => ({
+    field: item.field,
+    label: item.label,
+    operationOnly: item.operationOnly,
+  })), [
+    { field: "old_vehicle.affiliation", label: "报废车挂靠", operationOnly: true },
+    { field: "new_vehicle.affiliation", label: "新车挂靠", operationOnly: true },
+  ]);
+});
+
+test("scopes collection to the open approval modal when list filters reuse ids", () => {
+  const collector = loadCollector();
+  const filterDealer = control({ label: "经销商", value: "" });
+  const filterCertificate = control({ label: "报废证明编号", value: "" });
+  const approvalType = control({ label: "报废车辆类型", value: "牵引车", section: "old_vehicle" });
+  const approvalDate = control({ label: "报废交车日期", value: "2026-02-05", section: "old_vehicle" });
+  const modal = {
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return [approvalType, approvalDate];
+      return [];
+    },
+  };
+  const root = {
+    querySelector(selector) {
+      return selector.includes(".my-page-modal") ? modal : null;
+    },
+    querySelectorAll(selector) {
+      if (selector.includes("contenteditable")) return [filterDealer, filterCertificate, approvalType, approvalDate];
+      return [];
+    },
+  };
+
+  const result = collector.collect(root, "scrap_replacement");
+  assert.equal(result.reviewFields[0].label, "报废车辆类型");
+  assert.equal(result.reviewFields[1].label, "报废交车日期");
+  assert.equal(result.reviewFields.some((item) => item.label === "经销商"), false);
+});
+
+test("keeps read-only known fields in the review catalog without making them writable", () => {
+  const collector = loadCollector();
+  const date = control({ label: "报废交车日期", value: "2026-02-05", section: "old_vehicle" });
+  date.readOnly = true;
+  const root = fixture(date);
+  const result = collector.collect(root, "scrap_replacement");
+  assert.equal(result.reviewFields[0].label, "报废交车日期");
+  assert.equal(result.reviewFields[0].editable, false);
+});
+
 test("marks duplicate affiliation controls as ambiguous instead of writable", () => {
   const result = loadCollector().collectCandidates([
     { label: "报废车挂靠", value: "", section: "old_vehicle", source: "control" },
@@ -609,6 +765,26 @@ test("only one accepted DOM candidate becomes a review target", () => {
   const result = collector.collect(fixture(target), "scrap_replacement");
   assert.equal(result.fieldTargets[0].field, "new_vehicle.vin");
   assert.equal(result.fieldTargets[0].element, target);
+});
+
+test("keeps an empty known control as a writeback target", () => {
+  const collector = loadCollector();
+  const target = control({ label: "报废发动机型号", value: "", section: "old_vehicle" });
+  const result = collector.collect(fixture(target), "scrap_replacement");
+
+  assert.equal(result.pageFields["old_vehicle.engine_model"], "");
+  assert.equal(result.fieldTargets[0].field, "old_vehicle.engine_model");
+  assert.equal(result.fieldTargets[0].element, target);
+});
+
+test("ignores invoice verification buttons when collecting invoice number", () => {
+  const invoiceNumber = control({ label: "发票号码", value: "26232000000731322946", section: "new_vehicle" });
+  const verifyButton = control({ label: "发票号码 一键验真", value: "一键验真", section: "new_vehicle", type: "button" });
+
+  const result = loadCollector().collect(fixture(invoiceNumber, verifyButton), "scrap_replacement");
+
+  assert.equal(result.pageFields["invoice.invoice_no"], "26232000000731322946");
+  assert.equal(result.reviewFields.some((item) => item.value === "一键验真"), false);
 });
 
 test("equally ranked duplicate DOM candidates do not expose a target", () => {

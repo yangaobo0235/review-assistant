@@ -29,7 +29,7 @@ class SequencedClient:
         self.calls += 1
         return QwenExtraction(
             document_type="invoice",
-            fields={"invoice.code": "B" if self.calls == 2 else "A"},
+            fields={"invoice.invoice_no": "B" if self.calls == 2 else "A"},
             confidence=0.92 if self.calls == 2 else 0.69,
         )
 
@@ -39,7 +39,10 @@ async def test_low_confidence_retries_once_and_uses_second_result() -> None:
     client = SequencedClient()
     result = await AgentService(client).extract_async([invoice_image()], retry_policy=DEFAULT_RETRY_POLICY)
     assert client.calls == 2
-    assert [(item.field, item.value) for item in result.observations] == [("invoice.code", "B")]
+    assert [(item.field, item.value) for item in result.observations] == [
+        ("invoice.invoice_no", "B"),
+        ("invoice.code", "B"),
+    ]
     assert result.retry_summary.qwen_retries == 1
     assert result.completed_count == 1
 
