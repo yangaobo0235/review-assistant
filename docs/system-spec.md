@@ -34,6 +34,18 @@
 5. 审核结果不能只显示“识别异常”。异常必须列出字段中文名、页面原值、材料识别值、差异字符、对应图片和“查看原图”。
 6. 回填成功必须回读真实 DOM，随后滚动、聚焦并高亮目标控件；失败不能把审核步骤错误标记为已处理。
 
+## 前端复杂度说明
+
+本项目的后端规则相对稳定：输入字段和材料证据，经过标准化和确定性规则，输出审核状态。前端是复杂度最高、最容易回归的区域，不能按“所有页面共用一套简单表格”理解，原因包括：
+
+- 不同业务页面的字段、顺序、控件类型、弹窗结构和材料区域并不一致；同一业务也可能因页面版本、地区或微前端外壳出现差异。
+- 真实页面同时存在可见详情表单、隐藏列表副本、虚拟化下拉选项和异步渲染控件，采集和写回都必须基于当前可见、唯一的 DOM 目标。
+- 页面字段的“原值”、OCR 文本框的值、材料识别值、规则推导值和人工输入值语义不同，不能共用一个 value 或通过字段名猜测来源。
+- 审核状态不仅由后端 `MATCH/CONFLICT/REVIEW_REQUIRED` 决定，还涉及待处理数量、当前步骤、人工决定、回填中、回填成功、页面失效和重新采集等前端状态。
+- 图片缩略图、原图定位、字符差异标红、页面外核验、挂靠下拉选择和页面高亮都依赖一次采集的身份信息，不能只传一个字段名。
+
+因此，前端改动必须先确认目标页面和用户动作，再确认消息协议、DOM 守卫、状态机和展示组件；不能通过增加一个通用分支、写死某一位字符、替换一段中文文案或把异常统一染成黄色来解决问题。
+
 ## 2. 页面类型与页面特点
 
 ### 2.1 报废置换页面
@@ -135,6 +147,23 @@
 
 ## 8. 审核工作台交互规范
 
+### 多轮真实问题形成的前端约束
+
+以下不是临时视觉偏好，而是之前多轮真实页面问题后确定的产品契约。后续重构必须逐条回归：
+
+1. 页面字段名称始终使用中文业务名称；`old_vehicle.affiliation` 等内部键只存在于数据和调试层。
+2. 页面原始值必须来自目标控件本身，不能把“易混淆”“不一致”等提示文本拼进值，也不能把 OCR 值替换页面原值。
+3. 材料提取值按识别字段逐行展示，配套缩略图和查看原图；不额外显示“图片识别”这种无法帮助审核的标签。
+4. 页面值和识别值不一致时，在识别值中标红实际不同字符；缺少连字符、增加字符、位置错位和单个数字错误均使用醒目的红色，不使用不明显的黄色代替。
+5. “回填此值”只负责写入审核员选择/输入的值、回读、定位和高亮，不改变后端核验结论，也不自动产生“已处理”。
+6. 人工输入框默认填充页面原值；当页面值和识别值都错误时，审核员仍能手动输入第三个正确值。
+7. “保留页面值”没有独立业务效果时不应保留；人工处理状态只能由明确的“标记人工复核”动作产生。
+8. 页面外核验的每个异常都要显示字段名称、识别值、对应图片和查看原图；二维码安全网址应可点击供人工核验。
+9. “待处理”“全部字段”“页面外核验”等导航数量必须实时准确，并且显示在括号内。
+10. 任何页面刷新、换单、URL 变化、控件重渲染、目标不唯一或回读失败都必须阻止危险写入；普通单字段失败不能让整个工作台永久卡死。
+
+这些约束解释了为什么前端代码中存在页面身份、采集指纹、控件唯一性、回读、回滚和 `finally` 释放忙碌状态等看似冗长的处理。删除它们通常会重新引入之前已经解决的问题。
+
 - 页面原值必须读取实际控件值，不能把邻近的“不一致”“易混淆”等校验提示拼进值里；不能靠删除固定提示词代替正确采集。
 - 删除重复的“申请页面字段”候选行，材料区只列实际证据；结构化主体数据展开为中文字段，不显示对象字符串。
 - “待处理”页签显示待处理数量；“全部字段”和“页面外核验”页签也必须在括号内显示数量。
@@ -151,6 +180,26 @@
 后端：`app/agent/workflow.py`（主图）、`app/businesses/profiles.py`（Profile）、`app/rules/review_fields.py`（字段）、`app/rules/field_evidence_policies.py`（证据来源）、`app/rules/normalize.py` 与 `aggregate.py`（标准化聚合）、`app/rules/review_step_routing.py`（步骤路由）、`app/rules/material_completeness.py`（材料）、`app/rules/replacement_policy_checks.py`（地区政策）、`app/rules/affiliation_subject_checks.py`（主体关系）、`app/services/qr.py`（二维码）。
 
 扩展：`public/page-field-collector.js`（页面字段采集）、`public/image-candidates.js` 与 `image-normalization.js`（材料图片）、`public/content.js`（消息协调）、`public/image-focus.js`（原图定位）、`public/page-field-writer.js`（自动挂靠与人工字段回填）、`src/hooks/useReviewWorkflow.ts`（任务生命周期）、`src/components/ScrapReplacementReview.tsx` 内 Workbench（当前字段审核状态）、`src/components/ScrapReplacementReview.tsx`（目标业务工作台）、`src/components/ReviewResults.tsx`（业务分流）、`src/valueDiff.ts`（字符差异）。实际加载顺序以 `public/manifest.json` 为准。
+
+### 前端规则分层表
+
+前端规则按职责分层。修改一层时要检查相邻层的数据契约，不能把后端规则复制到组件，也不能让组件自行猜测业务含义。
+
+| 层 | 代码位置 | 输入 | 必须保证的行为 |
+| --- | --- | --- | --- |
+| 页面识别与分区 | `public/business-detector.js`、`business-scope.js` | URL、路由、页面文本和 DOM 特征 | 识别业务和旧车/新车范围；无法确认时降级人工 |
+| 字段采集 | `public/page-field-collector.js`、`field-matcher.js` | 可见控件、标签、表格、只读节点 | 保留真实原值、控件类型、顺序、唯一性和采集诊断；不能把相邻提示当字段值 |
+| 图片采集 | `public/image-candidates.js`、`image-normalization.js` | 页面图片、材料预览和图片上下文 | 过滤装饰图，保留稳定 `imageId`、原图索引、业务分组和压缩后的 Data URL |
+| 消息协调 | `public/content.js` | Side Panel 消息和页面脚本能力 | 只在当前标签页、页面实例和采集身份匹配时执行；统一返回可解释失败 |
+| 原图定位 | `public/image-focus.js`、`src/imageFocusClient.ts` | `imageId`/图片索引和采集身份 | 只定位对应原图，滚动并高亮；失效时提示重新采集 |
+| 证据呈现 | `src/evidencePresentation.ts`、`exceptionPresentation.ts`、`ScrapReplacementReview.tsx` | `ReviewStep`、`Evidence`、页面图片 | 中文字段名、页面原值、材料值、缩略图、原图按钮和结构化详情分开显示 |
+| 差异计算 | `src/valueDiff.ts`、工作台 `renderDiff` | 页面值和单条识别值 | 逐字符标红实际差异；支持新增、缺失、连字符和位置错位；不修改原始字符串 |
+| 工作台状态 | `src/reviewSession.ts`、`reviewSteps.ts`、`ScrapReplacementReview.tsx` | 有序步骤、人工决定、回填结果 | 数量实时更新；人工标记才产生已处理；回填成功不改变后端状态 |
+| 普通字段回填 | `src/pageFillClient.ts`、`content.js`、`page-field-writer.js` | 字段键、人工值、expectedValue | 校验页面身份和原值；写入后回读、定位、高亮；页面值变化时拒绝 |
+| 挂靠自动选择 | `useScrapReplacementReview.ts`、`page-field-writer.js` | 两个 `PageFillAction` | 仅两字段、目标为空、控件和选项各唯一时联合写入；失败全量回滚 |
+| 业务分流 | `src/scrapReplacementProfile.ts`、`ReviewResults.tsx` | 业务、地区、版本 | 只有青岛/长春报废置换启用当前工作台，其他业务保持各自界面 |
+
+前端关键数据链路是：`PageData`（采集快照）→ `ReviewRequest` → `ReviewResponse.review_steps` → 工作台内存状态 → 带身份的页面消息。缺少 `collectionId`、页面实例、URL 或记录指纹时，不能执行原图定位、人工决定回传或页面写入。
 
 ## 10. LangGraph 与 Profile
 
