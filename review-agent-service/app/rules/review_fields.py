@@ -61,11 +61,3 @@ SCRAP_PAGE_FIELD_LABELS = {
 SCRAP_FIELD_BY_AFFILIATION_CHECK_ID = {
     "AFFILIATION-AUX-CUSTOMER-NAME": "application.customer_name",
 }
-
-TRANSFER_REVIEW_FIELDS = (
-    "transfer.plate_no",
-    "transfer.vin",
-    "transfer.buyer_name",
-    "transfer.seller_name",
-    "transfer.invoice_date",
-)

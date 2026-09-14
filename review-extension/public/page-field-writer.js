@@ -8,7 +8,6 @@
     "old_vehicle.type", "new_vehicle.fuel_type", "new_vehicle.registration_date",
     "application.terminal_phone", "application.terminal_certificate_no", "application.owner_type",
     "old_vehicle.affiliation", "new_vehicle.affiliation",
-    "transfer.plate_no", "transfer.vin", "transfer.buyer_name", "transfer.seller_name", "transfer.invoice_date", "transfer.source_publish_date",
   ]));
   const OWNER_OPTIONS = Object.freeze({ PERSONAL: ["个人"], COMPANY: ["公司", "企业"] });
   // The production page currently renders Ant Design `a-form-item`, but the

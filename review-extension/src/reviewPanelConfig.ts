@@ -18,17 +18,15 @@ export type BusinessChoice =
   | "scrap_replacement_changchun"
   | "consistency_qingdao"
   | "consistency_changchun"
-  | "vehicle_source"
-  | "transfer";
+  | "vehicle_source";
 
 export const businessLabels: Record<BusinessChoice, string> = {
   AUTO: "自动识别",
   scrap_replacement_qingdao: "青岛报废置换审核",
   scrap_replacement_changchun: "长春报废置换审核",
-  vehicle_source: "车源审核",
-  transfer: "过户审核",
-  consistency_qingdao: "青岛一致性审核",
-  consistency_changchun: "长春一致性审核",
+  vehicle_source: "车源审核（未配置）",
+  consistency_qingdao: "青岛一致性审核（未配置）",
+  consistency_changchun: "长春一致性审核（未配置）",
 };
 
 const fieldLabels: Record<string, string> = {
@@ -55,11 +53,6 @@ const fieldLabels: Record<string, string> = {
   "application.terminal_certificate_no": "终端证件号",
   "application.customer_name": "客户名称",
   "application.terminal_phone": "终端客户手机号",
-  "transfer.plate_no": "车牌号",
-  "transfer.vin": "车架号",
-  "transfer.buyer_name": "过户发票买方名称",
-  "transfer.seller_name": "卖方名称",
-  "transfer.invoice_date": "开票日期",
 };
 
 export function manualBusinessSelection(

@@ -26,10 +26,6 @@ from app.rules.field_evidence_policies import (
 )
 from app.rules.normalize import normalize_value
 from app.rules.review_step_routing import is_page_interaction_profile
-from app.rules.transfer_sources import (
-    enforce_transfer_source_requirements,
-    filter_transfer_observations,
-)
 from app.services.review_assembly import assemble_review_response
 
 
@@ -117,23 +113,12 @@ def _build_comparisons(
     comparisons = [
         aggregate_field(
             field_name,
-            filter_allowed_observations(field_name, [
-                item
-                for item in filter_transfer_observations(field_name, observations)
-                if item.field == field_name
-            ])
-            if request.business_type.value == "transfer"
-            else filter_allowed_observations(field_name, field_observations(field_name)),
+            filter_allowed_observations(field_name, field_observations(field_name)),
             uncertain_requires_review=uncertain_requires_review,
             single_evidence_requires_review=(field_policy(field_name).allow_single_evidence is False if field_policy(field_name) else True),
         )
         for field_name in fields
     ]
-    if request.business_type.value == "transfer":
-        return [
-            enforce_transfer_source_requirements(comparison, observations)
-            for comparison in comparisons
-        ]
     return comparisons
 
 

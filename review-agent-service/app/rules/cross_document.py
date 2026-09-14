@@ -1,34 +1,19 @@
-"""跨材料规则分派入口。
+"""跨材料规则入口。
 
-主要职责：根据业务类型调用对应的确定性跨材料检查。
-修改日期：2026-08-26
-修改人：wuyi
+当前正式业务为青岛和长春报废置换；历史过户规则已移除。
 """
 
 from typing import Any
 
 from app.agent.models import ReviewCheck
-from app.models.review import BusinessType, FieldComparison, FieldObservation
-from app.rules.transfer_checks import build_transfer_checks
+from app.models.review import FieldComparison
 
 
 def build_cross_document_checks(
-    business_type: BusinessType | list[FieldComparison],
+    business_type: object,
     comparisons: list[FieldComparison] | None = None,
-    observations: list[FieldObservation] | None = None,
+    observations: list[Any] | None = None,
     page_fields: dict[str, Any] | None = None,
 ) -> list[ReviewCheck]:
-    """按业务类型分派跨材料检查，并兼容既有调用参数。"""
-
-    # 报废置换只允许通过 Profile 注册的地区政策和主体能力运行。
-    if isinstance(business_type, list):
-        return []
-
-    resolved_comparisons = comparisons or []
-    if business_type is BusinessType.TRANSFER:
-        return build_transfer_checks(
-            resolved_comparisons,
-            observations or [],
-            page_fields or {},
-        )
+    """保留稳定入口，当前不执行历史过户检查。"""
     return []

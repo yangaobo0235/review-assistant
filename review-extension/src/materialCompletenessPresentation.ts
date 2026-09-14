@@ -1,11 +1,6 @@
 import type { MaterialCompletenessIssue, RetrySummary } from "./types/review";
 
 const FIELD_LABELS: Record<string, string> = {
-  "transfer.plate_no": "车牌号",
-  "transfer.vin": "车架号",
-  "transfer.buyer_name": "买方名称",
-  "transfer.seller_name": "卖方名称",
-  "transfer.invoice_date": "开票日期",
 };
 
 const SOURCE_LABELS: Record<string, string> = {

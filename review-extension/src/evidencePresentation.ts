@@ -86,13 +86,11 @@ export function evidencePresentation(evidence: Pick<Evidence, "source" | "value"
     return { kind: "page" as const, label: "二维码官网", value };
   }
   if (evidence.document_type === "invoice") {
-    const label = evidence.business_scope === "transfer" ? "二手车发票" : "机动车销售发票";
+    const label = "机动车销售发票";
     return { kind: "image" as const, label, value };
   }
   if (evidence.document_type === "registration_certificate") {
-    const label = evidence.business_scope === "transfer" && evidence.group_order
-      ? `登记证第${evidence.group_order}页`
-      : "机动车登记证书";
+    const label = "机动车登记证书";
     return { kind: "image" as const, label, value };
   }
   if (evidence.document_type === "vehicle_license") {

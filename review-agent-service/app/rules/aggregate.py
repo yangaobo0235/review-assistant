@@ -124,7 +124,7 @@ def aggregate_field(
     ]
 
     # 不确定标记的一票否决只服务于字段优先的目标 Profile；
-    # 过户等既有业务保持历史聚合语义，不因 uncertain 改变状态。
+    # 未配置业务保持历史聚合语义，不因 uncertain 改变状态。
     if uncertain_requires_review and any(item.uncertain for item in valid):
         status = FieldStatus.REVIEW_REQUIRED
         message = "图片识别结果不确定，请核对原图"

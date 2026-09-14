@@ -112,36 +112,6 @@
       aliases: ["终端客户手机号"],
       section: "new_vehicle",
     },
-    "transfer.plate_no": {
-      aliases: ["车牌号"],
-      section: "transfer",
-      sectionRequired: true,
-    },
-    "transfer.vin": {
-      aliases: ["识别车架号", "车架号"],
-      section: "transfer",
-      sectionRequired: true,
-    },
-    "transfer.buyer_name": {
-      aliases: ["过户发票买家名称", "买方名称"],
-      section: "transfer",
-      sectionRequired: true,
-    },
-    "transfer.seller_name": {
-      aliases: ["卖方名称"],
-      section: "transfer",
-      sectionRequired: true,
-    },
-    "transfer.invoice_date": {
-      aliases: ["开票日期"],
-      section: "transfer",
-      sectionRequired: true,
-    },
-    "transfer.source_publish_date": {
-      aliases: ["车源发布时间", "车源发布日期"],
-      section: "transfer",
-      sectionRequired: true,
-    },
   };
 
   const SOURCE_SCORES = {
@@ -195,10 +165,8 @@
 
   const sectionFromText = (text) => {
     const value = String(text || "");
-    const hasTransfer = /审核过户凭证|过户资料|过户发票/.test(value);
     const hasOld = /报废车辆信息|报废车辆资料|报废车资料|旧车资料/.test(value);
     const hasNew = /新车及发票信息|新车及发票资料|新车资料|发票信息/.test(value);
-    if (hasTransfer) return "transfer";
     if (hasOld && !hasNew) return "old_vehicle";
     if (hasNew && !hasOld) return "new_vehicle";
     return "unknown";
@@ -499,23 +467,17 @@
     }
     if (aliasIndex < 0) return null;
     if (!String(candidate.value || "").trim() && !String(candidate.source || "").startsWith("control")) return null;
-    const confirmedTransferField =
-      businessType === "transfer" && definition.section === "transfer";
     if (
       candidate.section !== "unknown" &&
-      candidate.section !== definition.section &&
-      !(confirmedTransferField && candidate.section === "unknown")
+      candidate.section !== definition.section
     ) return null;
     const matchedAlias = normalizeText(definition.aliases[aliasIndex]);
     const aliasFieldCount = Object.values(FIELD_DEFINITIONS).filter((item) =>
       item.aliases.some((alias) => normalizeText(alias) === matchedAlias),
     ).length;
-    // Confirmed transfer pages place fields such as publish date outside the
-    // voucher container, so unique transfer labels may use an unknown section.
     if (
       aliasFieldCount > 1 &&
-      candidate.section === "unknown" &&
-      !confirmedTransferField
+      candidate.section === "unknown"
     ) return null;
 
     return (
@@ -668,13 +630,13 @@
       }
     }
 
-    if (!pageFields["invoice.invoice_date"] && businessType !== "transfer") {
+    if (!pageFields["invoice.invoice_date"]) {
       const dateCandidates = candidates.filter((candidate) =>
         /开票日期|发票日期/.test(normalizeText(candidate.label)) &&
         /^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(String(candidate.value || "")),
       );
       const fallback = dateCandidates.find((candidate) => candidate.section === "new_vehicle")
-        || dateCandidates.find((candidate) => candidate.section !== "transfer");
+        || dateCandidates.find((candidate) => candidate.section === "unknown");
       if (fallback) {
         pageFields["invoice.invoice_date"] = fallback.value;
         if (dateCandidates.length === 1 && fallback.element) {

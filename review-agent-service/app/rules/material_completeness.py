@@ -24,15 +24,10 @@ FIELD_LABELS = {
     "business_license.company_name": "企业名称",
     "business_license.legal_representative": "法定代表人",
     "business_license.unified_social_credit_code": "统一社会信用代码",
-    "transfer.plate_no": "车牌号",
-    "transfer.vin": "车架号",
-    "transfer.buyer_name": "买方名称",
-    "transfer.seller_name": "卖方名称",
-    "transfer.invoice_date": "开票日期",
 }
 SOURCE_LABELS = {
     "page": "申请页面",
-    "invoice": "二手车发票",
+    "invoice": "机动车销售发票",
     "registration_certificate": "登记证第2页",
 }
 MATERIAL_LABELS = {
@@ -42,18 +37,6 @@ MATERIAL_LABELS = {
     "invoice": "发票",
     "business_license": "营业执照",
     "identity_card": "身份证",
-}
-UNCERTAIN_FIELD_ROUTES = {
-    "invoice": {
-        "vehicle.plate_no": "transfer.plate_no",
-        "vehicle.vin": "transfer.vin",
-        "invoice.buyer_name": "transfer.buyer_name",
-        "invoice.seller_name": "transfer.seller_name",
-        "invoice.invoice_date": "transfer.invoice_date",
-    },
-    "registration_certificate": {
-        "vehicle.vin": "transfer.vin",
-    },
 }
 
 
@@ -180,11 +163,9 @@ def _documents_for_selector(
 
 
 def _field_is_uncertain(document: object, field: str) -> bool:
-    document_type = str(getattr(document, "document_type", ""))
     uncertain_fields = getattr(document, "uncertain_fields", [])
     return any(
         raw_field == field
-        or UNCERTAIN_FIELD_ROUTES.get(document_type, {}).get(str(raw_field)) == field
         for raw_field in uncertain_fields
     )
 
@@ -208,8 +189,6 @@ def _missing_source_reason(
         return "page_field_missing", "申请页面未采集到该字段，请检查页面字段是否为空或未加载"
     documents = _documents_for_selector(selector, batch)
     if any(_field_is_uncertain(document, field) for document in documents):
-        if field == "transfer.invoice_date":
-            return "recognition_uncertain", "日期区域可能模糊、遮挡或不可辨认"
         return "recognition_uncertain", "图片可能模糊、遮挡或关键信息不可辨认"
     image_ids = _image_ids_for_selector(selector, request)
     if any(

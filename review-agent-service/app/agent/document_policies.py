@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 COLLECTION_TYPE_INSTRUCTION = (
     "uncertain_fields 必须是 JSON 字符串数组；没有不确定字段时输出 []，"
-    '只有一个时也必须输出如 ["registration.transfer_records"]，禁止输出字符串、对象或 null。'
+    '只有一个时也必须输出如 ["vehicle.vin"]，禁止输出字符串、对象或 null。'
     "evidence_regions 必须是 JSON 对象数组。"
 )
 
@@ -56,26 +56,6 @@ class DocumentPolicy:
 
     def fields_for_scope(self, business_scope: str = "unknown") -> tuple[str, ...]:
         """返回当前业务范围允许提取的字段，未知业务使用材料默认白名单。"""
-        # 过户业务需要登记证的页码、初始所有人和完整转让记录，供后续规则判断产权链。
-        if (
-            business_scope == "transfer"
-            and self.document_type == "registration_certificate"
-        ):
-            return (
-                "vehicle.vin",
-                "registration.covered_pages",
-                "registration.initial_owner",
-                "registration.transfer_records",
-            )
-        # 二手车发票的买卖双方是过户核验依据，不能沿用新车发票的通用所有人字段。
-        if business_scope == "transfer" and self.document_type == "invoice":
-            return (
-                "vehicle.plate_no",
-                "vehicle.vin",
-                "invoice.buyer_name",
-                "invoice.seller_name",
-                "invoice.invoice_date",
-            )
         if self.document_type == "vehicle_license":
             if business_scope == "old_vehicle":
                 return (
@@ -120,32 +100,6 @@ class DocumentPolicy:
 
     def guidance_for_scope(self, business_scope: str) -> str:
         """返回匹配业务范围的材料识别指引。"""
-        if (
-            business_scope == "transfer"
-            and self.document_type == "registration_certificate"
-        ):
-            return (
-                "页码只按图片内印刷的‘第X页’判断，不按上传顺序、图片序号或材料分组序号推测。"
-                "重点检查登记证第3页和第4页的‘转让登记’栏；一张图片可能同时包含两页，"
-                "若上、下部分分别印有第3页和第4页，registration.covered_pages 输出 [3,4]，"
-                "即 covered_pages=[3,4]。若其他页可见，仍读取车辆识别代号和基础登记所有人。"
-                "registration.initial_owner 只读取注册登记栏中‘机动车所有人’对应的姓名或名称，"
-                "不得包含居民身份证、证件号码、住所、抵押权人、抵押登记或其他主体；"
-                "无法分离出唯一所有人时不输出该字段，并将 registration.initial_owner 写入 uncertain_fields。"
-                "抵押登记、解除抵押、变更登记及其他登记内容都不是转让登记，不得写入 "
-                "registration.transfer_records。提取图片中全部明确可见的转让登记记录，不能只返回最新一条；"
-                "transfer_records 每项只包含 owner、date、page、order，其中 owner 读取该条‘姓名/名称’，"
-                "date 读取同一条‘转让登记日期’并统一为 YYYY-MM-DD，page 使用图片内印刷页码，"
-                "order 是同一页从上到下的转让登记记录序号，从 1 开始。"
-                "按 page、order 判断记录先后，优先核准最新一条的最新所有人和最新转让登记日期。"
-                "最新一条的 owner 或 date 看不清时不得猜测或用相邻登记栏补全，不输出不完整记录，"
-                "并将 registration.transfer_records 写入 uncertain_fields；"
-                "版面没有转让登记栏或该栏为空时，不要因此写入 uncertain_fields。"
-            )
-        if business_scope == "transfer" and self.document_type == "invoice":
-            return (
-                "读取二手车发票的车牌号、车辆识别代号、买方名称、卖方名称和开票日期。"
-            )
         if self.document_type == "vehicle_license" and business_scope == "old_vehicle":
             return (
                 "读取正面车辆类型、号牌号码、所有人和车辆识别代号。"

@@ -36,7 +36,6 @@ const SCRAP_WRITABLE_FIELDS = new Set([
   "old_vehicle.type", "new_vehicle.fuel_type", "new_vehicle.registration_date",
   "application.terminal_phone", "application.terminal_certificate_no", "application.owner_type",
   "old_vehicle.affiliation", "new_vehicle.affiliation",
-  "transfer.plate_no", "transfer.vin", "transfer.buyer_name", "transfer.seller_name", "transfer.invoice_date", "transfer.source_publish_date",
 ]);
 
 const controlFields = (collection) => {

@@ -266,22 +266,6 @@ class AgentService:
                         )
                     )
                     accepted += 1
-            if image.business_scope == "transfer" and extraction.uncertain_fields:
-                result.observations.append(
-                    FieldObservation(
-                        field="transfer.uncertain_fields",
-                        source_type="image",
-                        source_id=str(image_name),
-                        document_type=policy.document_type,
-                        image_index=image.index,
-                        image_id=str(image_name),
-                        business_scope=image.business_scope,
-                        group_title=image.group_title,
-                        group_order=image.group_order,
-                        value=extraction.uncertain_fields,
-                        confidence=extraction.confidence,
-                    )
-                )
             if extraction.confidence is not None:
                 result.confidences.append(extraction.confidence)
             result.completed_count += 1

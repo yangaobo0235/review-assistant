@@ -17,11 +17,6 @@ from app.rules.review_fields import SCRAP_PAGE_FIELD_LABELS
 
 FIELD_LABELS = {
     **SCRAP_PAGE_FIELD_LABELS,
-    "transfer.plate_no": "车牌号",
-    "transfer.vin": "车架号",
-    "transfer.buyer_name": "过户发票买方名称",
-    "transfer.seller_name": "卖方名称",
-    "transfer.invoice_date": "开票日期",
 }
 
 

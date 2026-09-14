@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from app.businesses.material_policies import (
     DEFAULT_RETRY_POLICY,
     SCRAP_REPLACEMENT_MATERIAL_POLICY,
-    TRANSFER_MATERIAL_POLICY,
     MaterialPolicy,
     RetryPolicy,
 )
@@ -25,7 +24,6 @@ from app.rules.review_fields import (
     NEW_VEHICLE_AND_INVOICE_FIELDS,
     OLD_VEHICLE_FIELDS,
     PRIMARY_REVIEW_FIELDS,
-    TRANSFER_REVIEW_FIELDS,
 )
 
 
@@ -51,6 +49,8 @@ class BusinessProfile:
     rule_groups: tuple[str, ...] = ()
     page_actions: tuple[str, ...] = ()
     replacement_policy: ReplacementPolicy | None = None
+
+
 
 
 SCRAP_REPLACEMENT_QINGDAO = BusinessProfile(
@@ -84,19 +84,6 @@ VEHICLE_SOURCE_DEFAULT = BusinessProfile(
     unconfigured_message="车源审核规则尚未配置，请人工复核",
     external_checks=(),
     rule_groups=(),
-    page_actions=(),
-)
-
-TRANSFER_DEFAULT = BusinessProfile(
-    business_type=BusinessType.TRANSFER,
-    region=Region.DEFAULT,
-    version="1.0",
-    required_fields=TRANSFER_REVIEW_FIELDS,
-    sections=(SectionDefinition("transfer", "过户凭证信息", TRANSFER_REVIEW_FIELDS),),
-    rules_configured=True,
-    material_policy=TRANSFER_MATERIAL_POLICY,
-    external_checks=(),
-    rule_groups=("transfer_registration",),
     page_actions=(),
 )
 
@@ -146,7 +133,6 @@ BUSINESS_PROFILES = (
     SCRAP_REPLACEMENT_QINGDAO,
     SCRAP_REPLACEMENT_CHANGCHUN,
     VEHICLE_SOURCE_DEFAULT,
-    TRANSFER_DEFAULT,
     CONSISTENCY_QINGDAO,
     CONSISTENCY_CHANGCHUN,
 )

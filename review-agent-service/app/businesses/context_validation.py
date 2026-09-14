@@ -15,18 +15,7 @@ ADMIN_REVIEW_ROUTES = MappingProxyType(
     }
 )
 
-# 一致性页面容器可由既有过户凭证指纹明确识别为过户子业务。
-# 例外同时限定路由、业务、地区和阶段，不能借 transfer 绕过报废地区校验。
-ADMIN_ROUTE_COMPATIBLE_CONTEXTS = MappingProxyType(
-    {
-        "/consistency-qingdao": frozenset(
-            {(BusinessType.TRANSFER, Region.DEFAULT, "transfer")}
-        ),
-        "/consistency-changchun": frozenset(
-            {(BusinessType.TRANSFER, Region.DEFAULT, "transfer")}
-        ),
-    }
-)
+ADMIN_ROUTE_COMPATIBLE_CONTEXTS = MappingProxyType({})
 
 
 class BusinessContextMismatch(BusinessProfileNotFound):

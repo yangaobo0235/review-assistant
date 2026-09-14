@@ -47,7 +47,6 @@ from app.rules.external_check_registry import ExternalCheckRegistry
 from app.rules.material_completeness import evaluate_collected, evaluate_extracted
 from app.rules.replacement_policy_checks import build_replacement_policy_checks
 from app.rules.review_step_routing import build_review_steps
-from app.rules.transfer_checks import build_transfer_checks
 from app.services.review_assembly import assemble_review_response
 
 WORKFLOW_NODE_ORDER = (
@@ -104,7 +103,6 @@ class ReviewWorkflow:
             "qingdao_replacement_policy": self._run_replacement_policy,
             "changchun_replacement_policy": self._run_replacement_policy,
             "affiliation_subject": self._run_affiliation_subject,
-            "transfer_registration": self._run_transfer_registration,
         }
         additional_rules = dict(business_rule_handlers or {})
         overridden = builtin_rules.keys() & additional_rules.keys()
@@ -322,20 +320,6 @@ class ReviewWorkflow:
                 and all(check.status == "MATCH" for check in auxiliary_checks)
                 else ()
             ),
-        )
-
-    @staticmethod
-    def _run_transfer_registration(
-        context: ReviewExecutionContext,
-    ) -> RuleExecutionResult:
-        return RuleExecutionResult(
-            checks=tuple(
-                build_transfer_checks(
-                    list(context.comparisons),
-                    list(context.observations),
-                    context.request.page_fields,
-                )
-            )
         )
 
     def _run_business_rules(self, state: ReviewState) -> dict[str, Any]:

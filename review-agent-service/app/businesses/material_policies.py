@@ -45,20 +45,6 @@ class MaterialPolicy:
 
 
 DEFAULT_RETRY_POLICY = RetryPolicy()
-TRANSFER_MATERIAL_POLICY = MaterialPolicy(
-    mode="enforce",
-    materials=(
-        MaterialRequirement("invoice", "transfer", display_name="二手车发票"),
-        MaterialRequirement("registration_certificate", "transfer", required_pages=(1, 2, 3, 4), display_name="机动车登记证"),
-    ),
-    field_sources=(
-        FieldSourceRequirement("transfer.plate_no", all_of=(SourceSelector("page"), SourceSelector("image", "invoice"))),
-        FieldSourceRequirement("transfer.vin", all_of=(SourceSelector("page"), SourceSelector("image", "invoice"), SourceSelector("image", "registration_certificate", required_page=2))),
-        FieldSourceRequirement("transfer.buyer_name", all_of=(SourceSelector("page"), SourceSelector("image", "invoice"))),
-        FieldSourceRequirement("transfer.seller_name", all_of=(SourceSelector("page"), SourceSelector("image", "invoice"))),
-        FieldSourceRequirement("transfer.invoice_date", all_of=(SourceSelector("page"), SourceSelector("image", "invoice"))),
-    ),
-)
 SCRAP_REPLACEMENT_MATERIAL_POLICY = MaterialPolicy(
     mode="enforce",
     materials=(

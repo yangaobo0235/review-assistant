@@ -43,16 +43,7 @@
       matches: (text) => text.includes("车源审核") && text.includes("车辆来源信息"),
       result: profile("vehicle_source", "default"),
     },
-    {
-      matches: (text) => text.includes("过户审核"),
-      result: profile("transfer", "default"),
-    },
   ];
-
-  const isTransferVoucher = (text) =>
-    text.includes("审核过户凭证") &&
-    text.includes("过户发票买家名称") &&
-    text.includes("卖方名称");
 
   function detect(url, pageText = "") {
     let path = "";
@@ -61,7 +52,6 @@
     } catch {
       return null;
     }
-    if (isTransferVoucher(pageText)) return { ...profile("transfer", "default") };
     const route = routeMatchers.find((candidate) =>
       path === candidate.prefix || path.startsWith(`${candidate.prefix}/`),
     );

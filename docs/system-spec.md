@@ -82,9 +82,9 @@
 
 报废置换页面的侧边栏必须按字段工作台展示：字段中文名、状态、页面原值、材料提取值、缩略图、查看原图、差异高亮、人工输入框和回填按钮。英文键（如 `scrap_certificate`、`old_vehicle.affiliation`）不得直接展示给审核员。
 
-### 2.2 过户页面
+### 2.2 过户页面（历史遗留，不属于当前有效业务）
 
-过户使用 `transfer/default/1.0`，仍走旧版结果页，不启用报废置换字段优先工作台。核验字段为车牌号、车架号、发票买方名称、卖方名称和开票日期；材料要求为二手车发票和机动车登记证第 1、2、3、4 页。规则包括页面/发票/登记证比对、登记历史和日期顺序检查。当前旧版界面按配置字段展示异常，不具备报废置换工作台的完整 DOM 控件目录；扩展这一能力须单独实现与验证。
+仓库中可能仍保留 `transfer/default/1.0`、`transfer_*` 规则和旧版结果页代码，但它们是历史遗留，不应被加载、宣传或作为新业务模板。当前有效业务只有青岛和长春报废置换。若未来重新支持过户，必须重新确认需求、页面契约、材料策略、能力配置、前端展示和回归用例，不能直接恢复旧实现。
 
 ### 2.3 车源页面
 
@@ -266,7 +266,7 @@ Profile 定义于 `app/businesses/profiles.py`，由 `BusinessRegistry` 按三�
 
 当前报废置换工作台来自 `ReviewResults → ScrapReplacementReview → Workbench`。`useScrapReplacementReview.ts`、`reviewSession.ts` 和页面标记客户端仍保留旧兼容逻辑，不能据文件存在就认定它们是当前主入口。当前字段步骤在侧边栏展示；协议保留 `PAGE_FIELD` 枚举不代表页面仍注入旧版字段标记。
 
-报废置换和过户材料策略当前均为 `enforce`。语义重试、置信度和二维码重试配置在 `app/businesses/material_policies.py`；默认语义重试 1 次、置信度阈值 0.70、最小重试窗口 2 秒、二维码解码最多 3 轮、官网重试 1 次。`app/agent/service.py` 中单任务图片并发为 6，单图预算 50 秒、提取批次预算 55 秒；不能将提取批次预算当作包括全部官网访问的整单硬超时。
+两种报废置换材料策略当前为 `enforce`。语义重试、置信度和二维码重试配置在 `app/businesses/material_policies.py`；默认语义重试 1 次、置信度阈值 0.70、最小重试窗口 2 秒、二维码解码最多 3 轮、官网重试 1 次。`app/agent/service.py` 中单任务图片并发为 6，单图预算 50 秒、提取批次预算 55 秒；不能将提取批次预算当作包括全部官网访问的整单硬超时。
 
 模型连接参数在 `app/agent/config.py`；材料提取策略和提示词入口分别为 `app/agent/document_policies.py`、`app/agent/qwen_client.py`，字段路由在 `app/agent/field_routing.py`。修改提取能力时同步核对输出模型、白名单和证据定位，不能仅修改提示词。
 
