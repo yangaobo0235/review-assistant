@@ -55,6 +55,7 @@ WORKFLOW_NODE_ORDER = (
     "assess_collected_materials",
     "extract_documents",
     "assess_extracted_evidence",
+    "plan_capabilities",
     "run_external_checks",
     "compare_same_fields",
     "run_business_rules",
@@ -80,6 +81,7 @@ class ReviewState(TypedDict, total=False):
     advice: AgentAdvice
     material_completeness: MaterialCompletenessReport
     review_steps: list[ReviewStep]
+    capability_plan: tuple[Any, ...]
 
 
 class ReviewWorkflow:
@@ -143,6 +145,7 @@ class ReviewWorkflow:
         builder.add_node("assess_collected_materials", self._assess_collected_materials)
         builder.add_node("extract_documents", self._extract_documents)
         builder.add_node("assess_extracted_evidence", self._assess_extracted_evidence)
+        builder.add_node("plan_capabilities", self._plan_capabilities)
         builder.add_node("run_external_checks", self._run_external_checks)
         builder.add_node("compare_same_fields", self._compare_same_fields)
         builder.add_node("run_business_rules", self._run_business_rules)
