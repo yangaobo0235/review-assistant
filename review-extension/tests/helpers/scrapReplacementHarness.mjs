@@ -17,7 +17,6 @@ export const makeStep = (overrides) => ({
   sequence: 1,
   category: "BUSINESS_RULE",
   display_target: "ASSISTANT",
-  page_field: null,
   requires_reviewer_action: false,
   label: "审核步骤",
   result_status: "MATCH",
