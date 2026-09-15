@@ -7,10 +7,10 @@
 
 from app.agent.models import (
     AgentAdvice,
+    CheckResult,
     MaterialCompletenessReport,
-    ReviewCheck,
-    ReviewCheckValue,
 )
+from app.models.checks import CheckResultValue
 from app.models.review import FieldComparison, FieldStatus, QrCheck
 from app.rules.check_results import qr_review_checks, unique_checks
 from app.rules.review_fields import SCRAP_PAGE_FIELD_LABELS
@@ -20,9 +20,9 @@ FIELD_LABELS = {
 }
 
 
-def _field_finding(comparison: FieldComparison) -> ReviewCheck:
+def _field_finding(comparison: FieldComparison) -> CheckResult:
     values = [
-        ReviewCheckValue(
+        CheckResultValue(
             source=item.source,
             value=item.value,
             source_id=item.source_id,
@@ -36,7 +36,7 @@ def _field_finding(comparison: FieldComparison) -> ReviewCheck:
         for item in comparison.evidence
         if item.value not in (None, "")
     ]
-    return ReviewCheck(
+    return CheckResult(
         check_id=f"FIELD-{comparison.field}",
         label=FIELD_LABELS.get(comparison.field, comparison.field),
         status="CONFLICT"
@@ -50,7 +50,7 @@ def _field_finding(comparison: FieldComparison) -> ReviewCheck:
 
 def build_final_advice(
     comparisons: list[FieldComparison],
-    cross_checks: list[ReviewCheck],
+    cross_checks: list[CheckResult],
     qr_checks: list[QrCheck],
     issues: list[str],
     limitations: list[str],
@@ -66,7 +66,7 @@ def build_final_advice(
     findings.extend(item for item in cross_checks if item.status != "MATCH")
     if completeness is not None and completeness.enforced:
         findings.extend(
-            ReviewCheck(
+            CheckResult(
                 check_id=f"MATERIAL-{item.code}-{index}",
                 label="资料完整性",
                 status="INSUFFICIENT",
@@ -79,7 +79,7 @@ def build_final_advice(
         item for item in qr_review_checks(qr_checks) if item.status != "MATCH"
     )
     findings.extend(
-        ReviewCheck(
+        CheckResult(
             check_id=f"ISSUE-{index}",
             label="资料完整性",
             status="INSUFFICIENT",
@@ -88,7 +88,7 @@ def build_final_advice(
         for index, issue in enumerate(dict.fromkeys(issues), start=1)
     )
     findings.extend(
-        ReviewCheck(
+        CheckResult(
             check_id=f"LIMITATION-{index}",
             label="识别限制",
             status="INSUFFICIENT",

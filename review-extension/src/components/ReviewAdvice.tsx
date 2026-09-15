@@ -10,9 +10,9 @@ import {
   orderedCrossChecks,
   recommendationVisual,
 } from "../advicePresentation";
-import type { ReviewCheck, ReviewResponse } from "../types/review";
+import type { CheckResult, ReviewResponse } from "../types/review";
 
-function CheckValues({ check }: { check: ReviewCheck }) {
+function CheckValues({ check }: { check: CheckResult }) {
   if (!check.values?.length) return null;
   return (
     <dl className="advice-values">

@@ -2,13 +2,14 @@
 
 from collections.abc import Iterable
 
-from app.agent.models import ReviewCheck, ReviewCheckValue
+from app.agent.models import CheckResult
+from app.models.checks import CheckResultValue
 from app.models.review import FieldStatus, ImageInput, QrCheck
 
 
-def unique_checks(checks: Iterable[ReviewCheck]) -> list[ReviewCheck]:
+def unique_checks(checks: Iterable[CheckResult]) -> list[CheckResult]:
     """同 ID 只展示一次；重复报告矛盾时保留更保守的结论。"""
-    results: dict[str, ReviewCheck] = {}
+    results: dict[str, CheckResult] = {}
     severity = {"MATCH": 0, "INSUFFICIENT": 1, "CONFLICT": 2}
     for check in checks:
         previous = results.get(check.check_id)
@@ -19,7 +20,7 @@ def unique_checks(checks: Iterable[ReviewCheck]) -> list[ReviewCheck]:
 
 def qr_review_checks(
     checks: Iterable[QrCheck], images: Iterable[ImageInput] = ()
-) -> list[ReviewCheck]:
+) -> list[CheckResult]:
     by_index: dict[int, list[ImageInput]] = {}
     for image in images:
         by_index.setdefault(image.index, []).append(image)
@@ -39,7 +40,7 @@ def qr_review_checks(
         }
 
     return [
-        ReviewCheck(
+        CheckResult(
             check_id=f"QR-{index}",
             label="二维码官网核验",
             status="MATCH"
@@ -49,8 +50,8 @@ def qr_review_checks(
             else "INSUFFICIENT",
             reason=check.message or "二维码核验未返回说明",
             values=[
-                ReviewCheckValue(source="二维码内容", value=check.raw_value),
-                ReviewCheckValue(source="二维码官网", value=check.url),
+                CheckResultValue(source="二维码内容", value=check.raw_value),
+                CheckResultValue(source="二维码官网", value=check.url),
             ],
             evidence=[
                 {

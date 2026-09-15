@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { readFileSync } from "node:fs";
+import { ReviewImageCandidates } from "../src/browser/image-candidates.ts";
 
 function loadSelector() {
-  const source = readFileSync(new URL("../public/image-candidates.js", import.meta.url), "utf8");
-  const context = { globalThis: {} };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewImageCandidates.select;
+  return ReviewImageCandidates.select;
 }
 
 const candidate = (index, overrides = {}) => ({
@@ -160,7 +157,7 @@ test("fills remaining slots with the highest-ranked extra pages", () => {
 });
 
 test("content collector reserves enough capacity for fixed and conditional materials", () => {
-  const content = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
+  const content = readFileSync(new URL("../src/browser/content.ts", import.meta.url), "utf8");
 
   assert.match(content, /const MAX_REVIEW_IMAGES = 16;/);
   assert.match(content, /ReviewImageCandidates\.select\(imageCandidates, MAX_REVIEW_IMAGES\)/);
@@ -168,7 +165,7 @@ test("content collector reserves enough capacity for fixed and conditional mater
 });
 
 test("content collector classifies invoices before generic new-vehicle groups", () => {
-  const content = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
+  const content = readFileSync(new URL("../src/browser/content.ts", import.meta.url), "utf8");
 
   assert.ok(
     content.indexOf('text.includes("发票")') < content.indexOf('text.includes("新车资料")'),

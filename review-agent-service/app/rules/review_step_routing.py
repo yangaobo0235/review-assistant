@@ -9,22 +9,19 @@
 from collections.abc import Sequence
 from typing import Literal
 
-from app.agent.models import (
-    MaterialCompletenessReport,
-    ReviewCheck,
-    ReviewCheckValue,
-)
+from app.agent.models import MaterialCompletenessReport
 from app.businesses.profiles import BusinessProfile
+from app.models.checks import CheckResult, CheckResultValue
 from app.models.review import (
     BusinessType,
-    Evidence,
+    EvidenceFact,
     FieldComparison,
     FieldStatus,
     Region,
     ReviewDisplayTarget,
     ReviewFieldSnapshot,
     ReviewRequest,
-    ReviewStep,
+    ReviewTask,
 )
 from app.rules.affiliation_subject_checks import normalize_page_owner_type
 from app.rules.field_evidence_policies import field_policy
@@ -43,6 +40,11 @@ PAGE_INTERACTION_PROFILES = frozenset(
         (BusinessType.SCRAP_REPLACEMENT, Region.CHANGCHUN, "1.0"),
     }
 )
+
+
+def profile_uses_page_interaction(profile: BusinessProfile) -> bool:
+    """Read page interaction capability from the resolved Profile."""
+    return profile.page_interaction
 
 
 def is_page_interaction_profile(
@@ -69,16 +71,16 @@ Category = Literal["FIELD", "EXTERNAL", "BUSINESS_RULE", "MATERIAL"]
 ResultStatus = Literal["MATCH", "CONFLICT", "INSUFFICIENT"]
 
 
-def _evidence_source(item: Evidence | dict[str, object]) -> str:
-    """兼容历史业务规则返回 dict evidence 和新 Evidence 模型。"""
+def _evidence_source(item: EvidenceFact | dict[str, object]) -> str:
+    """兼容历史业务规则返回 dict evidence 和新 EvidenceFact 模型。"""
     if isinstance(item, dict):
         return str(item.get("source") or "未知来源")
     return item.source
 
 
-def _coerce_evidence(item: Evidence | dict[str, object]) -> Evidence:
+def _coerce_evidence(item: EvidenceFact | dict[str, object]) -> EvidenceFact:
     """Normalize legacy business-rule evidence dictionaries for the API model."""
-    return item if isinstance(item, Evidence) else Evidence.model_validate(item)
+    return item if isinstance(item, EvidenceFact) else EvidenceFact.model_validate(item)
 
 
 def _step(
@@ -90,25 +92,28 @@ def _step(
     result_status: ResultStatus,
     reason: str,
     page_field: str | None = None,
+    page_target_field: str | None = None,
     page_value: object | None = None,
     control_type: str | None = None,
     writable: bool = False,
-    values: Sequence[ReviewCheckValue] = (),
-    evidence: Sequence[Evidence] = (),
+    values: Sequence[CheckResultValue] = (),
+    evidence: Sequence[EvidenceFact] = (),
     details: dict[str, object] | None = None,
     requires_reviewer_action: bool | None = None,
     evidence_mode: str | None = None,
     not_found_sources: Sequence[str] = (),
     normalized_page_value: str | None = None,
-) -> ReviewStep:
+) -> ReviewTask:
     """构建单个步骤；MATCH 不需要人工处理，其余状态必须处理。"""
     resolved_details = details or {}
-    return ReviewStep(
+    return ReviewTask(
         step_id=step_id,
+        check_ids=[step_id],
         sequence=1,
         category=category,
         display_target=display_target,
-        page_field=page_field,
+        page_field=page_field if display_target is ReviewDisplayTarget.PAGE_FIELD else None,
+        page_target_field=page_target_field,
         page_value=page_value,
         control_type=control_type,
         writable=writable,
@@ -147,11 +152,12 @@ def _field_step(
     comparison: FieldComparison,
     *,
     page_interaction: bool,
-) -> ReviewStep:
+) -> ReviewTask:
     label = FIELD_LABELS.get(comparison.field, "材料字段核验")
     values = [
-        ReviewCheckValue(
+        CheckResultValue(
             source=item.source,
+            differences=item.differences,
             value=item.value,
             source_id=item.source_id,
             image_id=item.image_id,
@@ -165,7 +171,7 @@ def _field_step(
         if item.value not in (None, "")
     ]
     result_status = _comparison_status(comparison)
-    material_evidence_by_image: dict[str, Evidence] = {}
+    material_evidence_by_image: dict[str, EvidenceFact] = {}
     for item in comparison.evidence:
         if item.image_id and item.source == "图片识别":
             material_evidence_by_image.setdefault(item.image_id, item)
@@ -189,6 +195,8 @@ def _field_step(
         label=label,
         result_status=result_status,
         reason=reason,
+        page_target_field=comparison.field if page_interaction else None,
+        writable=page_interaction,
         page_value=request.page_fields.get(comparison.field),
         values=values,
         evidence=material_evidence,
@@ -199,6 +207,7 @@ def _field_step(
             "evidence_sources": list(dict.fromkeys(_evidence_source(item) for item in material_evidence)),
             "not_found_sources": list(policy.allowed_document_types) if policy and not material_evidence else [],
             "normalized_page_value": normalize_value(comparison.field, comparison.right_value),
+            "differences": comparison.differences,
         },
         evidence_mode=policy.mode if policy else None,
         not_found_sources=policy.allowed_document_types if policy and not material_evidence else (),
@@ -206,7 +215,7 @@ def _field_step(
     )
 
 
-def _page_catalog_step(snapshot: ReviewFieldSnapshot, step_id: str) -> ReviewStep:
+def _page_catalog_step(snapshot: ReviewFieldSnapshot, step_id: str) -> ReviewTask:
     """为没有已配置核验来源的实际页面控件保留可审查步骤。"""
     has_value = snapshot.value not in (None, "")
     return _step(
@@ -221,13 +230,14 @@ def _page_catalog_step(snapshot: ReviewFieldSnapshot, step_id: str) -> ReviewSte
             else "当前页面控件未填写，且没有已配置的材料核验来源，请人工核对"
         ),
         page_value=snapshot.value,
+        page_target_field=snapshot.field,
         control_type=snapshot.control_type,
         writable=False,
-        values=[ReviewCheckValue(source="申请页面字段", value=snapshot.value)],
+        values=[CheckResultValue(source="申请页面字段", value=snapshot.value)],
     )
 
 
-def _owner_type_system_step(snapshot: ReviewFieldSnapshot) -> ReviewStep:
+def _owner_type_system_step(snapshot: ReviewFieldSnapshot) -> ReviewTask:
     """Treat the backend-provided owner type as input, not OCR evidence."""
 
     valid = normalize_page_owner_type(snapshot.value) is not None
@@ -245,15 +255,15 @@ def _owner_type_system_step(snapshot: ReviewFieldSnapshot) -> ReviewStep:
         page_value=snapshot.value,
         control_type=snapshot.control_type,
         writable=False,
-        values=[ReviewCheckValue(source="申请页面字段", value=snapshot.value)],
+        values=[CheckResultValue(source="申请页面字段", value=snapshot.value)],
     )
 
 
 def _affiliation_catalog_step(
     request: ReviewRequest,
-    check: ReviewCheck,
+    check: CheckResult,
     field: str,
-) -> ReviewStep:
+) -> ReviewTask:
     """把主体关系辅助检查同时投影为实际 DOM 字段目录中的字段项。"""
     result_status: ResultStatus = check.status
     reason = check.reason
@@ -267,14 +277,15 @@ def _affiliation_catalog_step(
         label=SCRAP_PAGE_FIELD_LABELS[field],
         result_status=result_status,
         reason=reason,
+        page_target_field=field,
         values=check.values,
         evidence=check.evidence,
     )
 
 
 def _with_control_snapshot(
-    step: ReviewStep, snapshot: ReviewFieldSnapshot
-) -> ReviewStep:
+    step: ReviewTask, snapshot: ReviewFieldSnapshot
+) -> ReviewTask:
     # Operation-only affiliation controls are identified by their canonical
     # field key. Never expose that internal key as the reviewer-facing label.
     label = {
@@ -293,8 +304,8 @@ def _with_control_snapshot(
 
 def _affiliation_control_step(
     snapshot: ReviewFieldSnapshot,
-    subject: ReviewCheck | None,
-) -> ReviewStep:
+    subject: CheckResult | None,
+) -> ReviewTask:
     is_old = snapshot.field == "old_vehicle.affiliation"
     type_source = "旧车主体类型" if is_old else "新车主体类型"
     expected_raw = next(
@@ -308,9 +319,9 @@ def _affiliation_control_step(
     expected_type = str(expected_raw) if expected_raw in {"PERSONAL", "COMPANY"} else None
     expected_label = {"PERSONAL": "个人", "COMPANY": "公司"}.get(expected_type)
     actual_type = normalize_page_owner_type(snapshot.value)
-    values = [ReviewCheckValue(source="申请页面字段", value=snapshot.value)]
+    values = [CheckResultValue(source="申请页面字段", value=snapshot.value)]
     if expected_label:
-        values.append(ReviewCheckValue(source="主体关系核验", value=expected_label))
+        values.append(CheckResultValue(source="主体关系核验", value=expected_label))
 
     if subject is None or subject.status != "MATCH":
         status: ResultStatus = subject.status if subject else "INSUFFICIENT"
@@ -338,6 +349,7 @@ def _affiliation_control_step(
         label=snapshot.label,
         result_status=status,
         reason=reason,
+        page_target_field=snapshot.field,
         page_value=snapshot.value,
         control_type=snapshot.control_type,
         writable=False,
@@ -349,8 +361,8 @@ def _affiliation_control_step(
 def _scrap_field_steps(
     request: ReviewRequest,
     comparisons: Sequence[FieldComparison],
-    business_checks: Sequence[ReviewCheck],
-) -> list[ReviewStep]:
+    business_checks: Sequence[CheckResult],
+) -> list[ReviewTask]:
     if not request.review_fields:
         return [
             _field_step(request, comparison, page_interaction=True)
@@ -372,7 +384,7 @@ def _scrap_field_steps(
         if snapshot.field:
             mapped_counts[snapshot.field] = mapped_counts.get(snapshot.field, 0) + 1
 
-    steps: list[ReviewStep] = []
+    steps: list[ReviewTask] = []
     for index, snapshot in enumerate(
         sorted(request.review_fields, key=lambda item: item.order), start=1
     ):
@@ -407,7 +419,7 @@ def _scrap_field_steps(
     return steps
 
 
-def _external_step(check: ReviewCheck) -> ReviewStep:
+def _external_step(check: CheckResult) -> ReviewTask:
     return _step(
         step_id=check.check_id,
         category="EXTERNAL",
@@ -422,10 +434,10 @@ def _external_step(check: ReviewCheck) -> ReviewStep:
 
 def _business_step(
     request: ReviewRequest,
-    check: ReviewCheck,
+    check: CheckResult,
     *,
     page_interaction: bool,
-) -> ReviewStep:
+) -> ReviewTask:
     return _step(
         step_id=f"BUSINESS-{check.check_id}",
         category="BUSINESS_RULE",
@@ -443,8 +455,8 @@ def _material_steps(
     profile: BusinessProfile,
     completeness: MaterialCompletenessReport | None,
     limitations: Sequence[str],
-) -> list[ReviewStep]:
-    steps: list[ReviewStep] = []
+) -> list[ReviewTask]:
+    steps: list[ReviewTask] = []
     issue_causes: set[str] = set()
     if completeness is not None and profile.material_policy is not None:
         # 材料完整时不生成材料成功步骤，只展示实际存在的问题。
@@ -482,9 +494,9 @@ def _material_steps(
     return steps
 
 
-def _deduplicate_steps(steps: Sequence[ReviewStep]) -> list[ReviewStep]:
+def _deduplicate_steps(steps: Sequence[ReviewTask]) -> list[ReviewTask]:
     seen: set[str] = set()
-    result: list[ReviewStep] = []
+    result: list[ReviewTask] = []
     for step in steps:
         if step.step_id not in seen:
             seen.add(step.step_id)
@@ -492,30 +504,26 @@ def _deduplicate_steps(steps: Sequence[ReviewStep]) -> list[ReviewStep]:
     return result
 
 
-def _resequence(steps: Sequence[ReviewStep]) -> list[ReviewStep]:
+def _resequence(steps: Sequence[ReviewTask]) -> list[ReviewTask]:
     return [
         step.model_copy(update={"sequence": sequence})
         for sequence, step in enumerate(steps, start=1)
     ]
 
 
-def build_review_steps(
+def build_review_tasks(
     *,
     request: ReviewRequest,
     profile: BusinessProfile,
     comparisons: Sequence[FieldComparison],
-    external_checks: Sequence[ReviewCheck],
-    business_checks: Sequence[ReviewCheck],
+    external_checks: Sequence[CheckResult],
+    business_checks: Sequence[CheckResult],
     completeness: MaterialCompletenessReport | None,
     limitations: Sequence[str],
-) -> list[ReviewStep]:
+) -> list[ReviewTask]:
     """一次返回完整、有序、带展示目标的审核步骤列表。"""
-    page_interaction = is_page_interaction_profile(
-        profile.business_type,
-        profile.region,
-        profile.version,
-    )
-    steps: list[ReviewStep] = []
+    page_interaction = profile_uses_page_interaction(profile)
+    steps: list[ReviewTask] = []
     # PAGE_FIELD 只用于目标 Profile 且请求中存在该规范字段；
     # 缺失字段转为 ASSISTANT + INSUFFICIENT。
     # 外部规则、派生规则和材料异常使用 ASSISTANT。
@@ -526,10 +534,29 @@ def build_review_steps(
             _field_step(request, comparison, page_interaction=False)
             for comparison in comparisons
         )
-    steps.extend(_external_step(check) for check in external_checks)
+    # A capability may already emit a synthetic insufficiency check while a
+    # legacy external registry also returns one. Keep one reviewer task per
+    # external capability/check identity to avoid duplicate panel entries.
+    seen_external: set[tuple[str, str]] = set()
+    for check in external_checks:
+        key = (check.check_id.removeprefix("EXTERNAL-"), check.label)
+        if key in seen_external:
+            continue
+        seen_external.add(key)
+        steps.append(_external_step(check))
     steps.extend(
         _business_step(request, check, page_interaction=page_interaction)
         for check in business_checks
     )
     steps.extend(_material_steps(profile, completeness, limitations))
-    return _resequence(_deduplicate_steps(steps))
+    from app.rules.task_presentation import prepare_display_tasks
+
+    return prepare_display_tasks(
+        _resequence(_deduplicate_steps(steps)),
+        qr_enabled=any(
+            spec.capability_id == "scrap_certificate_qr"
+            for spec in profile.capabilities
+            if spec.kind == "EXTERNAL"
+        ),
+        completeness=completeness,
+    ) if page_interaction else _resequence(_deduplicate_steps(steps))

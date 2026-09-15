@@ -28,7 +28,7 @@ async def test_qr_external_step_preserves_the_request_image_identity(monkeypatch
         region="qingdao",
         images=[ImageInput(index=4, image_id="scrap-04", src="https://example.test/image", document_type_hint="scrap_certificate", business_scope="old_vehicle")],
     ))
-    step = next(step for step in response.review_steps if step.category == "EXTERNAL")
+    step = next(step for step in response.review_tasks if step.category == "EXTERNAL")
     assert step.evidence[0].image_id == "scrap-04"
     assert step.evidence[0].source_id == "scrap-04"
     assert step.evidence[0].document_type == "scrap_certificate"
@@ -39,7 +39,7 @@ async def test_qr_external_step_preserves_the_request_image_identity(monkeypatch
 def test_qr_evidence_does_not_guess_an_image_when_index_mapping_is_missing_or_ambiguous(indexes):
     images = [ImageInput(index=index, image_id=f"image-{order}", src="https://example.test/image") for order, index in enumerate(indexes)]
     check = qr_review_checks([QrCheck(image_index=4)], images)[0]
-    assert check.evidence[0].get("image_id") is None
+    assert check.evidence[0].image_id is None
 
 
 @pytest.mark.parametrize("profile", [SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT])

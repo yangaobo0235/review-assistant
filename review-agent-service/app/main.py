@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, status
 
 from app.businesses.context_validation import BusinessContextMismatch
 from app.businesses.registry import BusinessProfileNotFound
+from app.contracts.review_schema import review_contract_schema
 from app.models.review import (
     ReviewJobCreated,
     ReviewJobSnapshot,
@@ -45,19 +46,27 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/review/schema")
+def review_schema() -> dict[str, object]:
+    """Expose the versioned request/response contract to integration clients."""
+    return review_contract_schema()
+
+
 @app.post("/api/review/assist", response_model=ReviewResponse)
 def assist(request: ReviewRequest) -> ReviewResponse:
     """执行一次只读审核辅助，不会修改原审核系统。"""
     validate_business_profile(request)
     logger.info(
-        "Review request received: application_id=%s field_count=%d image_count=%d",
+        "Review request received: trace_id=%s application_id=%s field_count=%d image_count=%d",
+        request.trace_id or "generated",
         request.application_id or "unknown",
         len(request.page_fields),
         len(request.images),
     )
     response = review_service.assist(request)
     logger.info(
-        "Review completed: recommendation=%s comparison_count=%d issue_count=%d",
+        "Review completed: trace_id=%s recommendation=%s comparison_count=%d issue_count=%d",
+        response.trace_id,
         response.recommendation,
         len(response.comparisons),
         len(response.issues),
@@ -73,7 +82,8 @@ def assist(request: ReviewRequest) -> ReviewResponse:
 def create_review_job(request: ReviewRequest) -> ReviewJobCreated:
     validate_business_profile(request)
     logger.info(
-        "Review job requested: application_id=%s image_count=%d",
+        "Review job requested: trace_id=%s application_id=%s image_count=%d",
+        request.trace_id or "generated",
         request.application_id or "unknown",
         len(request.images),
     )

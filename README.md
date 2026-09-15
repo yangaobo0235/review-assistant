@@ -1,45 +1,53 @@
-# 车辆审核辅助 Agent
+# Review Assistant
 
-浏览器扩展采集车辆审核页面与材料，FastAPI / LangGraph 后端提取证据、核验字段和业务规则，审核员在侧边栏查看差异、图片并进行人工复核。当前只有青岛和长春两种报废置换审核是有效业务；过户属于历史遗留实现，不属于当前支持范围，车源与一致性审核也尚未配置。
+Review Assistant 是一个面向车辆审核页面的浏览器扩展与审核服务。系统通过统一的 LangGraph（流程图编排框架）主图处理材料采集、文档识别、证据聚合、字段比较、业务规则和审核任务生成；前端只负责页面采集、任务呈现和受控页面操作。
 
-## 从哪里开始
+当前生产能力包括青岛和长春的报废置换审核。车源和一致性入口保留为未配置或人工复核路径；过户能力已经停用，不得作为生产能力重新接入。
 
-**只读一份详细文档：[项目完整手册](docs/system-spec.md)。**
+## 文档入口
 
-如果要讨论或实施整体架构重构，使用[架构改造总计划](docs/refactoring-plan.md)；它是目标架构方案，不是当前实现说明。
+- [文档总索引](docs/README.md)
+- [系统架构与模块边界](docs/architecture.md)
+- [审核工作台前端展示规范](docs/frontend-presentation.md)
+- [LangGraph 主图与节点说明](docs/langgraph.md)
+- [注册表、能力和子图](docs/registries-and-subgraphs.md)
+- [当前业务规则](docs/business-rules.md)
+- [新增审核页面扩展手册](docs/extension-guide.md)
+- [AI 与开发者改动准则](docs/ai-change-policy.md)
+- [测试、提交与发布](docs/testing-and-release.md)
+- [GitHub 协作规范](CONTRIBUTING.md)
+- [安全边界](SECURITY.md)
 
-| 你想做什么 | 直接阅读 |
-| --- | --- |
-| 了解每个页面、字段规则和之前确认的交互要求 | [手册第 1–8 章](docs/system-spec.md#1-产品目标与不可违反的边界) |
-| 理解代码、LangGraph 节点、Profile 和接口 | [手册第 9–11 章](docs/system-spec.md#9-代码映射) |
-| 安装、启动服务、加载扩展 | [手册第 12 章](docs/system-spec.md#12-安装运行与配置) |
-| 修改代码、运行测试、排查问题 | [手册第 13 章](docs/system-spec.md#13-开发验收与排错) |
+## 快速验证
 
-新开 AI 对话时可以直接说明：
+后端：
 
-> 请先阅读 README.md 和 docs/system-spec.md，理解页面、字段规则及交互约束，再按手册定位相关源码和测试。历史归档只作背景，不直接执行旧计划；发现需求、文档和代码不一致时请明确指出。
-
-## 项目结构
-
-```text
-review-assistant/
-├─ README.md                 # 本页：阅读入口
-├─ docs/system-spec.md       # 唯一完整手册
-├─ docs/archive/             # 历次设计与计划，日常无需阅读
-├─ review-agent-service/     # Python / FastAPI / LangGraph
-├─ review-extension/         # Manifest V3 / React / TypeScript
-├─ start-agent.ps1           # 启动后端
-└─ start-extension-build.ps1 # 构建扩展
+```powershell
+cd review-agent-service
+uv run ruff check app tests
+uv run python -m compileall -q app
+uv run pytest tests -q
 ```
 
-环境要求：Python >=3.11,<3.13、uv、Node.js >=22.18.0、npm、Chrome 或 Edge，以及本地 DashScope 配置。完整命令见手册，避免多处维护。
+前端：
 
-系统提供审核辅助；最终审核决定由人工完成。普通字段可由审核员主动回填，自动写入只针对符合条件的两个空白挂靠字段；不会自动通过、驳回或提交业务单据。
+```powershell
+npm --prefix review-extension install
+npm --prefix review-extension test
+npm --prefix review-extension run lint
+npm --prefix review-extension run build
+```
 
-## 按需查看
+构建产物位于 `review-extension/dist`。不要直接编辑 `dist`，不要恢复旧的 `review-extension/public/*.js` 双源码。
 
-- [贡献规范](CONTRIBUTING.md)：提交和 PR 约定。
-- [安全策略](SECURITY.md)：数据、密钥和漏洞反馈。
-- [历史方案](docs/archive/README.md)：仅用于追溯旧决策。
-- [架构改造总计划](docs/refactoring-plan.md)：整体重构目标和最终目录形态。
-- [MIT License](LICENSE)。
+## 运行时关系
+
+扩展与后端之间只传递版本化审核协议。页面上的字段名称、CSS 选择器和控件操作属于扩展；材料是否齐全、字段是否一致、地区政策是否满足以及是否需要人工复核属于后端。新增功能时先判断它属于哪一侧，再沿注册表和标准协议接入，避免出现同一规则在两端各写一份。
+
+## 开发入口
+
+后端入口通常从 `app/main.py` 和 API 路由进入，审核流程从 `app/agent/workflow.py` 进入；业务 Profile 位于 `app/businesses`，能力和规则位于 `app/capabilities` 与 `app/rules`。前端入口从 `src/main.tsx` 开始，页面采集查看 `src/browser` 和 `src/adapters`，工作台查看 `src/components`，页面写回查看 `src/session`。遇到不确定的代码归属，先阅读 [系统架构与边界](docs/architecture.md) 和模块 README。
+
+## 交付标准
+
+一个改动只有在代码、测试、文档和回滚方式都明确时才算完成。不能以“本地页面看起来正常”代替后端契约测试，也不能以“测试通过”代替 Profile、注册表和权限边界审查。

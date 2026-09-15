@@ -2,7 +2,7 @@
  * 功能：目标业务（青岛/长春报废置换 1.0）的字段优先审核编排。
  * 职责边界：只驱动 reviewSession 状态机和页面审核客户端，不渲染界面；
  * 人工选择只记录在前端内存，绝不篡改后端 MATCH/CONFLICT/INSUFFICIENT 结论；
- * 挂靠写入只在主体关系与三个辅助保护步骤全部 MATCH 且存在填写意图时执行一次；
+ * 挂靠写入只在主体关系 MATCH、后端返回两个明确主体类型且存在填写意图时执行一次；
  * clearPageReviewMarkers / subscribePageReviewDecisions 保留为旧宿主协议兼容名称，但新流程不调用页面标记。
  * 页面实例、URL、指纹、采集 ID 或 DOM 目标失效时立即停止后续标记和写入。
  * 修改日期：2026-09-11
@@ -25,29 +25,27 @@ import {
   recordReviewerDecision,
 } from "../reviewSession.ts";
 import type { ReviewerDecision, ReviewSessionState } from "../reviewSession.ts";
-import { stepRequiresReviewerAction } from "../reviewSteps.ts";
+import { REVIEW_TASK_IDS, stepRequiresReviewerAction } from "../reviewSteps.ts";
 import type {
   PageData,
   PageFillAction,
   ReviewResponse,
-  ReviewStep,
+  ReviewTask,
 } from "../types/review";
 import type { ReviewWorkflow } from "./useReviewWorkflow";
-import { isFieldFirstProfile } from "../scrapReplacementProfile.ts";
-export { isFieldFirstProfile } from "../scrapReplacementProfile.ts";
 
 /**
  * 主体关系步骤的稳定后端 step_id（app/rules/affiliation_subject_checks.py 的
  * AFFILIATION-SUBJECT-001 经 review_step_routing 加 BUSINESS- 前缀）。
  * 只按 step_id 识别，绝不按中文 label 文本匹配。
  */
-export const AFFILIATION_SUBJECT_STEP_ID = "BUSINESS-AFFILIATION-SUBJECT-001";
+export const AFFILIATION_SUBJECT_STEP_ID = REVIEW_TASK_IDS.affiliationSubject;
 
-/** 三个辅助保护步骤的稳定后端 step_id；全部 MATCH 才允许挂靠写入。 */
+/** 历史辅助步骤 ID，保留导出兼容；挂靠动作的安全闸门由后端主体关系结果和页面写回校验负责。 */
 export const AFFILIATION_PROTECTION_STEP_IDS: readonly string[] = Object.freeze([
-  "BUSINESS-AFFILIATION-AUX-OWNER-TYPE",
-  "BUSINESS-AFFILIATION-AUX-NEW-VIN",
-  "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME",
+  REVIEW_TASK_IDS.affiliationOwnerType,
+  REVIEW_TASK_IDS.affiliationNewVin,
+  REVIEW_TASK_IDS.affiliationCustomerName,
 ]);
 
 const FALLBACK_SESSION_ERROR = "页面审核标记已失效，请重新审核";
@@ -82,7 +80,7 @@ export function createAffiliationFillLatch(): AffiliationFillLatch {
 }
 
 export interface ScrapSessionGateways {
-  show(step: ReviewStep, pageData: PageData): Promise<PageReviewResult>;
+  show(step: ReviewTask, pageData: PageData): Promise<PageReviewResult>;
   complete(stepId: string, pageData: PageData): Promise<PageReviewResult>;
   clear(pageData: PageData): Promise<PageReviewResult>;
   subscribe(
@@ -104,12 +102,12 @@ export interface ScrapSessionSnapshot {
   readonly sessionKey: string;
   readonly session: ReviewSessionState;
   /** 唯一需要人工处理的页面外事项；其余任何步骤都不暴露给助手。 */
-  readonly assistantStep: ReviewStep | null;
+  readonly assistantStep: ReviewTask | null;
   readonly blockingIssue: string | null;
 }
 
 export interface ScrapSessionOptions {
-  steps: readonly ReviewStep[];
+  steps: readonly ReviewTask[];
   pageData: PageData;
   sessionKey?: string;
   getPageFillIntent(): PageFillAction[];
@@ -181,7 +179,7 @@ export function createScrapReplacementSession(
   }
 
   /** 主体关系通过后只前进；挂靠写入必须由审核员在工作台主动触发。 */
-  async function runAffiliationGate(step: ReviewStep): Promise<boolean> {
+  async function runAffiliationGate(step: ReviewTask): Promise<boolean> {
     const next = completeMatchedStep(state, step.step_id);
     if (next === state) return false;
     if (options.autoFillAffiliation === false) {
@@ -189,8 +187,7 @@ export function createScrapReplacementSession(
       return true;
     }
     const intent = options.getPageFillIntent();
-    const protectionsMatched = AFFILIATION_PROTECTION_STEP_IDS.every((stepId) => state.steps.some((item) => item.step_id === stepId && item.result_status === "MATCH" && !stepRequiresReviewerAction(item)));
-    if (!protectionsMatched || intent.length === 0 || fillLatch.isEngaged(pageData.collectionId)) { commit(next); return true; }
+    if (intent.length === 0 || fillLatch.isEngaged(pageData.collectionId)) { commit(next); return true; }
     if (intent.length !== 2 || new Set(intent.map((action) => action.field)).size !== 2 || !intent.some((action) => action.field === "old_vehicle.affiliation") || !intent.some((action) => action.field === "new_vehicle.affiliation")) { failWith("挂靠填写意图字段异常，已停止自动填写，请人工核对挂靠信息"); return false; }
     fillLatch.engage(pageData.collectionId);
     let result: PageFillResult;
@@ -342,7 +339,7 @@ export function createScrapReplacementSession(
 
 export interface ScrapReplacementReviewController {
   readonly active: boolean;
-  readonly assistantStep: ReviewStep | null;
+  readonly assistantStep: ReviewTask | null;
   readonly blockingIssue: string | null;
   /** 标记清理失败等需要提示刷新页面的通知。 */
   readonly notice: string;
@@ -357,7 +354,12 @@ export function useScrapReplacementReview(
   workflow: ReviewWorkflow,
 ): ScrapReplacementReviewController {
   const { review, pageData, applyAffiliationFill } = workflow;
-  const active = Boolean(review && pageData && isFieldFirstProfile(review));
+  const active = Boolean(
+    review
+    && pageData
+    && review.presentation === "FIELD_WORKBENCH"
+    && review.review_tasks?.length,
+  );
   const [snapshot, setSnapshot] = useState<ScrapSessionSnapshot | null>(null);
   const [notice, setNotice] = useState("");
   const sessionRef = useRef<ScrapReplacementSession | null>(null);
@@ -374,7 +376,7 @@ export function useScrapReplacementReview(
   // 会话只随步骤内容重建；轮询产生的新对象身份不打断进行中的标记流程。
   const stepsKey = useMemo(
     () =>
-      (review?.review_steps ?? [])
+      (review?.review_tasks ?? [])
         .map(
           (step) =>
             `${step.step_id}:${step.sequence}:${step.result_status}:${step.requires_reviewer_action}:${step.display_target}`,
@@ -390,13 +392,13 @@ export function useScrapReplacementReview(
     generationRef.current += 1;
     const generation = generationRef.current;
     const session = createScrapReplacementSession({
-      steps: currentReview.review_steps ?? [],
+      steps: currentReview.review_tasks ?? [],
       pageData,
       sessionKey: stepsKey,
       getPageFillIntent: () => reviewRef.current?.page_fill_intent ?? [],
       applyAffiliationFill,
-      // 主体关系及辅助守护全部通过后，自动把规则推导的个人/公司写入
-      // 两个挂靠下拉框；用户仍可在助手中手动修改其它字段。
+      // 主体关系通过且后端给出合法意图后，自动把规则推导的个人/公司
+      // 写入两个挂靠下拉框；辅助核验仍在工作台独立展示。
       autoFillAffiliation: true,
       affiliationFillLatch: fillLatch,
       // 会话快照只经由 start/decide/dispose 异步驱动，避免 effect 体内同步 setState。

@@ -35,7 +35,7 @@ def test_assist_returns_review_structure_for_page_data() -> None:
     assert len(body["material_completeness"]["checklist"]) == 6
     subject_step = next(
         item
-        for item in body["review_steps"]
+        for item in body["review_tasks"]
         if item["step_id"] == "BUSINESS-AFFILIATION-SUBJECT-001"
     )
     assert "subject_requirements" in subject_step["details"]

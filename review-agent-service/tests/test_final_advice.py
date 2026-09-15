@@ -1,5 +1,5 @@
-from app.agent.models import ReviewCheck
-from app.models.review import Evidence, FieldComparison, FieldStatus, QrCheck
+from app.agent.models import CheckResult
+from app.models.review import EvidenceFact, FieldComparison, FieldStatus, QrCheck
 from app.rules.final_advice import build_final_advice
 
 
@@ -11,10 +11,10 @@ def matched(field: str) -> FieldComparison:
 
 def test_all_matching_checks_produce_pass_advice() -> None:
     cross_checks = [
-        ReviewCheck(
+        CheckResult(
             check_id="CROSS-OWNER-001", label="所有人", status="MATCH", reason="一致"
         ),
-        ReviewCheck(
+        CheckResult(
             check_id="CROSS-DATE-001", label="日期", status="MATCH", reason="同年"
         ),
     ]
@@ -40,8 +40,8 @@ def test_field_conflict_produces_review_finding_with_original_sources() -> None:
         status=FieldStatus.CONFLICT,
         message="多个来源存在不同值",
         evidence=[
-            Evidence(source="图片识别", detail="回收证明", value="VIN-1"),
-            Evidence(source="申请页面字段", value="VIN-2"),
+            EvidenceFact(source="图片识别", detail="回收证明", value="VIN-1"),
+            EvidenceFact(source="申请页面字段", value="VIN-2"),
         ],
     )
 
@@ -60,13 +60,13 @@ def test_missing_qr_result_is_not_invented_without_an_executed_external_check() 
     recommendation, advice = build_final_advice(
         [matched("old_vehicle.vin")],
         [
-            ReviewCheck(
+            CheckResult(
                 check_id="CROSS-OWNER-001",
                 label="所有人",
                 status="MATCH",
                 reason="一致",
             ),
-            ReviewCheck(
+            CheckResult(
                 check_id="CROSS-DATE-001", label="日期", status="MATCH", reason="同年"
             ),
         ],
@@ -88,7 +88,7 @@ def test_final_advice_does_not_require_qr_for_transfer() -> None:
 
 
 def test_insufficient_cross_check_and_qr_failure_are_all_findings() -> None:
-    cross_check = ReviewCheck(
+    cross_check = CheckResult(
         check_id="CROSS-DATE-001",
         label="交车与开票日期同年",
         status="INSUFFICIENT",

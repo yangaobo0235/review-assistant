@@ -215,7 +215,7 @@ test("each assistant button records the decision and advances in one click", asy
   });
 });
 
-test("affiliation fill runs exactly once after subject and all three protections MATCH", async () => {
+test("affiliation fill runs exactly once after a matching subject and valid dual-field intent", async () => {
   const runner = runSession(affiliationSteps(), { pageFillIntent: affiliationIntent });
 
   runner.session.start();
@@ -229,7 +229,7 @@ test("affiliation fill runs exactly once after subject and all three protections
   assert.ok(runner.snapshots.every((snapshot) => snapshot.assistantStep === null));
 });
 
-test("no fill when any protection step is not MATCH", async () => {
+test("subject MATCH still fills affiliation when an auxiliary check needs review", async () => {
   const runner = runSession(
     affiliationSteps({ guardStatuses: { "BUSINESS-AFFILIATION-AUX-NEW-VIN": "CONFLICT" } }),
     { pageFillIntent: affiliationIntent },
@@ -238,8 +238,10 @@ test("no fill when any protection step is not MATCH", async () => {
   runner.session.start();
   await settle();
 
-  assert.equal(runner.fills.length, 0);
-  // 主体关系静默通过，冲突保护项成为当前助手事项。
+  // 主体关系已经明确，后端给出的双字段意图可直接驱动默认挂靠选择；
+  // 辅助检查仍作为独立助手事项等待审核员处理。
+  assert.equal(runner.fills.length, 1);
+  assert.deepEqual(runner.fills[0], affiliationIntent);
   assert.equal(runner.latest().assistantStep.step_id, "BUSINESS-AFFILIATION-AUX-NEW-VIN");
 });
 
@@ -503,7 +505,7 @@ test("fill proceeds when the intent covers both affiliation fields in either ord
   assert.equal(runner.latest().blockingIssue, null);
 });
 
-test("a MATCH protection step that still requires reviewer action blocks the fill", async () => {
+test("a MATCH protection step that still requires reviewer action does not undo the fill", async () => {
   const steps = affiliationSteps();
   const ownerTypeIndex = steps.findIndex(
     (step) => step.step_id === "BUSINESS-AFFILIATION-AUX-OWNER-TYPE",
@@ -515,7 +517,8 @@ test("a MATCH protection step that still requires reviewer action blocks the fil
   runner.session.start();
   await settle();
 
-  assert.equal(runner.fills.length, 0);
+  assert.equal(runner.fills.length, 1);
+  assert.deepEqual(runner.fills[0], affiliationIntent);
   assert.notEqual(runner.latest().session.phase, "STALE_PAGE");
   assert.equal(
     runner.latest().assistantStep.step_id,
@@ -551,7 +554,7 @@ test("startReview itself never sends APPLY_PAGE_FILL_INTENT for a finished job c
     issues: [],
     sections: [],
     page_fill_intent: affiliationIntent,
-    review_steps: [],
+    review_tasks: [],
   };
   const chromeStub = {
     tabs: {
@@ -605,8 +608,7 @@ test("startReview itself never sends APPLY_PAGE_FILL_INTENT for a finished job c
 test("ReviewResults routes only field-first profiles to the minimal assistant and keeps the legacy JSX", () => {
   const source = read("../src/components/ReviewResults.tsx");
 
-  assert.match(source, /isFieldFirstProfile\(review\)/);
-  assert.match(source, /<ScrapReplacementReview/);
+  assert.match(source, /resolveWorkbenchRenderer\(review\)/);
   assert.match(source, /function LegacyReviewResults/);
   assert.match(source, /<LegacyReviewResults/);
   // 过户、车源和一致性继续使用现有结果界面和行为。
@@ -646,16 +648,17 @@ test("App renders the workbench without starting the retired page-marker orchest
 test("the orchestration hook keys the affiliation gate off stable backend step ids", () => {
   const source = read("../src/hooks/useScrapReplacementReview.ts");
 
-  assert.match(source, /BUSINESS-AFFILIATION-SUBJECT-001/);
-  assert.match(source, /BUSINESS-AFFILIATION-AUX-OWNER-TYPE/);
-  assert.match(source, /BUSINESS-AFFILIATION-AUX-NEW-VIN/);
-  assert.match(source, /BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME/);
+  const ids = read("../src/reviewSteps.ts");
+  assert.match(ids, /BUSINESS-AFFILIATION-SUBJECT-001/);
+  assert.match(ids, /BUSINESS-AFFILIATION-AUX-OWNER-TYPE/);
+  assert.match(ids, /BUSINESS-AFFILIATION-AUX-NEW-VIN/);
+  assert.match(ids, /BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME/);
   // 绝不通过中文 label 识别步骤。
   assert.doesNotMatch(source, /新旧车挂靠主体关系|车辆所有人类型|OCR新车车架号|客户名称/);
   // 生命周期：清理标记、取消订阅、失败提示刷新。
   assert.match(source, /clearPageReviewMarkers/);
   assert.match(source, /subscribePageReviewDecisions/);
-  assert.match(source, /请刷新页面/);
+  assert.match(source, /MARKER_CLEANUP_NOTICE/);
 });
 
 test("the hook hardens transport rejections, the fill latch, and generation-scoped cleanup notices", () => {

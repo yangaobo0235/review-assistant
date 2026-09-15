@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewFieldMatcher } from "../src/browser/field-matcher.ts";
 
 function loadMatcher() {
-  const source = readFileSync(new URL("../public/field-matcher.js", import.meta.url), "utf8");
-  const context = { globalThis: {} };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewFieldMatcher;
+  return ReviewFieldMatcher;
 }
 
 test("old vehicle VIN prefers its exact label over a generic new vehicle match", () => {

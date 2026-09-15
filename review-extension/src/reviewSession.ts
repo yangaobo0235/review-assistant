@@ -1,6 +1,6 @@
 /** 侧边栏字段审核会话：纯内存状态，不访问 DOM、不落库。 */
-import type { ReviewStep } from "./types/review";
-import { sortedReviewSteps, stepRequiresReviewerAction } from "./reviewSteps.ts";
+import type { ReviewTask } from "./types/review";
+import { sortedReviewTasks, stepRequiresReviewerAction } from "./reviewSteps.ts";
 
 export type ReviewSessionPhase =
   | "RUNNING" | "WAITING_REVIEWER" | "STALE_PAGE" | "COMPLETED";
@@ -15,7 +15,7 @@ export const REVIEWER_DECISIONS: readonly ReviewerDecision[] = Object.freeze([
 export interface ReviewSessionState {
   readonly phase: ReviewSessionPhase;
   readonly index: number;
-  readonly steps: readonly ReviewStep[];
+  readonly steps: readonly ReviewTask[];
   readonly decisions: Readonly<Record<string, ReviewerDecision>>;
   readonly completedStepIds: readonly string[];
   readonly blockingIssue?: string;
@@ -29,7 +29,7 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
-function phaseAt(steps: readonly ReviewStep[], index: number): ReviewSessionPhase {
+function phaseAt(steps: readonly ReviewTask[], index: number): ReviewSessionPhase {
   if (index >= steps.length) return "COMPLETED";
   return stepRequiresReviewerAction(steps[index]) ? "WAITING_REVIEWER" : "RUNNING";
 }
@@ -38,18 +38,18 @@ function derivePhase(state: ReviewSessionState): ReviewSessionState {
   return deepFreeze({ ...state, phase: phaseAt(state.steps, state.index) });
 }
 
-export function createReviewSession(steps: readonly ReviewStep[]): ReviewSessionState {
+export function createReviewSession(steps: readonly ReviewTask[]): ReviewSessionState {
   // 复制后端步骤，会话内部与外部载荷完全隔离；按 sequence 排序后冻结。
   return derivePhase({
     phase: "RUNNING",
     index: 0,
-    steps: sortedReviewSteps(steps.map((step) => structuredClone(step))),
+    steps: sortedReviewTasks(steps.map((step) => structuredClone(step))),
     decisions: {},
     completedStepIds: [],
   });
 }
 
-export function currentStep(state: ReviewSessionState): ReviewStep | null {
+export function currentStep(state: ReviewSessionState): ReviewTask | null {
   return state.steps[state.index] ?? null;
 }
 

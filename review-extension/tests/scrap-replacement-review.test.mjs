@@ -9,7 +9,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
-import { isFieldFirstProfile } from "../src/hooks/useScrapReplacementReview.ts";
+import { isFieldFirstProfile } from "../src/scrapReplacementProfile.ts";
 import {
   decisionEvent,
   makeStep,
@@ -150,7 +150,7 @@ function workbenchReview(reviewSteps, overrides = {}) {
     business_type: "scrap_replacement",
     region: "changchun",
     profile_version: "1.0",
-    review_steps: reviewSteps,
+    review_tasks: reviewSteps,
     qr_checks: [],
     page_fill_intent: [],
     material_completeness: { phase: "EXTRACTED", status: "COMPLETE", enforced: false, issues: [] },
@@ -171,20 +171,18 @@ test("manual input defaults to the page value below material candidates on every
   }
 });
 
-test("workbench merges an actionable date policy into its page field", () => {
-  const dateField = makeStep({ step_id: "FIELD-invoice.invoice_date", sequence: 1, category: "FIELD", label: "开票日期", reason: "页面与发票日期一致" });
+test("workbench hides duplicate date policy cards when the field card is present", () => {
+  const dateField = makeStep({ step_id: "FIELD-invoice.invoice_date", sequence: 1, category: "FIELD", page_field: "invoice.invoice_date", result_status: "CONFLICT", requires_reviewer_action: true, label: "开票日期", reason: "页面与发票日期冲突" });
   const datePolicy = makeStep({ step_id: "BUSINESS-POLICY-INVOICE-DATE", sequence: 2, result_status: "CONFLICT", requires_reviewer_action: true, label: "新车发票日期", reason: "开票日期不符合政策范围" });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([dateField, datePolicy]), pageData: { pageFields: { "invoice.invoice_date": "2024-06-25" }, images: [] } }));
 
-  assert.match(html, /页面原始值/);
-  assert.match(html, /2024-06-25/);
-  assert.match(html, /地区政策核验/);
-  assert.match(html, /开票日期不符合政策范围/);
-  assert.equal((html.match(/新车发票日期/g) ?? []).length, 0);
+  assert.doesNotMatch(html, /开票日期不符合政策范围/);
+  assert.doesNotMatch(html, /新车发票日期/);
+  assert.match(html, /开票日期/);
 });
 
 test("material anomalies show Chinese field names, values and corresponding thumbnails", () => {
-  const step = makeStep({step_id: "MATERIAL-UNCERTAIN-1", category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, reason: "报废证明存在无法确认的字段"});
+  const step = makeStep({step_id: "MATERIAL-GROUP", category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, reason: "报废证明存在无法确认的字段"});
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
     review: workbenchReview([step], {material_completeness: {status: "UNCERTAIN", issues: [{
       field_details: [
@@ -224,7 +222,7 @@ test("invoice origin candidates show their matching invoice thumbnail and origin
         {imageId: "invoice-img", index: 3, src: "invoice.jpg"},
       ]},
     }));
-    assert.match(html, /长春/);
+    assert.match(html, /长[\s\S]*春/);
     assert.match(html, /新车销售发票/);
     assert.match(html, /src="invoice.jpg"/);
     assert.match(html, /查看原图/);
@@ -234,7 +232,7 @@ test("invoice origin candidates show their matching invoice thumbnail and origin
 
 test("QR official links remain clickable for manual review when backend access fails", () => {
   const url = "https://qclt.mofcom.gov.cn/deal/scrap/validdata/test";
-  const step = makeStep({ step_id: "QR-1", category: "EXTERNAL", result_status: "INSUFFICIENT", requires_reviewer_action: true });
+  const step = makeStep({ step_id: "QR-GROUP", category: "EXTERNAL", result_status: "INSUFFICIENT", requires_reviewer_action: true });
   for (const accessible of [false, null]) {
     const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
       review: workbenchReview([step], { qr_checks: [{ url, raw_value: url, domain_valid: true, accessible, page_fields: {}, status: "REVIEW_REQUIRED" }] }),
@@ -258,7 +256,7 @@ test("QR official links remain clickable for manual review when backend access f
 });
 
 test("workbench exposes only a backend-verified QR URL as a new-tab link", () => {
-  const qrStep = makeStep({ step_id: "QR-1", sequence: 1, category: "EXTERNAL", result_status: "CONFLICT", requires_reviewer_action: true, label: "二维码官网核验", reason: "官网字段与图片不一致" });
+  const qrStep = makeStep({ step_id: "QR-GROUP", sequence: 1, category: "EXTERNAL", result_status: "CONFLICT", requires_reviewer_action: true, label: "二维码官网核验", reason: "官网字段与图片不一致" });
   const url = "https://qcar.mofcom.gov.cn/query/1";
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([qrStep], { qr_checks: [{ url, domain_valid: true, accessible: true, page_fields: {}, status: "CONFLICT", message: "不一致" }] }), pageData: { pageFields: {}, images: [] } }));
 
@@ -269,7 +267,7 @@ test("workbench exposes only a backend-verified QR URL as a new-tab link", () =>
 
 test("technical QR details keep a verified raw URL clickable for manual review", () => {
   const url = "https://qclt.mofcom.gov.cn/deal/scrap/validdata/manual";
-  const step = makeStep({ step_id: "QR-1", sequence: 1, category: "EXTERNAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, label: "二维码官网核验" });
+  const step = makeStep({ step_id: "QR-GROUP", sequence: 1, category: "EXTERNAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, label: "二维码官网核验" });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
     review: workbenchReview([step], { qr_checks: [{ url, raw_value: url, domain_valid: true, accessible: false, page_fields: {}, status: "REVIEW_REQUIRED" }] }),
     pageData: { pageFields: {}, images: [] },
@@ -320,7 +318,7 @@ test("workbench marks differing identifier positions in red", () => {
     page_value: "LFW5RX9L9TAA15882",
     result_status: "CONFLICT",
     requires_reviewer_action: true,
-    values: [{ source: "图片识别", value: "LFW5RX9L9TAA15082", image_id: "vin", document_type: "vehicle_license" }],
+    values: [{ source: "图片识别", value: "LFW5RX9L9TAA15082", image_id: "vin", document_type: "vehicle_license", differences: [{ kind: "REPLACE", start: 14, end: 15, page_start: 14, page_end: 15, page_text: "8" }] }],
   });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
     review: workbenchReview([field]),
@@ -371,7 +369,7 @@ test("workbench reports the actual DOM-derived field count and unknown controls"
 });
 
 test("workbench renders the six-item material checklist and blocks confirming a missing upload", () => {
-  const materialStep = makeStep({ step_id: "MATERIAL-MISSING-1", sequence: 1, category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, label: "资料完整性", reason: "缺少新车行驶证" });
+  const materialStep = makeStep({ step_id: "MATERIAL-GROUP", sequence: 1, category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, label: "资料完整性", reason: "缺少新车行驶证" });
   const checklist = [
     ["old_vehicle:vehicle_license", "旧车行驶证", "PRESENT"],
     ["old_vehicle:registration_certificate", "旧车登记证", "PRESENT"],
@@ -434,7 +432,6 @@ test("affiliation card includes customer identity blockers and shows subject ima
   assert.doesNotMatch(html, /关联辅助核验/);
   assert.match(html, /客户名称/);
   assert.match(html, /页面或材料未取得可比较的明确值/);
-  assert.match(html, /src="license.jpg"/);
-  assert.match(html, /查看原图/);
+  assert.doesNotMatch(html, /src="license.jpg"/);
   assert.doesNotMatch(html, /src="registration.jpg"/);
 });

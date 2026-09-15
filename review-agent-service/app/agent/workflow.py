@@ -5,29 +5,42 @@
 修改人：wuyi
 """
 
+import inspect
+import logging
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from itertools import pairwise
+from time import perf_counter
 from typing import Any, Required, TypedDict
+from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.models import (
     AgentAdvice,
     AgentBatchResult,
+    CheckResult,
     MaterialCompletenessReport,
-    ReviewCheck,
 )
-from app.agent.planner import plan_capabilities
+from app.agent.planner import CapabilityPlanItem, plan_capabilities
 from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
+from app.capabilities import CapabilityRegistry
+from app.capabilities.page_actions import (
+    PageActionHandler,
+    PageActionRegistry,
+    PageActionSpec,
+)
+from app.capabilities.subgraphs import build_capability_subgraph
 from app.models.review import (
     BusinessType,
+    CapabilityPlanEntry,
     PageFillAction,
     QrCheck,
     Region,
     ReviewRequest,
     ReviewResponse,
-    ReviewStep,
+    ReviewTask,
 )
 from app.rules.affiliation_subject_checks import (
     build_affiliation_auxiliary_checks,
@@ -36,6 +49,8 @@ from app.rules.affiliation_subject_checks import (
 from app.rules.business_rule_registry import BusinessRuleRegistry
 from app.rules.capabilities import (
     BusinessRuleHandler,
+    CapabilityResult,
+    CapabilitySpec,
     ExternalCheckHandler,
     ExternalCheckSpec,
     ReviewExecutionContext,
@@ -47,21 +62,24 @@ from app.rules.evidence_values import batch_observations
 from app.rules.external_check_registry import ExternalCheckRegistry
 from app.rules.material_completeness import evaluate_collected, evaluate_extracted
 from app.rules.replacement_policy_checks import build_replacement_policy_checks
-from app.rules.review_step_routing import build_review_steps
+from app.rules.review_step_routing import build_review_tasks
 from app.services.review_assembly import assemble_review_response
 
+logger = logging.getLogger(__name__)
+
 WORKFLOW_NODE_ORDER = (
-    "validate_context",
-    "assess_collected_materials",
-    "extract_documents",
-    "assess_extracted_evidence",
+    "resolve_context",
+    "validate_input",
+    "assess_coverage",
+    "extract_evidence",
+    "assess_evidence_quality",
     "plan_capabilities",
-    "run_external_checks",
-    "compare_same_fields",
-    "run_business_rules",
-    "prepare_review_steps",
+    "execute_capabilities",
+    "compare_fields",
+    "assemble_facts",
+    "prepare_review_tasks",
     "derive_recommendation",
-    "build_final_response",
+    "build_response",
 )
 
 
@@ -73,15 +91,21 @@ class ReviewState(TypedDict, total=False):
     batch_callback: Callable[[AgentBatchResult], Any] | None
     batch: AgentBatchResult
     qr_checks: list[QrCheck]
-    external_results: list[ReviewCheck]
+    external_results: list[CheckResult]
     response: ReviewResponse
-    cross_checks: list[ReviewCheck]
+    cross_checks: list[CheckResult]
     page_fill_intent: list[PageFillAction]
     recommendation: str
     advice: AgentAdvice
     material_completeness: MaterialCompletenessReport
-    review_steps: list[ReviewStep]
-    capability_plan: tuple[Any, ...]
+    review_tasks: list[ReviewTask]
+    capability_plan: tuple[CapabilityPlanItem, ...]
+    capability_results: list[CapabilityResult]
+    evidence_facts: list[Any]
+    validation_error: str
+    coverage_status: str
+    degradation_reasons: list[str]
+    trace_id: str
 
 
 class ReviewWorkflow:
@@ -93,6 +117,7 @@ class ReviewWorkflow:
         *,
         external_check_handlers: Mapping[str, ExternalCheckHandler] | None = None,
         business_rule_handlers: Mapping[str, BusinessRuleHandler] | None = None,
+        page_action_handlers: Mapping[str, PageActionHandler] | None = None,
     ) -> None:
         """构建并编译审核状态图，具体业务能力由服务门面提供。"""
         self.service = service
@@ -112,22 +137,63 @@ class ReviewWorkflow:
         if overridden:
             raise ValueError(f"不能覆盖内置业务规则：{', '.join(sorted(overridden))}")
         self.business_rules = BusinessRuleRegistry({**builtin_rules, **additional_rules})
+        async def _propose_page_action(actions: list[PageFillAction]) -> dict[str, object]:
+            return {"status": "PROPOSED", "count": len(actions)}
+
+        builtin_page_actions = {
+            "fill_affiliation_fields": _propose_page_action,
+            "verify_invoice": _propose_page_action,
+        }
+        builtin_page_specs = {"fill_affiliation_fields": PageActionSpec(
+                "fill_affiliation_fields",
+                reversible=True,
+                requires_authorization=True,
+                writable_fields=("old_vehicle.affiliation", "new_vehicle.affiliation"),
+            )}
+        builtin_page_specs["verify_invoice"] = PageActionSpec(
+            "verify_invoice", reversible=False, requires_authorization=True,
+            writable_fields=(),
+        )
+        for action_id, handler in (page_action_handlers or {}).items():
+            if action_id in builtin_page_actions:
+                raise ValueError(f"不能覆盖内置页面动作：{action_id}")
+            builtin_page_actions[action_id] = handler
+        self.page_actions = PageActionRegistry(
+            handlers=builtin_page_actions,
+            specs=builtin_page_specs,
+        )
+        self.capabilities = CapabilityRegistry({
+            **{
+                key: build_capability_subgraph(self._execute_external)
+                for key in self.external_checks.ids
+            },
+            **{
+                key: build_capability_subgraph(self._execute_rule)
+                for key in self.business_rules.ids
+            },
+            "material_completeness": build_capability_subgraph(self._execute_material),
+        })
         for profile in service.registry.profiles:
-            self.external_checks.validate(profile.external_checks)
-            self.business_rules.validate(profile.rule_groups)
-            unknown_actions = set(profile.page_actions) - {"fill_affiliation_fields"}
-            if unknown_actions:
-                raise ValueError(
-                    f"未注册页面动作：{', '.join(sorted(unknown_actions))}"
-                )
+            self.capabilities.validate(profile.capabilities)
+            self.capabilities.validate_bindings(profile.bindings, profile.capabilities)
+            external_specs = tuple(
+                ExternalCheckSpec(spec.capability_id, "REQUIRED" if spec.required else "WHEN_PRESENT")
+                for spec in profile.capabilities if spec.kind == "EXTERNAL"
+            )
+            rule_ids = tuple(
+                spec.capability_id for spec in profile.capabilities if spec.kind == "RULE"
+            )
+            self.external_checks.validate(external_specs)
+            self.business_rules.validate(rule_ids)
+            self.page_actions.validate(tuple(profile.enabled_page_actions))
             if (
-                set(profile.rule_groups)
+                set(rule_ids)
                 & {"qingdao_replacement_policy", "changchun_replacement_policy"}
                 and profile.replacement_policy is None
             ):
                 raise ValueError("地区政策规则缺少 replacement_policy 配置")
             policy = profile.replacement_policy
-            policy_rules = set(profile.rule_groups) & {
+            policy_rules = set(rule_ids) & {
                 "qingdao_replacement_policy",
                 "changchun_replacement_policy",
             }
@@ -141,22 +207,56 @@ class ReviewWorkflow:
             ):
                 raise ValueError("地区政策的归属、版本或规则标识与 Profile 不一致")
         builder = StateGraph(ReviewState)
-        builder.add_node("validate_context", self._validate_context)
-        builder.add_node("assess_collected_materials", self._assess_collected_materials)
-        builder.add_node("extract_documents", self._extract_documents)
-        builder.add_node("assess_extracted_evidence", self._assess_extracted_evidence)
-        builder.add_node("plan_capabilities", self._plan_capabilities)
-        builder.add_node("run_external_checks", self._run_external_checks)
-        builder.add_node("compare_same_fields", self._compare_same_fields)
-        builder.add_node("run_business_rules", self._run_business_rules)
-        builder.add_node("prepare_review_steps", self._prepare_review_steps)
-        builder.add_node("derive_recommendation", self._derive_recommendation)
-        builder.add_node("build_final_response", self._build_final_response)
+        builder.add_node("resolve_context", self._instrument("resolve_context", self._resolve_context))
+        builder.add_node("validate_input", self._instrument("validate_input", self._validate_input))
+        builder.add_node("build_error_response", self._instrument("build_error_response", self._build_error_response))
+        builder.add_node("assess_coverage", self._instrument("assess_coverage", self._assess_collected_materials))
+        builder.add_node("extract_evidence", self._instrument("extract_evidence", self._extract_documents))
+        builder.add_node("assess_evidence_quality", self._instrument("assess_evidence_quality", self._assess_extracted_evidence))
+        builder.add_node("plan_capabilities", self._instrument("plan_capabilities", self._plan_capabilities))
+        builder.add_node("execute_capabilities", self._instrument("execute_capabilities", self._execute_capabilities))
+        builder.add_node("record_degradation", self._instrument("record_degradation", self._record_degradation))
+        builder.add_node("compare_fields", self._instrument("compare_fields", self._compare_same_fields))
+        builder.add_node("assemble_facts", self._instrument("assemble_facts", self._assemble_facts))
+        builder.add_node("prepare_review_tasks", self._instrument("prepare_review_tasks", self._prepare_review_tasks))
+        builder.add_node("derive_recommendation", self._instrument("derive_recommendation", self._derive_recommendation))
+        builder.add_node("build_response", self._instrument("build_response", self._build_final_response))
         builder.add_edge(START, WORKFLOW_NODE_ORDER[0])
-        for source, target in pairwise(WORKFLOW_NODE_ORDER):
+        builder.add_edge("resolve_context", "validate_input")
+        builder.add_conditional_edges(
+            "validate_input",
+            lambda state: "error" if state.get("validation_error") else "continue",
+            {"error": "build_error_response", "continue": "assess_coverage"},
+        )
+        builder.add_conditional_edges(
+            "execute_capabilities",
+            lambda state: "degraded" if any(
+                item.status in {"BLOCKED", "FAILED", "NOT_CONFIGURED"}
+                for item in state.get("capability_results", [])
+            ) else "continue",
+            {"degraded": "record_degradation", "continue": "compare_fields"},
+        )
+        builder.add_edge("record_degradation", "compare_fields")
+        for source, target in pairwise(WORKFLOW_NODE_ORDER[2:]):
+            if source == "execute_capabilities":
+                continue
             builder.add_edge(source, target)
+        builder.add_edge("build_error_response", END)
         builder.add_edge(WORKFLOW_NODE_ORDER[-1], END)
         self.graph = builder.compile()
+
+    @staticmethod
+    def _instrument(name: str, fn: Callable[..., Any]) -> Callable[..., Any]:
+        async def wrapped(state: ReviewState) -> dict[str, Any]:
+            started = perf_counter()
+            try:
+                result = fn(state)
+                if inspect.isawaitable(result):
+                    result = await result
+                return result
+            finally:
+                logger.info("review node completed node=%s duration_ms=%.1f trace_id=%s", name, (perf_counter() - started) * 1000, state.get("trace_id", ""))
+        return wrapped
 
     @staticmethod
     def _validate_context(state: ReviewState) -> dict[str, Any]:
@@ -171,6 +271,35 @@ class ReviewWorkflow:
         ):
             raise ValueError("请求业务、地区或版本与显式 Profile 不一致")
         return {"request": state["request"], "profile": state["profile"]}
+
+    @staticmethod
+    def _resolve_context(state: ReviewState) -> dict[str, Any]:
+        """Resolve the already selected profile into a stable graph context."""
+        return {"request": state["request"], "profile": state["profile"]}
+
+    @staticmethod
+    def _validate_input(state: ReviewState) -> dict[str, Any]:
+        """Validate request/profile compatibility before any external work."""
+        try:
+            return ReviewWorkflow._validate_context(state)
+        except (ValueError, LookupError) as exc:
+            return {"validation_error": str(exc)}
+
+    @staticmethod
+    def _build_error_response(state: ReviewState) -> dict[str, Any]:
+        message = state.get("validation_error") or "审核请求无效"
+        response = ReviewResponse(
+            business_type=state["request"].business_type,
+            region=state["request"].region,
+            profile_version=state["request"].profile_version,
+            recommendation="REVIEW_REQUIRED",
+            risk_level="HIGH",
+            summary=message,
+            issues=[message],
+            review_tasks=[],
+            trace_id=state.get("trace_id", ""),
+        )
+        return {"response": response, "recommendation": "REVIEW_REQUIRED"}
 
     async def _extract_documents(self, state: ReviewState) -> dict[str, Any]:
         """调用批处理服务提取材料字段，并透传进度回调。"""
@@ -195,7 +324,7 @@ class ReviewWorkflow:
             )
             if hasattr(callback_result, "__await__"):
                 await callback_result
-        return {"material_completeness": report}
+        return {"material_completeness": report, "coverage_status": report.status}
 
     @staticmethod
     async def _assess_extracted_evidence(state: ReviewState) -> dict[str, Any]:
@@ -209,11 +338,28 @@ class ReviewWorkflow:
             callback_result = callback(updated)
             if hasattr(callback_result, "__await__"):
                 await callback_result
-        return {"batch": updated, "material_completeness": report}
+        return {"batch": updated, "material_completeness": report, "coverage_status": report.status}
+
+    @staticmethod
+    def _record_degradation(state: ReviewState) -> dict[str, Any]:
+        reasons = list(state.get("degradation_reasons", []))
+        for result in state.get("capability_results", []):
+            if result.status in {"BLOCKED", "FAILED", "NOT_CONFIGURED"}:
+                reason = f"能力 {result.capability_id} 状态为 {result.status}"
+                if result.limitations:
+                    reason = f"{reason}：{'；'.join(result.limitations)}"
+                if reason not in reasons:
+                    reasons.append(reason)
+        return {"degradation_reasons": reasons}
 
     @staticmethod
     def _plan_capabilities(state: ReviewState) -> dict[str, Any]:
-        return {"capability_plan": plan_capabilities(state["profile"])} 
+        available = {image.business_scope for image in state["request"].images if not image.collection_error}
+        available.update(image.category_hint for image in state["request"].images if not image.collection_error)
+        available.update(document.business_scope for document in state["batch"].recognized_documents)
+        if available & {"scrap_certificate", "registration_certificate", "vehicle_license"}:
+            available.add("old_vehicle")
+        return {"capability_plan": plan_capabilities(state["profile"], available), "capability_results": []}
 
     def _execution_context(self, state: ReviewState) -> ReviewExecutionContext:
         batch = state.get("batch")
@@ -233,7 +379,7 @@ class ReviewWorkflow:
         self,
         context: ReviewExecutionContext,
         spec: ExternalCheckSpec,
-    ) -> tuple[ReviewCheck | QrCheck, ...]:
+    ) -> tuple[CheckResult | QrCheck, ...]:
         checks = await self.service._collect_qr_checks(
             context.request,
             context.batch,
@@ -241,7 +387,7 @@ class ReviewWorkflow:
         )
         if not checks and spec.mode == "REQUIRED":
             return (
-                ReviewCheck(
+                CheckResult(
                     check_id=f"EXTERNAL-{spec.check_id}",
                     label="二维码官网核验",
                     status="INSUFFICIENT",
@@ -250,17 +396,83 @@ class ReviewWorkflow:
             )
         return tuple(checks)
 
-    async def _run_external_checks(self, state: ReviewState) -> dict[str, Any]:
-        """只执行当前 Profile 声明的外部核验。"""
-        results = await self.external_checks.execute(
-            state["profile"].external_checks,
-            self._execution_context(state),
+    async def _execute_external(self, context: ReviewExecutionContext, spec: CapabilitySpec) -> CapabilityResult:
+        results = await self.external_checks.execute((ExternalCheckSpec(spec.capability_id, "REQUIRED" if spec.required else "WHEN_PRESENT"),), context)
+        qr = [item for item in results if isinstance(item, QrCheck)]
+        checks = [item for item in results if isinstance(item, CheckResult)]
+        checks.extend(qr_review_checks(qr, context.request.images))
+        return CapabilityResult(capability_id=spec.capability_id, status="SUCCEEDED", checks=checks, qr_checks=qr)
+
+    async def _execute_rule(self, context: ReviewExecutionContext, spec: CapabilitySpec) -> CapabilityResult:
+        result = self.business_rules.execute((spec.capability_id,), context)
+        return CapabilityResult(capability_id=spec.capability_id, status="SUCCEEDED", checks=list(result.checks), page_actions=list(result.page_action_candidates))
+
+    async def _execute_material(self, context: ReviewExecutionContext, spec: CapabilitySpec) -> CapabilityResult:
+        report = context.batch.material_completeness
+        return CapabilityResult(capability_id=spec.capability_id, status="SUCCEEDED", checks=[CheckResult(
+            check_id="MATERIAL-COMPLETENESS", label="材料完整性", status="MATCH" if report and report.status == "COMPLETE" else "INSUFFICIENT",
+            reason="材料完整" if report and report.status == "COMPLETE" else "材料缺失或存在不确定证据",
+        )])
+
+    async def _execute_stage(
+        self,
+        state: ReviewState,
+        stages: set[str],
+    ) -> dict[str, Any]:
+        """Execute all Profile capabilities for the requested lifecycle stages."""
+        context = self._execution_context(state)
+        capability_plan = state.get("capability_plan")
+        if capability_plan is None:
+            available = {
+                image.business_scope
+                for image in state["request"].images
+                if not image.collection_error
+            }
+            available.update(
+                document.business_scope
+                for document in context.batch.recognized_documents
+            )
+            capability_plan = plan_capabilities(state["profile"], available)
+        plans = {item.capability_id: item for item in capability_plan}
+        bindings = {binding.capability_id: binding for binding in context.profile.bindings}
+        specs = []
+        for spec in context.profile.capabilities:
+            if spec.stage not in stages:
+                continue
+            binding = bindings.get(spec.capability_id)
+            if binding is not None and binding.required is not None:
+                spec = replace(spec, required=binding.required)
+            specs.append(spec)
+        external_ids = {spec.capability_id for spec in specs if spec.kind == "EXTERNAL"}
+        results = [
+            await self.capabilities.execute(spec, plans[spec.capability_id], context)
+            for spec in specs
+        ]
+        return {
+            "capability_results": results,
+            "qr_checks": [check for item in results for check in item.qr_checks],
+            "external_results": unique_checks(
+                check for item in results if item.capability_id in external_ids
+                for check in item.checks
+            ),
+            "cross_checks": [
+                check for item in results for check in item.checks
+                if item.capability_id not in external_ids
+            ],
+            "page_fill_intent": [
+                action for item in results for action in item.page_actions
+            ],
+        }
+
+    async def _execute_capabilities(self, state: ReviewState) -> dict[str, Any]:
+        """Execute capabilities by stage through the single registry entrypoint."""
+        staged = await self._execute_stage(
+            state,
+            {"INPUT_COVERAGE", "EVIDENCE", "PRE_COMPARE"},
         )
         return {
-            "qr_checks": [item for item in results if isinstance(item, QrCheck)],
-            "external_results": unique_checks(
-                item for item in results if isinstance(item, ReviewCheck)
-            ),
+            **staged,
+            "capability_results": list(staged.get("capability_results", [])),
         }
 
     def _compare_same_fields(self, state: ReviewState) -> dict[str, Any]:
@@ -288,6 +500,33 @@ class ReviewWorkflow:
                     *qr_review_checks(response.qr_checks, state["request"].images),
                 ]
             ),
+        }
+
+    async def _assemble_facts(self, state: ReviewState) -> dict[str, Any]:
+        """Run post-compare capabilities and close the fact/evidence graph."""
+        rules = await self._execute_stage(state, {"POST_COMPARE", "FINAL_REVIEW"})
+        response = state.get("response")
+        facts = [fact for comparison in response.comparisons for fact in comparison.evidence] if response else []
+        return {
+            **rules,
+            "qr_checks": [*state.get("qr_checks", []), *rules.get("qr_checks", [])],
+            "external_results": unique_checks([
+                *state.get("external_results", []),
+                *rules.get("external_results", []),
+            ]),
+            "cross_checks": unique_checks([
+                *state.get("cross_checks", []),
+                *rules.get("cross_checks", []),
+            ]),
+            "page_fill_intent": [
+                *state.get("page_fill_intent", []),
+                *rules.get("page_fill_intent", []),
+            ],
+            "evidence_facts": facts,
+            "capability_results": [
+                *state.get("capability_results", []),
+                *rules.get("capability_results", []),
+            ],
         }
 
     @staticmethod
@@ -325,28 +564,18 @@ class ReviewWorkflow:
             page_action_candidates=(
                 result.page_actions
                 if result.check.status == "MATCH"
-                and all(check.status == "MATCH" for check in auxiliary_checks)
+                and {
+                    action.field for action in result.page_actions
+                } == {"old_vehicle.affiliation", "new_vehicle.affiliation"}
+                and len(result.page_actions) == 2
+                and len({action.owner_type for action in result.page_actions}) == 1
+                and {action.owner_type for action in result.page_actions} <= {"PERSONAL", "COMPANY"}
                 else ()
             ),
         )
 
-    def _run_business_rules(self, state: ReviewState) -> dict[str, Any]:
-        result = self.business_rules.execute(
-            state["profile"].rule_groups,
-            self._execution_context(state),
-        )
-        allowed_actions = (
-            list(result.page_action_candidates)
-            if "fill_affiliation_fields" in state["profile"].page_actions
-            else []
-        )
-        return {
-            "cross_checks": list(result.checks),
-            "page_fill_intent": allowed_actions,
-        }
-
     @staticmethod
-    def _prepare_review_steps(state: ReviewState) -> dict[str, Any]:
+    def _prepare_review_tasks(state: ReviewState) -> dict[str, Any]:
         """读取工作流状态，把步骤路由委托给集中路由模块。"""
 
         response = state.get("response")
@@ -354,14 +583,17 @@ class ReviewWorkflow:
             raise RuntimeError("工作流状态缺少同字段比对结果")
         batch = state.get("batch")
         return {
-            "review_steps": build_review_steps(
+            "review_tasks": build_review_tasks(
                 request=state["request"],
                 profile=state["profile"],
                 comparisons=list(response.comparisons),
                 external_checks=list(state.get("external_results", [])),
                 business_checks=list(state.get("cross_checks", [])),
                 completeness=state.get("material_completeness"),
-                limitations=list(batch.limitations if batch else []),
+                limitations=[
+                    *(batch.limitations if batch else []),
+                    *state.get("degradation_reasons", []),
+                ],
             )
         }
 
@@ -386,7 +618,7 @@ class ReviewWorkflow:
             business_checks=cross_checks,
             external_checks=state.get("external_results", []),
             page_actions=state.get("page_fill_intent", []),
-            review_steps=state.get("review_steps", []),
+            review_tasks=state.get("review_tasks", []),
         )
         return {
             "response": assembled,
@@ -409,7 +641,29 @@ class ReviewWorkflow:
             raise RuntimeError("工作流状态缺少最终建议详情")
         if cross_checks is None:
             raise RuntimeError("工作流状态缺少跨材料比对结果")
-        return {"response": current_response}
+        facts = list(state.get("evidence_facts", [])) or [
+            fact for comparison in current_response.comparisons for fact in comparison.evidence
+        ]
+        return {"response": current_response.model_copy(update={
+            "trace_id": state.get("trace_id", current_response.trace_id),
+            "capability_plan": [CapabilityPlanEntry(
+                capability_id=item.capability_id,
+                status=item.status,
+                stage=item.stage,
+                reason=item.reason,
+                dependencies=list(item.dependencies),
+                missing_dependencies=list(item.missing_dependencies),
+            ) for item in state.get("capability_plan", ())],
+            "capability_results": state.get("capability_results", []),
+            "evidence_facts": facts,
+            "issues": [
+                *current_response.issues,
+                *[
+                    reason for reason in state.get("degradation_reasons", [])
+                    if reason not in current_response.issues
+                ],
+            ],
+        })}
 
     async def run(
         self,
@@ -426,11 +680,17 @@ class ReviewWorkflow:
             "request": request,
             "profile": resolved_profile,
             "batch_callback": batch_callback,
+            "trace_id": request.trace_id or uuid4().hex,
         }
+        logger.info("review workflow started trace_id=%s profile=%s", initial_state["trace_id"], resolved_profile.version)
         state = await self.graph.ainvoke(initial_state)
         response = state.get("response")
         batch = state.get("batch")
-        if response is None or batch is None:
+        if response is None:
             raise RuntimeError("工作流未生成完整审核结果")
+        if batch is None:
+            # Validation/error branches terminate before document extraction;
+            # return a typed empty batch together with the structured response.
+            batch = AgentBatchResult(total_count=len(request.images))
         return response, batch
 

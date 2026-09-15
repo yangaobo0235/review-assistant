@@ -3,7 +3,8 @@
 import re
 from dataclasses import dataclass
 
-from app.agent.models import ReviewCheck, ReviewCheckValue
+from app.agent.models import CheckResult
+from app.models.checks import CheckResultValue
 from app.models.review import FieldObservation, PageFillAction
 from app.rules.evidence_values import observation_evidence, readable_value
 from app.rules.normalize import normalize_value
@@ -34,7 +35,7 @@ class IdentityCardEvidence:
 
 @dataclass(frozen=True)
 class AffiliationCheckResult:
-    check: ReviewCheck
+    check: CheckResult
     owner_types: tuple[str | None, str | None]
     page_actions: tuple[PageFillAction, ...] = ()
 
@@ -162,22 +163,22 @@ def _auxiliary_check(
     field: str,
     page_source: str,
     material_source: str,
-) -> ReviewCheck:
+) -> CheckResult:
     values = [
-        ReviewCheckValue(source=page_source, value=page_value),
-        ReviewCheckValue(source=material_source, value=material_value),
+        CheckResultValue(source=page_source, value=page_value),
+        CheckResultValue(source=material_source, value=material_value),
     ]
     normalized_page = normalize_value(field, page_value)
     normalized_material = normalize_value(field, material_value)
     if not normalized_page or not normalized_material:
-        return ReviewCheck(
+        return CheckResult(
             check_id=check_id,
             label=label,
             status="INSUFFICIENT",
             reason="页面或材料未取得可比较的明确值",
             values=values,
         )
-    return ReviewCheck(
+    return CheckResult(
         check_id=check_id,
         label=label,
         status="MATCH" if normalized_page == normalized_material else "CONFLICT",
@@ -206,7 +207,7 @@ def build_affiliation_auxiliary_checks(
     page_fields: dict[str, object],
     new_owner_type: str | None,
     new_owner: object | None,
-) -> tuple[ReviewCheck, ...]:
+) -> tuple[CheckResult, ...]:
     """Check customer identity; vehicle VINs are independent field reviews."""
 
     _ = new_owner_type
@@ -237,10 +238,10 @@ def build_affiliation_subject_check(
     declared_new_type = normalize_page_owner_type(page_owner_type)
     new_type = declared_new_type or inferred_new_type
     values = [
-        ReviewCheckValue(source="旧车所有人", value=old_owner),
-        ReviewCheckValue(source="新车所有人", value=new_owner),
-        ReviewCheckValue(source="旧车主体类型", value=old_type),
-        ReviewCheckValue(source="新车主体类型", value=new_type),
+        CheckResultValue(source="旧车所有人", value=old_owner),
+        CheckResultValue(source="新车所有人", value=new_owner),
+        CheckResultValue(source="旧车主体类型", value=old_type),
+        CheckResultValue(source="新车主体类型", value=new_type),
     ]
     relevant_license_sources = {
         item.source_id
@@ -501,7 +502,7 @@ def build_affiliation_subject_check(
             _action("new_vehicle.affiliation", "新车挂靠", new_type),
         )
     return AffiliationCheckResult(
-        check=ReviewCheck(
+        check=CheckResult(
             check_id="AFFILIATION-SUBJECT-001",
             label="新旧车挂靠主体关系",
             status=status,

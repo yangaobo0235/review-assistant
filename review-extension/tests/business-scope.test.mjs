@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewBusinessScope } from "../src/browser/business-scope.ts";
 
 function loadBusinessScope() {
-  const source = readFileSync(new URL("../public/business-scope.js", import.meta.url), "utf8");
-  const context = { globalThis: {} };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewBusinessScope;
+  return ReviewBusinessScope;
 }
 
 test("assigns old and new images from page order with independent group numbering", () => {
@@ -44,7 +40,7 @@ test("recognizes identity headings as conditional review evidence and ignores co
   assert.equal(scopeForLabel("报废车辆资料 新车资料"), null);
 });
 
-test("assigns transfer documents to an isolated transfer scope", () => {
+test("does not infer a retired transfer scope", () => {
   const assigned = loadBusinessScope().assign([
     { kind: "label", text: "过户资料" },
     { kind: "image", index: 2 },
@@ -52,8 +48,8 @@ test("assigns transfer documents to an isolated transfer scope", () => {
   ]);
 
   assert.deepEqual(Array.from(assigned, (item) => ({ ...item })), [
-    { index: 2, businessScope: "transfer", groupTitle: "过户资料", groupOrder: 1, imageId: "transfer-01" },
-    { index: 3, businessScope: "transfer", groupTitle: "过户资料", groupOrder: 2, imageId: "transfer-02" },
+    { index: 2, businessScope: "unknown", groupTitle: "未分类资料", groupOrder: 1, imageId: "unknown-01" },
+    { index: 3, businessScope: "unknown", groupTitle: "未分类资料", groupOrder: 2, imageId: "unknown-02" },
   ]);
 });
 

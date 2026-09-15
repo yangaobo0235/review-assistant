@@ -42,3 +42,7 @@ class BusinessRuleRegistry:
         missing = [item for item in rule_group_ids if item not in self._handlers]
         if missing:
             raise UnknownBusinessRule(f"未注册业务规则：{', '.join(missing)}")
+
+    @property
+    def ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._handlers))

@@ -5,7 +5,7 @@ const FIELD_WORKBENCH_PROFILES: ReadonlySet<string> = new Set([
   "scrap_replacement|changchun|1.0",
 ]);
 
-/** Only the approved Qingdao/Changchun scrap profiles use the evidence workbench. */
+/** Only the approved Qingdao/Changchun scrap profiles use the EvidenceFact workbench. */
 export function isFieldFirstProfile(
   review: Pick<ReviewResponse, "business_type" | "region" | "profile_version">,
 ): boolean {

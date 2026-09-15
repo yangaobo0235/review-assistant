@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from app.agent.models import ReviewCheck
+from app.agent.models import CheckResult
 from app.models.review import QrCheck
 from app.rules.capabilities import (
     ExternalCheckHandler,
@@ -24,7 +24,7 @@ class ExternalCheckRegistry:
         self,
         specs: tuple[ExternalCheckSpec, ...],
         context: ReviewExecutionContext,
-    ) -> tuple[ReviewCheck | QrCheck, ...]:
+    ) -> tuple[CheckResult | QrCheck, ...]:
         results = []
         for spec in dict.fromkeys(specs):
             handler = self._handlers.get(spec.check_id)
@@ -39,3 +39,7 @@ class ExternalCheckRegistry:
         ]
         if missing:
             raise UnknownExternalCheck(f"未注册外部核验：{', '.join(missing)}")
+
+    @property
+    def ids(self) -> tuple[str, ...]:
+        return tuple(sorted(self._handlers))

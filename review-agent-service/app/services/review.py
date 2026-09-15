@@ -9,6 +9,7 @@ import asyncio
 import inspect
 from collections.abc import Callable, Mapping
 from typing import Any
+from uuid import uuid4
 
 from app.agent.config import load_qwen_config
 from app.agent.models import AgentBatchResult, MaterialCompletenessReport
@@ -18,9 +19,11 @@ from app.agent.workflow import ReviewWorkflow
 from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
 from app.businesses.registry import BusinessRegistry, build_business_registry
+from app.capabilities.page_actions import PageActionHandler
 from app.models.review import (
     FieldObservation,
     FieldStatus,
+    PageActionIntent,
     QrCheck,
     ReviewRequest,
     ReviewResponse,
@@ -48,6 +51,7 @@ class ReviewService:
         registry: BusinessRegistry | None = None,
         external_check_handlers: Mapping[str, ExternalCheckHandler] | None = None,
         business_rule_handlers: Mapping[str, BusinessRuleHandler] | None = None,
+        page_action_handlers: Mapping[str, PageActionHandler] | None = None,
     ) -> None:
         self.ocr = ocr or MockOcrTool()
         self.vision = vision or MockVisionTool()
@@ -60,6 +64,7 @@ class ReviewService:
             self,
             external_check_handlers=external_check_handlers,
             business_rule_handlers=business_rule_handlers,
+            page_action_handlers=page_action_handlers,
         )
 
     def assist(self, request: ReviewRequest) -> ReviewResponse:
@@ -72,6 +77,8 @@ class ReviewService:
     ) -> ReviewResponse:
         """解析业务配置并执行审核；未配置规则时安全降级。"""
 
+        if not request.trace_id:
+            request = request.model_copy(update={"trace_id": uuid4().hex})
         profile = self.resolve_profile(request)
 
         async def handle_agent_progress(batch: AgentBatchResult) -> None:
@@ -214,7 +221,7 @@ class ReviewService:
                         )
                     )
 
-        return build_review_response(
+        response = build_review_response(
             request,
             batch,
             resolved_profile,
@@ -225,6 +232,19 @@ class ReviewService:
             page_fill_intent,
             defer_advice,
         )
+        # Page side effects are proposed by the backend protocol. The browser
+        # adapter decides whether and how to execute them.
+        if any(
+            item.field == "invoice.invoice_no" and item.status is FieldStatus.MATCH
+            for item in response.comparisons
+        ):
+            response = response.model_copy(update={
+                "page_actions": [
+                    *response.page_actions,
+                    PageActionIntent(action_id="verify_invoice", payload={"field": "invoice.invoice_no"}),
+                ],
+            })
+        return response
 
     @staticmethod
     def _build_unconfigured_response(

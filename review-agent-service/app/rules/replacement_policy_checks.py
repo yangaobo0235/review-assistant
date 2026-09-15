@@ -2,8 +2,9 @@
 
 from datetime import date
 
-from app.agent.models import ReviewCheck, ReviewCheckValue
+from app.agent.models import CheckResult
 from app.businesses.replacement_policies import ReplacementPolicy
+from app.models.checks import CheckResultValue
 from app.models.review import FieldObservation
 from app.rules.evidence_values import observation_evidence, readable_value
 from app.rules.normalize import normalize_value
@@ -54,11 +55,11 @@ def _date_check(
     lower: date | None,
     upper: date,
     evidence: list[dict],
-) -> ReviewCheck:
+) -> CheckResult:
     parsed = _parse_date(field, raw_value)
-    values = [ReviewCheckValue(source=label, value=raw_value)]
+    values = [CheckResultValue(source=label, value=raw_value)]
     if parsed is None:
-        return ReviewCheck(
+        return CheckResult(
             check_id=check_id,
             label=label,
             status="INSUFFICIENT",
@@ -72,7 +73,7 @@ def _date_check(
         if lower
         else f"不晚于 {upper.isoformat()}"
     )
-    return ReviewCheck(
+    return CheckResult(
         check_id=check_id,
         label=label,
         status="MATCH" if matches else "CONFLICT",
@@ -85,7 +86,7 @@ def _date_check(
 def build_replacement_policy_checks(
     policy: ReplacementPolicy,
     observations: list[FieldObservation],
-) -> list[ReviewCheck]:
+) -> list[CheckResult]:
     invoice_date, invoice_evidence = _image_value(
         observations, "invoice.invoice_date", "invoice", "new_vehicle"
     )
@@ -137,15 +138,15 @@ def build_replacement_policy_checks(
         status = "CONFLICT"
         reason = f"新车销售发票产地不符合当前地区规则（{rule_description}）"
     checks.append(
-        ReviewCheck(
+        CheckResult(
             check_id="POLICY-NEW-ORIGIN",
             label="新车发票产地",
             status=status,
             reason=reason,
             values=[
-                ReviewCheckValue.model_validate({**item, "source": "新车销售发票"})
+                CheckResultValue.model_validate({**item, "source": "新车销售发票"})
                 for item in origin_evidence
-            ] or [ReviewCheckValue(source="新车销售发票", value=origin)],
+            ] or [CheckResultValue(source="新车销售发票", value=origin)],
             evidence=origin_evidence,
         )
     )

@@ -3,8 +3,8 @@ import test from "node:test";
 
 import {
   clearPageReviewMarkers,
-  completePageReviewStep,
-  showPageReviewStep,
+  completePageReviewTask,
+  showPageReviewTask,
   subscribePageReviewDecisions,
 } from "../src/pageReviewClient.ts";
 
@@ -75,10 +75,10 @@ const decisionEvent = (overrides = {}) => ({
   ...overrides,
 });
 
-test("showPageReviewStep sends the step with the full collected identity", async () => {
+test("showPageReviewTask sends the step with the full collected identity", async () => {
   const { api, sent } = makeChromeApi();
 
-  const result = await showPageReviewStep(step, pageData, api);
+  const result = await showPageReviewTask(step, pageData, api);
 
   assert.equal(result.ok, true);
   assert.equal(sent.length, 1);
@@ -94,10 +94,10 @@ test("showPageReviewStep sends the step with the full collected identity", async
   assert.equal(sent[0].message.step, step);
 });
 
-test("completePageReviewStep sends the step id with the same identity", async () => {
+test("completePageReviewTask sends the step id with the same identity", async () => {
   const { api, sent } = makeChromeApi();
 
-  await completePageReviewStep(step.step_id, pageData, api);
+  await completePageReviewTask(step.step_id, pageData, api);
 
   assert.deepEqual(sent[0].message, {
     type: "COMPLETE_REVIEW_FIELD_STEP",
@@ -122,8 +122,8 @@ test("content script refusals are surfaced to the caller untouched", async () =>
   const refusal = { ok: false, error: "页面已变化，请重新审核" };
   const { api } = makeChromeApi(refusal);
 
-  assert.deepEqual(await showPageReviewStep(step, pageData, api), refusal);
-  assert.deepEqual(await completePageReviewStep(step.step_id, pageData, api), refusal);
+  assert.deepEqual(await showPageReviewTask(step, pageData, api), refusal);
+  assert.deepEqual(await completePageReviewTask(step.step_id, pageData, api), refusal);
   assert.deepEqual(await clearPageReviewMarkers(pageData, api), refusal);
 });
 
@@ -137,13 +137,13 @@ test("an incomplete collected identity is refused before any message is sent", a
     { ...pageData, pageUrl: "" },
     { ...pageData, sourceTabId: undefined },
   ]) {
-    const shown = await showPageReviewStep(step, broken, api);
+    const shown = await showPageReviewTask(step, broken, api);
     assert.equal(shown.ok, false);
     assert.match(shown.error, /标识不完整|重新审核/);
   }
   assert.equal(sent.length, 0);
 
-  const completed = await completePageReviewStep("", pageData, api);
+  const completed = await completePageReviewTask("", pageData, api);
   assert.equal(completed.ok, false);
   assert.equal(sent.length, 0);
 });

@@ -1,8 +1,9 @@
 import pytest
 
-from app.agent.models import ReviewCheck, ReviewCheckValue
+from app.agent.models import CheckResult
 from app.businesses.profiles import BusinessProfile
 from app.businesses.registry import BusinessRegistry
+from app.models.checks import CheckResultValue
 from app.models.review import BusinessType, Region, ReviewRequest
 from app.rules.business_rule_registry import UnknownBusinessRule
 from app.rules.capabilities import RuleExecutionResult
@@ -35,12 +36,12 @@ async def test_injected_single_field_rule_runs_through_the_unchanged_graph(
         calls.append(actual)
         return RuleExecutionResult(
             checks=(
-                ReviewCheck(
+                CheckResult(
                     check_id="SINGLE-FIELD-001",
                     label="测试字段核验",
                     status="MATCH" if actual == "confirmed" else "CONFLICT",
                     reason="测试字段必须明确确认",
-                    values=[ReviewCheckValue(source="测试页面字段", value=actual)],
+                    values=[CheckResultValue(source="测试页面字段", value=actual)],
                 ),
             )
         )
@@ -62,7 +63,7 @@ async def test_injected_single_field_rule_runs_through_the_unchanged_graph(
     )
 
     assert calls == [value]
-    assert [(step.step_id, step.category, step.result_status) for step in response.review_steps] == [
+    assert [(step.step_id, step.category, step.result_status) for step in response.review_tasks] == [
         ("BUSINESS-SINGLE-FIELD-001", "BUSINESS_RULE", status)
     ]
     assert [check.check_id for check in response.cross_checks] == ["SINGLE-FIELD-001"]
@@ -90,7 +91,7 @@ async def test_profile_without_material_or_field_requirements_has_no_missing_inp
         registry=BusinessRegistry((single_field_profile(),)),
         business_rule_handlers={
             "single_field_test": lambda _: RuleExecutionResult(
-                checks=(ReviewCheck(check_id="READY", label="配置核验", status="MATCH", reason="配置满足"),)
+                checks=(CheckResult(check_id="READY", label="配置核验", status="MATCH", reason="配置满足"),)
             )
         },
     )

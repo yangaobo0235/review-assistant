@@ -1,37 +1,64 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import vm from "node:vm";
+import ts from "typescript";
+const require = createRequire(import.meta.url);
 
 const manifest = JSON.parse(
   readFileSync(new URL("../public/manifest.json", import.meta.url), "utf8"),
 );
 const contentSource = readFileSync(
-  new URL("../public/content.js", import.meta.url),
+  new URL("../src/browser/content.ts", import.meta.url),
   "utf8",
 );
+
+function runContent(context) {
+  const cache = new Map();
+  const load = (file) => {
+    const absolute = path.resolve(file);
+    if (cache.has(absolute)) return cache.get(absolute).exports;
+    const module = { exports: {} };
+    cache.set(absolute, module);
+    const output = ts.transpileModule(readFileSync(absolute, "utf8"), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const localRequire = (specifier) => {
+      if (!specifier.startsWith(".")) return require(specifier);
+      const injected = {
+        "./business-detector.ts": "ReviewBusinessDetector",
+        "./business-scope.ts": "ReviewBusinessScope",
+        "./image-candidates.ts": "ReviewImageCandidates",
+        "./image-focus.ts": "ReviewImageFocus",
+        "./image-normalization.ts": "ReviewImageNormalization",
+        "./page-field-collector.ts": "ReviewPageFieldCollector",
+        "./page-field-writer.ts": "ReviewPageFieldWriter",
+      }[specifier];
+      if (injected && context.globalThis?.[injected]) return { [injected]: context.globalThis[injected] };
+      let target = path.resolve(path.dirname(absolute), specifier);
+      if (!path.extname(target)) target = [".ts", ".tsx", ".js"].map((ext) => target + ext).find(existsSync);
+      return load(target);
+    };
+    vm.runInNewContext(output, { ...context, module, exports: module.exports, require: localRequire }, { filename: absolute });
+    return module.exports;
+  };
+  load(fileURLToPath(new URL("../src/browser/content.ts", import.meta.url)));
+}
 
 test("loads the page field collector before the content script", () => {
   const scripts = manifest.content_scripts[0].js;
 
-  assert.ok(scripts.indexOf("page-field-collector.js") >= 0);
-  assert.ok(
-    scripts.indexOf("page-field-collector.js") < scripts.indexOf("content.js"),
-  );
+  assert.deepEqual(scripts, ["content.js"]);
 });
 
 test("does not load the retired host-page review marker", () => {
   const scripts = manifest.content_scripts[0].js;
   assert.equal(scripts.includes("page-review-marker.js"), false);
   assert.deepEqual(scripts, [
-    "business-detector.js",
-    "page-field-collector.js",
-    "field-matcher.js",
-    "business-scope.js",
-    "image-candidates.js",
-    "image-focus.js",
-    "image-normalization.js",
-    "page-field-writer.js",
     "content.js",
   ]);
 });
@@ -105,7 +132,7 @@ test("content script sends field target snapshots without DOM elements", async (
       ReviewImageCandidates: { select() { return { selected: [], scannedCount: 0, overflow: false }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
 
   handler({ type: "COLLECT_PAGE_DATA" }, null, (response) => responses.push(response));
@@ -133,7 +160,7 @@ test("content script rejects a mismatched page identity before calling the write
       ReviewPageFieldCollector: { collect() { return { pageFields: {} }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
 
   const asynchronous = handler({
@@ -164,7 +191,7 @@ test("content script rejects a same-URL SPA record change by page fingerprint", 
       ReviewPageFieldCollector: { collect() { return { pageFields: currentFields }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
 
   handler({
@@ -194,7 +221,7 @@ test("content script rejects an owner-only page fingerprint before writer execut
       ReviewPageFieldCollector: { collect() { return { pageFields: fields }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
 
   handler({
@@ -224,7 +251,7 @@ test("content script rejects image focus when the same URL now represents anothe
       ReviewImageFocus: { focus() { focusCalls += 1; return { ok: true }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
 
   handler({
@@ -254,7 +281,7 @@ test("content script rejects image focus without the active collection token", (
       ReviewImageFocus: { focus() { focusCalls += 1; return { ok: true }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
 
   handler({
@@ -303,7 +330,7 @@ test("content keeps image focus bound to the latest completed collection token",
       ReviewImageFocus: { focus() { focusCalls += 1; return { ok: true }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const responses = [];
   const collect = () => handler({ type: "COLLECT_PAGE_DATA" }, null, (response) => responses.push(response));
 
@@ -386,7 +413,7 @@ test("content rejects a mapped image when its source changes after collection", 
       ReviewImageFocus: { focus(node) { node.click(); return { ok: true }; } },
     },
   };
-  vm.runInNewContext(contentSource, context);
+  runContent(context);
   const collected = [];
   handler({ type: "COLLECT_PAGE_DATA" }, null, (response) => collected.push(response));
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -418,7 +445,7 @@ test("manifest grants access to the production review host", () => {
 
 test("collector scans every valid contenteditable form", () => {
   const collectorSource = readFileSync(
-    new URL("../public/page-field-collector.js", import.meta.url),
+    new URL("../src/browser/page-field-collector.ts", import.meta.url),
     "utf8",
   );
 

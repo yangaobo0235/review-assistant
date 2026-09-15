@@ -185,7 +185,7 @@ def test_subject_evidence_keeps_owners_and_relevant_license_sources_only():
     result = build_affiliation_subject_check(
         "甲运输有限公司", "乙运输有限公司", observations
     )
-    assert {e["source_id"] for e in result.check.evidence} == {
+    assert {e.source_id for e in result.check.evidence} == {
         "old-image",
         "new-image",
         "license-a",

@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewImageFocus } from "../src/browser/image-focus.ts";
 
 function loadImageFocus() {
-  const source = readFileSync(new URL("../public/image-focus.js", import.meta.url), "utf8");
-  const context = { globalThis: {} };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewImageFocus;
+  return ReviewImageFocus;
 }
 
 test("scrolls to, highlights, and opens the collected image", () => {

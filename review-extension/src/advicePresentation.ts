@@ -5,9 +5,9 @@
  * 修改人：wuyi
  */
 
-import type { Recommendation, ReviewCheck, ReviewCheckStatus } from "./types/review";
+import type { Recommendation, CheckResult, CheckResultStatus } from "./types/review";
 
-export function checkStatusLabel(status: ReviewCheckStatus): string {
+export function checkStatusLabel(status: CheckResultStatus): string {
   return { MATCH: "满足", CONFLICT: "不满足", INSUFFICIENT: "无法校验" }[status];
 }
 
@@ -28,7 +28,7 @@ export function confidenceLabel(confidence: number | null | undefined): string |
 
 export function orderedCrossChecks(
   _businessType: string,
-  checks: ReviewCheck[],
-): ReviewCheck[] {
+  checks: CheckResult[],
+): CheckResult[] {
   return checks;
 }

@@ -5,7 +5,7 @@
  * 修改人：wuyi
  */
 
-import type { Evidence } from "./types/review";
+import type { EvidenceFact } from "./types/review";
 
 export interface EvidenceHighlightPlan {
   compareTo?: string;
@@ -14,7 +14,7 @@ export interface EvidenceHighlightPlan {
 
 /** 为每条证据生成多数基准、双向比较或整体冲突的展示计划。 */
 export function evidenceHighlightPlans(
-  evidence: Evidence[],
+  evidence: EvidenceFact[],
 ): EvidenceHighlightPlan[] {
   const valid = evidence
     .map((item, index) => ({ item, index, value: String(item.value ?? "") }))
@@ -47,9 +47,9 @@ export function evidenceHighlightPlans(
 }
 
 export function comparisonEvidence(
-  evidence: Evidence[],
+  evidence: EvidenceFact[],
   pageValue: string | number | null | undefined,
-): Evidence[] {
+): EvidenceFact[] {
   const valid = evidence.filter(
     (item) => item.value != null && String(item.value).trim(),
   );
@@ -57,7 +57,7 @@ export function comparisonEvidence(
   const imageEvidence = valid
     .filter((item) => !pageSources.has(item.source))
     .sort((left, right) => {
-      const priority = (item: Evidence) =>
+      const priority = (item: EvidenceFact) =>
         item.document_type === "invoice" ? 0
           : item.document_type === "registration_certificate" ? 1
             : 2;
@@ -77,7 +77,7 @@ export function comparisonEvidence(
   ];
 }
 
-export function evidencePresentation(evidence: Pick<Evidence, "source" | "value" | "document_type" | "business_scope" | "group_order">) {
+export function evidencePresentation(evidence: Pick<EvidenceFact, "source" | "value" | "document_type" | "business_scope" | "group_order">) {
   const value = String(evidence.value);
   if (evidence.source === "页面右侧字段" || evidence.source === "申请页面字段") {
     return { kind: "page" as const, label: "申请页面", value };

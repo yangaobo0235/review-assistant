@@ -4,10 +4,10 @@ import pytest
 
 from app.agent.models import (
     AgentBatchResult,
+    CheckResult,
     MaterialCompletenessIssue,
     MaterialCompletenessReport,
     RecognizedDocument,
-    ReviewCheck,
 )
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
 from app.businesses.registry import BusinessRegistry
@@ -50,7 +50,7 @@ async def test_external_mode_controls_missing_material(mode, expected):
     response, _ = await service.workflow.run(request_for(profile), profile)
     assert [
         step.result_status
-        for step in response.review_steps
+        for step in response.review_tasks
         if step.category == "EXTERNAL"
     ] == expected
     assert [
@@ -100,7 +100,7 @@ def test_partial_response_never_runs_retired_owner_or_same_year_checks():
 
 
 def test_duplicate_checks_count_once_and_keep_failure_over_match():
-    duplicate = ReviewCheck(
+    duplicate = CheckResult(
         check_id="DUP", label="重复检查", status="CONFLICT", reason="证据冲突"
     )
     _, advice = build_final_advice(
@@ -147,11 +147,11 @@ async def test_profiles_without_capabilities_do_not_gain_scrap_steps(
         item.check_id.startswith(("POLICY", "AFFILIATION", "QR"))
         for item in response.cross_checks + response.agent_advice.findings
     )
-    assert not any(step.category == "EXTERNAL" for step in response.review_steps)
-    assert any(step.reason == "图片识别超时" for step in response.review_steps)
+    assert not any(step.category == "EXTERNAL" for step in response.review_tasks)
+    assert any(step.reason == "图片识别超时" for step in response.review_tasks)
     assert all(
         "." not in step.label
-        for step in response.review_steps
+        for step in response.review_tasks
         if step.category == "FIELD"
     )
 
@@ -269,7 +269,7 @@ async def test_full_graph_marks_uncertain_representative_insufficient_and_keeps_
     assert checks["POLICY-NEW-ORIGIN"].status == ("INSUFFICIENT" if uncertain else "CONFLICT")
     assert bool(response.page_fill_intent) == (not uncertain)
     subject_step = next(
-        step for step in response.review_steps if "AFFILIATION-SUBJECT" in step.step_id
+        step for step in response.review_tasks if "AFFILIATION-SUBJECT" in step.step_id
     )
     assert {e.source_id for e in subject_step.evidence} >= {"old", "new", "a", "b"}
 
@@ -287,7 +287,7 @@ async def test_plain_external_review_check_survives_entire_graph_without_qr_assu
 
     async def handler(context, spec):
         return (
-            ReviewCheck(
+            CheckResult(
                 check_id="CUSTOM-1",
                 label="外部凭证核验",
                 status="INSUFFICIENT",
@@ -303,7 +303,7 @@ async def test_plain_external_review_check_survives_entire_graph_without_qr_assu
     assert response.qr_checks == []
     assert [
         (step.label, step.result_status)
-        for step in response.review_steps
+        for step in response.review_tasks
         if step.category == "EXTERNAL"
     ] == [("外部凭证核验", "INSUFFICIENT")]
     assert [
@@ -314,7 +314,7 @@ async def test_plain_external_review_check_survives_entire_graph_without_qr_assu
 
 
 def test_duplicate_rule_groups_and_ids_produce_single_check():
-    check = ReviewCheck(check_id="DUP", label="检查", status="MATCH", reason="满足")
+    check = CheckResult(check_id="DUP", label="检查", status="MATCH", reason="满足")
     registry = BusinessRuleRegistry(
         {
             "one": lambda _: RuleExecutionResult(checks=(check, check)),

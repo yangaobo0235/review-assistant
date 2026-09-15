@@ -94,7 +94,7 @@ test("startReview no longer auto-fills and the workflow exposes applyAffiliation
 });
 
 test("content script validates the active collection before applying a fill intent", () => {
-  const source = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../src/browser/content.ts", import.meta.url), "utf8");
   const branch = source.slice(
     source.indexOf("MESSAGE_TYPES.applyPageFillIntent"),
     source.indexOf("MESSAGE_TYPES.focusReviewImage"),
@@ -102,5 +102,5 @@ test("content script validates the active collection before applying a fill inte
 
   assert.ok(branch.length > 0);
   assert.match(branch, /if \(!sameReviewIdentity\(message\)\)/);
-  assert.match(branch, /ReviewPageFieldWriter\.execute\(document, message\.actions, \(\) => sameReviewIdentity\(message\)\)/);
+  assert.match(branch, /ReviewPageFieldWriter\.execute\(document, \(message\.actions \|\| \[\]\) as PageFillAction\[\], \(\) => sameReviewIdentity\(message\)\)/);
 });

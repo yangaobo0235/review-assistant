@@ -3,7 +3,7 @@
  * 只负责构造带完整身份参数的消息和过滤入站人工事件；
  * 不持有会话状态，不吞掉 Content Script 的拒绝响应，由调用方（Task 6 编排 hook）处理。
  */
-import type { PageData, ReviewStep } from "./types/review";
+import type { PageData, ReviewTask } from "./types/review";
 import type { ReviewerDecision } from "./reviewSession.ts";
 import { REVIEWER_DECISIONS } from "./reviewSession.ts";
 
@@ -79,8 +79,8 @@ async function sendReviewMessage(
   return response ?? { ok: false, error: NO_RESPONSE_ERROR };
 }
 
-export async function showPageReviewStep(
-  step: ReviewStep,
+export async function showPageReviewTask(
+  step: ReviewTask,
   pageData: PageData,
   chromeApi: ChromeTabsLike = globalThis.chrome,
 ): Promise<PageReviewResult> {
@@ -88,7 +88,7 @@ export async function showPageReviewStep(
   return sendReviewMessage(chromeApi, pageData, { type: "SHOW_REVIEW_FIELD_STEP", step });
 }
 
-export async function completePageReviewStep(
+export async function completePageReviewTask(
   stepId: string,
   pageData: PageData,
   chromeApi: ChromeTabsLike = globalThis.chrome,

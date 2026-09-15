@@ -8,7 +8,7 @@ from app.businesses.replacement_policies import (
 from app.models.review import FieldObservation, ReviewRequest
 from app.rules.final_advice import build_final_advice
 from app.rules.replacement_policy_checks import build_replacement_policy_checks
-from app.rules.review_step_routing import build_review_steps
+from app.rules.review_step_routing import build_review_tasks
 
 
 def observation(field: str, value: str, document_type: str) -> FieldObservation:
@@ -166,16 +166,16 @@ def test_qingdao_origin_is_displayed_with_full_original_image_evidence():
     assert check.values[0].image_id == "invoice-img"
     assert check.values[0].image_index == 3
     assert check.values[0].value == "青岛市"
-    steps = build_review_steps(
+    steps = build_review_tasks(
         request=ReviewRequest(page_url="https://example.test/review", region="qingdao"),
         profile=SCRAP_REPLACEMENT_QINGDAO, comparisons=[], external_checks=[],
         business_checks=checks, completeness=None, limitations=[],
     )
     origin_step = next(step for step in steps if step.step_id == "BUSINESS-POLICY-NEW-ORIGIN")
     assert origin_step.values[0].image_id == "invoice-img"
-    assert check.evidence[0]["source_id"] == "invoice-1"
+    assert check.evidence[0].source_id == "invoice-1"
     assert {
-        key: check.evidence[0][key]
+        key: getattr(check.evidence[0], key)
         for key in ("image_id", "image_index", "document_type", "value")
     } == {
         "image_id": "invoice-img",
@@ -200,7 +200,7 @@ def test_policy_ignores_page_values_and_keeps_conflicting_image_sources():
         QINGDAO_REPLACEMENT_POLICY, [original, conflict, page]
     )
     assert checks[0].status == "INSUFFICIENT"
-    assert {item["source_id"] for item in checks[0].evidence} == {
+    assert {item.source_id for item in checks[0].evidence} == {
         "invoice-1",
         "invoice-2",
     }
@@ -241,7 +241,7 @@ def test_qingdao_origin_requires_readable_matching_evidence(
     assert {item.check_id: item.status for item in checks}["POLICY-INVOICE-DATE"] == "MATCH"
     assert {item.check_id: item.status for item in checks}["POLICY-DISPOSAL-DEADLINE"] == "MATCH"
 
-    steps = build_review_steps(
+    steps = build_review_tasks(
         request=ReviewRequest(
             page_url="https://admin.forjtruck.com/scrap-replace-qingdao/review/1",
             region="qingdao",

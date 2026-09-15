@@ -1,16 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewImageNormalization } from "../src/browser/image-normalization.ts";
 
 function loadNormalization() {
-  const source = readFileSync(
-    new URL("../public/image-normalization.js", import.meta.url),
-    "utf8",
-  );
-  const context = { Blob, globalThis: { Blob } };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewImageNormalization;
+  return ReviewImageNormalization;
 }
 
 class SizedBlob extends Blob {

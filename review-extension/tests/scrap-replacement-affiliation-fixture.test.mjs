@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewPageFieldWriter } from "../src/browser/page-field-writer.ts";
 
 const fixture = readFileSync(
   new URL("./fixtures/scrap-replacement-affiliation.html", import.meta.url),
   "utf8",
 );
-const writer = readFileSync(
-  new URL("../public/page-field-writer.js", import.meta.url),
-  "utf8",
-);
+const writer = readFileSync(new URL("../src/browser/page-field-writer.ts", import.meta.url), "utf8");
 
 test("sanitized Ant Design fixture retains the two affiliation labels and their owned listboxes", () => {
   assert.match(fixture, /<label[^>]*>报废车挂靠<\/label>/);
@@ -44,9 +41,8 @@ test("fixture keeps a pre-filled second affiliation control for the blocked-writ
 // 以下回归把夹具语义接到真实 writer 上：夹具保留的“新车挂靠已有值”必须让两个字段都不被写入，
 // 且写入前后始终受页面身份守卫约束。stub 复刻 Ant Design 挂靠控件的可写路径。
 function loadWriter(globalOverrides = {}) {
-  const context = { globalThis: { ...globalOverrides } };
-  vm.runInNewContext(writer, context);
-  return context.globalThis.ReviewPageFieldWriter;
+  Object.assign(globalThis, globalOverrides);
+  return ReviewPageFieldWriter;
 }
 
 function antRoot(definitions) {

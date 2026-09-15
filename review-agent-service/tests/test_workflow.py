@@ -8,16 +8,18 @@ from app.services.review import ReviewService
 
 def test_workflow_declares_the_approved_node_order() -> None:
     assert WORKFLOW_NODE_ORDER == (
-        "validate_context",
-        "assess_collected_materials",
-        "extract_documents",
-        "assess_extracted_evidence",
-        "run_external_checks",
-        "compare_same_fields",
-        "run_business_rules",
-        "prepare_review_steps",
+        "resolve_context",
+        "validate_input",
+        "assess_coverage",
+        "extract_evidence",
+        "assess_evidence_quality",
+        "plan_capabilities",
+        "execute_capabilities",
+        "compare_fields",
+        "assemble_facts",
+        "prepare_review_tasks",
         "derive_recommendation",
-        "build_final_response",
+        "build_response",
     )
 
 
@@ -39,6 +41,7 @@ async def test_workflow_returns_both_cross_checks_and_two_state_advice() -> None
         "POLICY-NEW-ORIGIN",
         "AFFILIATION-SUBJECT-001",
         "AFFILIATION-AUX-CUSTOMER-NAME",
+        "MATERIAL-COMPLETENESS",
     }
     assert result.recommendation.value == "REVIEW_REQUIRED"
     assert result.agent_advice.decision == "REVIEW_REQUIRED"

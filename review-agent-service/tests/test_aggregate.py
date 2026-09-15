@@ -233,13 +233,13 @@ def test_aggregate_preserves_structured_image_identity() -> None:
     )
 
     comparison = aggregate_field("new_vehicle.vin", [item])
-    evidence = comparison.evidence[0]
+    EvidenceFact = comparison.evidence[0]
 
-    assert evidence.image_id == "new_vehicle-02"
-    assert evidence.business_scope == "new_vehicle"
-    assert evidence.group_title == "新车资料"
-    assert evidence.group_order == 2
-    assert evidence.document_type == "vehicle_license"
+    assert EvidenceFact.image_id == "new_vehicle-02"
+    assert EvidenceFact.business_scope == "new_vehicle"
+    assert EvidenceFact.group_title == "新车资料"
+    assert EvidenceFact.group_order == 2
+    assert EvidenceFact.document_type == "vehicle_license"
 
 
 def test_aggregate_distinguishes_application_page_and_qr_official_evidence() -> None:

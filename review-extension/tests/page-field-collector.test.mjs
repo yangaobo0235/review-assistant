@@ -1,16 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewPageFieldCollector } from "../src/browser/page-field-collector.ts";
 
 function loadCollector() {
-  const source = readFileSync(
-    new URL("../public/page-field-collector.js", import.meta.url),
-    "utf8",
-  );
-  const context = { globalThis: {} };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewPageFieldCollector;
+  return ReviewPageFieldCollector;
 }
 
 function element({
@@ -518,7 +511,7 @@ test("collects a readonly two-node container through DOM extraction", () => {
   );
 });
 
-test("collects transfer fields only from the transfer voucher section", () => {
+test("ignores retired transfer fields", () => {
   const result = loadCollector().collectCandidates([
     { label: "车牌号", value: "冀A34870", section: "transfer", source: "control", proximity: 10 },
     { label: "识别车架号", value: "LFWSRX9LXPAC30354", section: "transfer", source: "control", proximity: 10 },
@@ -528,17 +521,10 @@ test("collects transfer fields only from the transfer voucher section", () => {
     { label: "车源发布时间", value: "2026-08-13 17:01:31", section: "transfer", source: "structured", proximity: 10 },
   ]);
 
-  assert.deepEqual({ ...result.pageFields }, {
-    "transfer.plate_no": "冀A34870",
-    "transfer.vin": "LFWSRX9LXPAC30354",
-    "transfer.buyer_name": "石家庄臻誉供应链管理有限公司",
-    "transfer.seller_name": "赞皇县顺红运输有限公司",
-    "transfer.invoice_date": "2026-08-15",
-    "transfer.source_publish_date": "2026-08-13 17:01:31",
-  });
+  assert.deepEqual({ ...result.pageFields }, {});
 });
 
-test("collects transfer controls under a div section title", () => {
+test("ignores transfer controls under a div section title", () => {
   const collector = loadCollector();
   const title = element({ tag: "div", text: "审核过户凭证" });
   const label = element({ tag: "label", text: "开票日期" });
@@ -561,13 +547,10 @@ test("collects transfer controls under a div section title", () => {
     },
   };
 
-  assert.equal(
-    collector.collect(root).pageFields["transfer.invoice_date"],
-    "2026-08-03",
-  );
+  assert.equal(collector.collect(root).pageFields["transfer.invoice_date"], undefined);
 });
 
-test("collects transfer date outside the voucher section when business is confirmed", () => {
+test("does not collect transfer date outside supported business sections", () => {
   const collector = loadCollector();
   const control = element({ tag: "input", value: "2026-08-03" });
   control.closest = () => null;
@@ -579,10 +562,7 @@ test("collects transfer date outside the voucher section when business is confir
     },
   };
 
-  assert.equal(
-    collector.collect(root, "transfer").pageFields["transfer.invoice_date"],
-    "2026-08-03",
-  );
+  assert.equal(collector.collect(root, "transfer").pageFields["transfer.invoice_date"], undefined);
 });
 
 test("collects an invoice date label with required marker and colon", () => {

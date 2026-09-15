@@ -10,7 +10,7 @@ from app.models.review import (
     ReviewFieldSnapshot,
     ReviewRequest,
 )
-from app.rules.review_step_routing import build_review_steps
+from app.rules.review_step_routing import build_review_tasks
 from app.services.review_response import _build_comparisons
 
 
@@ -38,7 +38,7 @@ def test_ocr_vin_compares_its_own_page_value_against_shared_materials(profile, v
     assert by_field["new_vehicle.vin"].status is FieldStatus.MATCH
     assert by_field["page_ocr.new_vehicle_vin"].status is status
     assert by_field["page_ocr.new_vehicle_vin"].right_value == value
-    steps = build_review_steps(request=request, profile=profile, comparisons=comparisons,
+    steps = build_review_tasks(request=request, profile=profile, comparisons=comparisons,
                                external_checks=[], business_checks=[], completeness=None, limitations=[])
     by_id = {item.step_id: item for item in steps}
     main, ocr = by_id["FIELD-new_vehicle.vin"], by_id["FIELD-page_ocr.new_vehicle_vin"]

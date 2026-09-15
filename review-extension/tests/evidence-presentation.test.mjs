@@ -15,14 +15,14 @@ test("generic image evidence exposes a compact source label", () => {
   );
 });
 
-test("transfer documents expose reviewer-facing source labels", () => {
+test("physical document evidence exposes stable source labels", () => {
   assert.deepEqual(
     evidencePresentation({ source: "图片识别", document_type: "invoice", business_scope: "transfer", value: "VIN-A" }),
-    { kind: "image", label: "二手车发票", value: "VIN-A" },
+    { kind: "image", label: "机动车销售发票", value: "VIN-A" },
   );
   assert.deepEqual(
     evidencePresentation({ source: "图片识别", document_type: "registration_certificate", business_scope: "transfer", group_order: 2, value: "VIN-A" }),
-    { kind: "image", label: "登记证第2页", value: "VIN-A" },
+    { kind: "image", label: "机动车登记证书", value: "VIN-A" },
   );
 });
 

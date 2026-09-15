@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 test("content collection accepts a manual business override", () => {
-  const source = readFileSync(new URL("../public/content.js", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../src/browser/content.ts", import.meta.url), "utf8");
 
   assert.match(source, /message\.businessSelection/);
   assert.match(source, /ReviewBusinessDetector\.resolve/);

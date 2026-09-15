@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewBusinessDetector } from "../src/browser/business-detector.ts";
 
 function loadDetector() {
-  const source = readFileSync(new URL("../public/business-detector.js", import.meta.url), "utf8");
-  const context = { globalThis: {}, URL };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewBusinessDetector;
+  return ReviewBusinessDetector;
 }
 
 test("detects known business routes", () => {
@@ -103,12 +99,12 @@ test("returns unknown when neither URL nor page fingerprint matches", () => {
   );
 });
 
-test("prefers the unique transfer voucher fingerprint over a generic consistency page", () => {
+test("keeps the generic consistency route when transfer evidence is present", () => {
   const detected = loadDetector().detect(
     "http://localhost:5173/consistency-qingdao/review/1",
     "青岛一致性审核 审核过户凭证 过户发票买家名称 卖方名称 车源发布时间",
   );
 
-  assert.equal(detected.businessType, "transfer");
-  assert.equal(detected.region, "default");
+  assert.equal(detected.businessType, "consistency");
+  assert.equal(detected.region, "qingdao");
 });

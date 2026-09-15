@@ -25,6 +25,7 @@ export const makeStep = (overrides) => ({
   values: [],
   evidence: [],
   ...overrides,
+  page_field: overrides.page_field ?? (String(overrides.step_id || "").startsWith("FIELD-") ? String(overrides.step_id).slice(6) : null),
 });
 
 /** 沉降编排器的微任务链；两次 setImmediate 足以跑完自动前进。 */

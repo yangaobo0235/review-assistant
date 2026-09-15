@@ -1,4 +1,4 @@
-import type { Evidence, ReviewCheckValue, ReviewStep } from "../types/review";
+import type { EvidenceFact, CheckResultValue, ReviewTask } from "../types/review";
 
 function valueText(value: unknown): string {
   if (value == null || value === "") return "未取得";
@@ -10,11 +10,11 @@ function valueText(value: unknown): string {
   }
 }
 
-function valueFor(values: ReviewCheckValue[], source: string): string {
+function valueFor(values: CheckResultValue[], source: string): string {
   return valueText(values.find((item) => item.source === source)?.value);
 }
 
-function evidenceText(evidence: Evidence): string {
+function evidenceText(evidence: EvidenceFact): string {
   const parts = [
     evidence.source,
     evidence.field ? `字段：${evidence.field}` : "",
@@ -28,8 +28,8 @@ function evidenceText(evidence: Evidence): string {
   return parts.length ? parts.join(" · ") : "后端未返回可展示的证据内容";
 }
 
-/** Render the relationship result separately so a reviewer can inspect its evidence without inferring it from a generic rule row. */
-export function AffiliationReview({ step }: { step: ReviewStep }) {
+/** Render the relationship result separately so a reviewer can inspect its EvidenceFact without inferring it from a generic rule row. */
+export function AffiliationReview({ step }: { step: ReviewTask }) {
   const licenseEvidence = step.evidence.filter((item) =>
     item.document_type === "business_license" || item.source.includes("营业执照"),
   );

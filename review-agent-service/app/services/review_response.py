@@ -25,7 +25,7 @@ from app.rules.field_evidence_policies import (
     filter_allowed_observations,
 )
 from app.rules.normalize import normalize_value
-from app.rules.review_step_routing import is_page_interaction_profile
+from app.rules.review_step_routing import profile_uses_page_interaction
 from app.services.review_assembly import assemble_review_response
 
 
@@ -98,9 +98,7 @@ def _build_comparisons(
     observations: list[FieldObservation],
 ) -> list[FieldComparison]:
     # 不确定标记的一票否决只对字段优先目标 Profile 生效，其余业务保持历史语义。
-    uncertain_requires_review = is_page_interaction_profile(
-        profile.business_type, profile.region, profile.version
-    )
+    uncertain_requires_review = profile_uses_page_interaction(profile)
     fields = list(profile.required_fields)
     if uncertain_requires_review:
         collected_fields = set(request.page_fields) | {item.field for item in request.review_fields}
@@ -141,6 +139,8 @@ def build_review_response(
     comparisons = _build_comparisons(request, profile, observations)
     cross_checks = unique_checks(business_checks or [])
     response = ReviewResponse(
+        presentation="FIELD_WORKBENCH" if profile.rules_configured else "MANUAL_REVIEW",
+        trace_id=request.trace_id or "",
         business_type=request.business_type,
         region=request.region,
         profile_version=profile.version,
@@ -193,6 +193,7 @@ def build_unconfigured_response(
 
     message = profile.unconfigured_message or "当前审核业务规则尚未配置，请人工复核"
     response = ReviewResponse(
+        presentation="FIELD_WORKBENCH" if profile.rules_configured else "MANUAL_REVIEW",
         business_type=request.business_type,
         region=request.region,
         profile_version=profile.version,

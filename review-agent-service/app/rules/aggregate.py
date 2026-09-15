@@ -7,7 +7,9 @@
 
 from collections import Counter
 
-from app.models.review import Evidence, FieldComparison, FieldObservation, FieldStatus
+from app.fields.differences import value_differences
+from app.models.evidence import EvidenceFact, FieldObservation
+from app.models.review import FieldComparison, FieldStatus
 from app.rules.normalize import format_like_page, normalize_value
 
 EVIDENCE_SOURCE_LABELS = {
@@ -61,7 +63,7 @@ def _deduplicate_sources(
 def _mark_conflicting_evidence(
     field_name: str,
     valid: list[FieldObservation],
-    evidence: list[Evidence],
+    evidence: list[EvidenceFact],
     status: FieldStatus,
 ) -> None:
     if status is not FieldStatus.CONFLICT:
@@ -103,7 +105,7 @@ def aggregate_field(
     image_values = [item.value for item in valid if item.source_type == "image"]
     page_values = [item.value for item in valid if item.source_type == "page"]
     evidence = [
-        Evidence(
+        EvidenceFact(
             source=EVIDENCE_SOURCE_LABELS.get(item.source_type, item.source_type),
             source_id=item.source_id,
             field=item.field,
@@ -158,7 +160,15 @@ def aggregate_field(
         page_value = normalize_value(field_name, page_value)
     if status is FieldStatus.MATCH:
         image_value = format_like_page(field_name, image_value, page_value)
+    for item in evidence:
+        item.differences = value_differences(field_name, page_value, item.value) if item.source != "申请页面字段" else []
     _mark_conflicting_evidence(field_name, valid, evidence, status)
+    differences: list[int] = []
+    if page_values and image_values:
+        left = normalize_value(field_name, page_values[0]) or ""
+        right = normalize_value(field_name, image_values[0]) or ""
+        differences = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+        differences.extend(range(min(len(left), len(right)), max(len(left), len(right))))
     return FieldComparison(
         field=field_name,
         left_value=image_value,
@@ -167,4 +177,5 @@ def aggregate_field(
         confidence=confidence,
         evidence=evidence,
         message=message,
+        differences=sorted(set(differences)),
     )

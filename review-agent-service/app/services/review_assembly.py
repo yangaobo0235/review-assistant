@@ -1,16 +1,15 @@
 """部分与最终响应共用的唯一建议、风险和检查组装入口。"""
 
-from app.agent.models import AgentBatchResult, ReviewCheck
+from app.agent.models import AgentBatchResult, CheckResult
 from app.models.review import (
     FieldStatus,
     PageFillAction,
     Recommendation,
     ReviewResponse,
-    ReviewStep,
+    ReviewTask,
 )
 from app.rules.check_results import unique_checks
 from app.rules.final_advice import build_final_advice
-from app.rules.review_step_routing import is_page_interaction_profile
 
 
 def _legacy_risk_and_summary(
@@ -51,10 +50,10 @@ def assemble_review_response(
     response: ReviewResponse,
     batch: AgentBatchResult,
     *,
-    business_checks: list[ReviewCheck],
-    external_checks: list[ReviewCheck] | None = None,
+    business_checks: list[CheckResult],
+    external_checks: list[CheckResult] | None = None,
     page_actions: list[PageFillAction] | None = None,
-    review_steps: list[ReviewStep] | None = None,
+    review_tasks: list[ReviewTask] | None = None,
 ) -> ReviewResponse:
     checks = unique_checks(business_checks)
     decision, advice = build_final_advice(
@@ -66,9 +65,7 @@ def assemble_review_response(
         batch.confidences,
         completeness=batch.material_completeness,
     )
-    if is_page_interaction_profile(
-        response.business_type, response.region, response.profile_version
-    ):
+    if response.presentation == "FIELD_WORKBENCH":
         risk_level = (
             "LOW"
             if decision == "PASS"
@@ -87,6 +84,6 @@ def assemble_review_response(
             "cross_checks": checks,
             "agent_advice": advice,
             "page_fill_intent": page_actions or [],
-            "review_steps": review_steps or [],
+            "review_tasks": review_tasks or [],
         }
     )

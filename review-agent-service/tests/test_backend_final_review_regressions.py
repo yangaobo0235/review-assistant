@@ -150,9 +150,9 @@ async def run_review(*, region, page_fields, business_type="scrap_replacement"):
 @pytest.mark.parametrize("region", ["qingdao", "changchun"])
 async def test_scrap_profiles_return_valid_display_routes(region):
     result = await run_review(region=region, page_fields={"new_vehicle.vin": "VIN-1"})
-    assert all(step.display_target in {"PAGE_FIELD", "ASSISTANT"} for step in result.review_steps)
-    assert all(step.page_field for step in result.review_steps if step.display_target == "PAGE_FIELD")
-    assert all(step.page_field is None for step in result.review_steps if step.display_target == "ASSISTANT")
+    assert all(step.display_target in {"PAGE_FIELD", "ASSISTANT"} for step in result.review_tasks)
+    assert all(step.page_field for step in result.review_tasks if step.display_target == "PAGE_FIELD")
+    assert all(step.page_field is None for step in result.review_tasks if step.display_target == "ASSISTANT")
 
 
 @pytest.mark.asyncio
@@ -160,18 +160,18 @@ async def test_scrap_profiles_return_valid_display_routes(region):
 async def test_scrap_runs_route_collected_field_to_page_and_rest_to_assistant(region):
     result = await run_review(region=region, page_fields={"new_vehicle.vin": "VIN-1"})
     # 后端一次运行到底就返回完整展示路由：步骤非空、按顺序重排为连续序号。
-    assert [step.sequence for step in result.review_steps] == list(
-        range(1, len(result.review_steps) + 1)
+    assert [step.sequence for step in result.review_tasks] == list(
+        range(1, len(result.review_tasks) + 1)
     )
     vin_step = next(
-        step for step in result.review_steps if step.step_id == "FIELD-new_vehicle.vin"
+        step for step in result.review_tasks if step.step_id == "FIELD-new_vehicle.vin"
     )
     assert vin_step.display_target == "ASSISTANT"
     assert vin_step.page_field is None
     # 页面外政策、二维码、挂靠守护与材料异常只能停留在助手面板。
     assert all(
         step.display_target == "ASSISTANT" and step.page_field is None
-        for step in result.review_steps
+        for step in result.review_tasks
         if step.step_id != "FIELD-new_vehicle.vin"
     )
     # 缺少主体关系证据时不生成任何挂靠填写意图。
@@ -187,10 +187,10 @@ async def test_transfer_profile_keeps_every_step_in_the_assistant_panel():
     )
     # 过户不是页内交互目标 Profile：旧业务继续使用现有结果界面和行为。
     assert result.business_type.value == "transfer"
-    assert result.review_steps
+    assert result.review_tasks
     assert all(
         step.display_target == "ASSISTANT" and step.page_field is None
-        for step in result.review_steps
+        for step in result.review_tasks
     )
     assert result.page_fill_intent == []
 
@@ -256,7 +256,7 @@ def test_all_relevant_license_sources_participate_in_sufficiency(kind, old, new)
     result = build_affiliation_subject_check(old, new, mixed_licenses(kind))
     assert result.check.status == "INSUFFICIENT"
     assert result.page_actions == ()
-    assert {item["source_id"] for item in result.check.evidence} >= {"a1", "a2"}
+    assert {item.source_id for item in result.check.evidence} >= {"a1", "a2"}
 
 
 @pytest.mark.parametrize(
@@ -327,7 +327,7 @@ async def test_consistency_container_accepts_explicit_transfer_context(region, s
     assert result.business_type.value == "transfer"
     assert result.qr_checks == []
     assert result.page_fill_intent == []
-    assert not any(step.category == "EXTERNAL" for step in result.review_steps)
+    assert not any(step.category == "EXTERNAL" for step in result.review_tasks)
     assert (
         TestClient(app)
         .post("/api/review/assist", json=request.model_dump(mode="json"))

@@ -1,6 +1,6 @@
 import pytest
 
-from app.agent.models import AgentBatchResult, ReviewCheck
+from app.agent.models import AgentBatchResult, CheckResult
 from app.agent.workflow import ReviewWorkflow
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
 from app.models.review import (
@@ -12,7 +12,7 @@ from app.models.review import (
 )
 
 
-def evidence(field: str, value: str, source_id: str, document_type: str) -> FieldObservation:
+def EvidenceFact(field: str, value: str, source_id: str, document_type: str) -> FieldObservation:
     return FieldObservation(
         field=field,
         value=value,
@@ -32,7 +32,7 @@ def comparison(field: str, value: str) -> FieldComparison:
     )
 
 
-def test_affiliation_auxiliary_checks_gate_actions_without_owner_type_comparison() -> None:
+def test_affiliation_actions_follow_confirmed_subject_types_even_if_auxiliary_customer_check_differs() -> None:
     request = ReviewRequest(
         page_url="https://example.test/scrap",
         page_fields={
@@ -45,9 +45,9 @@ def test_affiliation_auxiliary_checks_gate_actions_without_owner_type_comparison
         "request": request,
         "profile": SCRAP_REPLACEMENT_QINGDAO,
         "batch": AgentBatchResult(observations=[
-            evidence("identity_card.name", "张三", "id-front", "identity_card"),
-            evidence("identity_card.side", "FRONT", "id-front", "identity_card"),
-            evidence("identity_card.side", "BACK", "id-back", "identity_card"),
+            EvidenceFact("identity_card.name", "张三", "id-front", "identity_card"),
+            EvidenceFact("identity_card.side", "FRONT", "id-front", "identity_card"),
+            EvidenceFact("identity_card.side", "BACK", "id-back", "identity_card"),
         ]),
         "response": type("Response", (), {
             "comparisons": [
@@ -66,7 +66,10 @@ def test_affiliation_auxiliary_checks_gate_actions_without_owner_type_comparison
     assert {item.check_id: item.status for item in result.checks[1:]} == {
         "AFFILIATION-AUX-CUSTOMER-NAME": "CONFLICT",
     }
-    assert result.page_action_candidates == ()
+    assert [item.owner_type for item in result.page_action_candidates] == [
+        "PERSONAL",
+        "PERSONAL",
+    ]
 
 
 @pytest.mark.parametrize("ocr_vin", ["vin-new", "WRONG-VIN", "", None])
@@ -83,8 +86,8 @@ def test_affiliation_actions_ignore_ocr_vin_and_accept_company_labels(ocr_vin) -
         "request": request,
         "profile": SCRAP_REPLACEMENT_QINGDAO,
         "batch": AgentBatchResult(observations=[
-            evidence("business_license.company_name", "甲运输有限公司", "license-a", "business_license"),
-            evidence("business_license.legal_representative", "张三", "license-a", "business_license"),
+            EvidenceFact("business_license.company_name", "甲运输有限公司", "license-a", "business_license"),
+            EvidenceFact("business_license.legal_representative", "张三", "license-a", "business_license"),
         ]),
         "response": type("Response", (), {
             "comparisons": [
@@ -121,7 +124,7 @@ def test_prepare_review_steps_includes_only_configured_capabilities_and_maps_sta
                 message="仅有一个有效来源，证据不足",
             )],
         })(),
-        "cross_checks": [ReviewCheck(
+        "cross_checks": [CheckResult(
             check_id="CROSS-TRANSFER-VIN-001", label="过户车架号", status="MATCH", reason="一致"
         )],
         "qr_checks": [],
@@ -130,7 +133,7 @@ def test_prepare_review_steps_includes_only_configured_capabilities_and_maps_sta
 
     result = ReviewWorkflow._prepare_review_steps(state)
 
-    assert [(item.step_id, item.category, item.result_status) for item in result["review_steps"]] == [
+    assert [(item.step_id, item.category, item.result_status) for item in result["review_tasks"]] == [
         ("FIELD-transfer.vin", "FIELD", "INSUFFICIENT"),
         ("BUSINESS-CROSS-TRANSFER-VIN-001", "BUSINESS_RULE", "MATCH"),
     ]
@@ -138,9 +141,9 @@ def test_prepare_review_steps_includes_only_configured_capabilities_and_maps_sta
     assert all(
         item.display_target is ReviewDisplayTarget.ASSISTANT
         and item.page_field is None
-        for item in result["review_steps"]
+        for item in result["review_tasks"]
     )
-    assert not any("QR" in item.step_id or "AFFILIATION" in item.step_id for item in result["review_steps"])
+    assert not any("QR" in item.step_id or "AFFILIATION" in item.step_id for item in result["review_tasks"])
 
 
 def test_scrap_missing_auxiliary_values_are_independent_steps_and_block_final_intent() -> None:
@@ -157,7 +160,7 @@ def test_scrap_missing_auxiliary_values_are_independent_steps_and_block_final_in
     steps = ReviewWorkflow._prepare_review_steps({
         **state,
         "cross_checks": list(result.checks),
-    })["review_steps"]
+    })["review_tasks"]
 
     assert {step.step_id for step in steps} >= {
         "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME",

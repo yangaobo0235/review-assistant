@@ -15,6 +15,7 @@ import {
 import { pollReviewJob } from "../reviewJobs";
 import { applyPageFieldValue, applyPageFillIntent, verifyInvoice, type PageFillResult } from "../pageFillClient";
 import { focusReviewImage } from "../imageFocusClient";
+import { PageActionRegistry } from "../session/pageActionRegistry";
 import {
   manualBusinessSelection,
   type BusinessChoice,
@@ -24,6 +25,7 @@ import type {
   PageFillAction,
   ReviewJobSnapshot,
   ReviewResponse,
+  PageActionIntent,
 } from "../types/review";
 
 const reviewDeadlineMs = 60_000;
@@ -142,19 +144,8 @@ export function useReviewWorkflow(
       if (finalSnapshot.status === "FAILED") {
         throw new Error(finalSnapshot.message || "审核任务执行失败");
       }
-      const invoiceNumberMatched = finalSnapshot.result?.comparisons?.some(
-        (item) => item.field === "invoice.invoice_no" && item.status === "MATCH",
-      );
-      if (invoiceNumberMatched) {
-        const verification = await verifyInvoice({
-          tabId: data.sourceTabId,
-          pageUrl: data.pageUrl,
-          pageInstanceId: data.pageInstanceId,
-          pageFingerprint: data.pageFingerprint,
-          collectionId: data.collectionId,
-        });
-        setNotice(verification.ok ? "发票号码核验通过，已点击一键验真" : (verification.message || "发票号码已通过比对，但未找到一键验真按钮"));
-      }
+      const actionResults = await executePageActions(finalSnapshot.result?.page_actions ?? [], data);
+      if (actionResults.length) setNotice(actionResults.join("；"));
       // The client deadline is a presentation boundary: a running snapshot still
       // contains useful partial review results and is not a transport failure.
       setNotice((current) => current || completionNotice(finalSnapshot));
@@ -218,4 +209,19 @@ export function useReviewWorkflow(
     applyPageFieldValue: applyFieldValue,
     focusOriginalImage,
   };
+}
+
+async function executePageActions(actions: readonly PageActionIntent[], data: PageData): Promise<string[]> {
+  const registry = new PageActionRegistry();
+  registry.register("verify_invoice", async (_action, page) => {
+    const verification = await verifyInvoice({
+      tabId: page.sourceTabId,
+      pageUrl: page.pageUrl,
+      pageInstanceId: page.pageInstanceId,
+      pageFingerprint: page.pageFingerprint,
+      collectionId: page.collectionId,
+    });
+    return verification.ok ? "发票号码核验通过，已点击一键验真" : (verification.message || "发票号码已通过比对，但未找到一键验真按钮");
+  });
+  return registry.executeAll(actions, data);
 }

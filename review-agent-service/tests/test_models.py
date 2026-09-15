@@ -5,14 +5,14 @@ from app.agent.config import load_qwen_config
 from app.agent.models import (
     AgentAdvice,
     AgentBatchResult,
+    CheckResult,
     MaterialCompletenessIssue,
     MaterialCompletenessReport,
     RecognizedDocument,
     RetryAttempt,
     RetrySummary,
-    ReviewCheck,
-    ReviewCheckValue,
 )
+from app.models.checks import CheckResultValue
 from app.models.review import (
     BusinessType,
     FieldStatus,
@@ -21,8 +21,14 @@ from app.models.review import (
     Region,
     ReviewRequest,
     ReviewResponse,
+    ReviewStep,
+    ReviewTask,
     SelectionMode,
 )
+
+
+def test_review_step_legacy_name_aliases_review_task() -> None:
+    assert ReviewStep is ReviewTask
 
 
 def test_review_request_accepts_collection_diagnostics_aliases() -> None:
@@ -187,12 +193,12 @@ def test_field_status_and_recommendation_are_restricted() -> None:
 
 
 def test_review_check_restricts_status_and_preserves_values() -> None:
-    check = ReviewCheck(
+    check = CheckResult(
         check_id="CROSS-OWNER-001",
         label="新旧车所有人一致性",
         status="CONFLICT",
         reason="旧车所有人与新车所有人不一致",
-        values=[ReviewCheckValue(source="旧车资料", value="张三")],
+        values=[CheckResultValue(source="旧车资料", value="张三")],
     )
 
     assert check.values[0].value == "张三"
@@ -203,7 +209,7 @@ def test_review_check_restricts_status_and_preserves_values() -> None:
 
 
 def test_review_response_defaults_cross_checks_and_advice_exposes_findings() -> None:
-    finding = ReviewCheck(
+    finding = CheckResult(
         check_id="FIELD-old_vehicle.vin",
         label="报废车辆车架号",
         status="CONFLICT",

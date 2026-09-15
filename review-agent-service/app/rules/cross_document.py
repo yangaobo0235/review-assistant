@@ -5,7 +5,7 @@
 
 from typing import Any
 
-from app.agent.models import ReviewCheck
+from app.agent.models import CheckResult
 from app.models.review import FieldComparison
 
 
@@ -14,6 +14,6 @@ def build_cross_document_checks(
     comparisons: list[FieldComparison] | None = None,
     observations: list[Any] | None = None,
     page_fields: dict[str, Any] | None = None,
-) -> list[ReviewCheck]:
+) -> list[CheckResult]:
     """保留稳定入口，当前不执行历史过户检查。"""
     return []

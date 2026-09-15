@@ -13,14 +13,14 @@ import {
   type EvidenceHighlightPlan,
 } from "../evidencePresentation";
 import { exceptionComparisons, exceptionSections, type ExceptionFilter } from "../exceptionPresentation";
-import { isFieldFirstProfile } from "../scrapReplacementProfile.ts";
 import { qrCheckPresentation } from "../qrPresentation";
 import { fieldLabel, groupStatusLabel, statusLabel } from "../reviewPanelConfig";
-import type { Evidence, FieldComparison, JobStatus, PageData, PageFillAction, ReviewJobSnapshot, ReviewResponse } from "../types/review";
+import type { EvidenceFact, FieldComparison, JobStatus, PageData, PageFillAction, ReviewJobSnapshot, ReviewResponse } from "../types/review";
 import { diffValue, diffValueByPosition } from "../valueDiff";
 import { ReviewAdvice } from "./ReviewAdvice";
 import { MaterialCompleteness } from "./MaterialCompleteness";
-import { ScrapReplacementReview } from "./ScrapReplacementReview";
+import { ReviewTaskList } from "./ReviewTaskList";
+import { resolveWorkbenchRenderer } from "./workbenchRenderers";
 import type { PageFillResult } from "../pageFillClient";
 
 interface ReviewResultsProps {
@@ -38,10 +38,8 @@ interface ReviewResultsProps {
 
 export function ReviewResults(props: ReviewResultsProps) {
   const { review, onFocusImage } = props;
-  if (isFieldFirstProfile(review)) {
-    // 目标业务：页面字段、人工选择与页面外核验统一留在侧边栏工作台。
-    return <ScrapReplacementReview review={review} pageData={props.pageData} onFocusImage={onFocusImage} onApplyPageFieldValue={props.onApplyPageFieldValue} onApplyAffiliationFill={props.onApplyAffiliationFill} onRerun={props.onRerun} />;
-  }
+  const renderer = resolveWorkbenchRenderer(review);
+  if (renderer) return renderer({ review, pageData: props.pageData, onFocusImage, onApplyPageFieldValue: props.onApplyPageFieldValue, onApplyAffiliationFill: props.onApplyAffiliationFill, onRerun: props.onRerun });
   return <LegacyReviewResults {...props} />;
 }
 
@@ -59,6 +57,7 @@ function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExcepti
 
   return (
     <section className="review-result">
+      <ReviewTaskList tasks={review.review_tasks || []} />
       {pageFillResult ? <PageFillStatus result={pageFillResult} /> : null}
       <ReviewAdvice review={review} />
       <MaterialCompleteness
@@ -186,7 +185,7 @@ function ResultGroup({ title, comparisons, groupStatus, imagesById, onFocusImage
 }
 
 interface EvidenceSourceProps {
-  evidence: Evidence;
+  evidence: EvidenceFact;
   highlightPlan: EvidenceHighlightPlan;
   compareByPosition?: boolean;
   image?: PageData["images"][number];

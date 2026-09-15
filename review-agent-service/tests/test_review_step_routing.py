@@ -2,9 +2,9 @@ import pytest
 from pydantic import ValidationError
 
 from app.agent.models import (
+    CheckResult,
     MaterialCompletenessIssue,
     MaterialCompletenessReport,
-    ReviewCheck,
 )
 from app.businesses.profiles import (
     SCRAP_REPLACEMENT_CHANGCHUN,
@@ -17,12 +17,12 @@ from app.models.review import (
     ReviewDisplayTarget,
     ReviewFieldSnapshot,
     ReviewRequest,
-    ReviewStep,
+    ReviewTask,
 )
-from app.rules.review_step_routing import build_review_steps
+from app.rules.review_step_routing import build_review_tasks
 
 
-def make_step(**changes) -> ReviewStep:
+def make_step(**changes) -> ReviewTask:
     values = {
         "step_id": "FIELD-new_vehicle.vin",
         "sequence": 1,
@@ -35,7 +35,7 @@ def make_step(**changes) -> ReviewStep:
         "reason": "页面与材料一致",
     }
     values.update(changes)
-    return ReviewStep(**values)
+    return ReviewTask(**values)
 
 
 def test_page_field_target_requires_field_key() -> None:
@@ -72,13 +72,13 @@ def build_steps(
     *,
     page_fields: dict[str, str] | None = None,
     comparisons: list[FieldComparison] | None = None,
-    external_checks: list[ReviewCheck] | None = None,
-    business_checks: list[ReviewCheck] | None = None,
+    external_checks: list[CheckResult] | None = None,
+    business_checks: list[CheckResult] | None = None,
     completeness: MaterialCompletenessReport | None = None,
     limitations: list[str] | None = None,
     review_fields: list[ReviewFieldSnapshot] | None = None,
-) -> list[ReviewStep]:
-    return build_review_steps(
+) -> list[ReviewTask]:
+    return build_review_tasks(
         request=ReviewRequest(
             page_url="https://admin.forjtruck.com/scrap-replace-qingdao/review/1",
             region="qingdao",
@@ -104,6 +104,7 @@ def test_present_comparison_routes_to_assistant_field() -> None:
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
+    assert step.page_target_field == "new_vehicle.vin"
     assert step.requires_reviewer_action is False
 
 
@@ -135,7 +136,7 @@ def test_field_step_counts_only_unique_material_images_as_evidence() -> None:
 def test_external_step_accepts_legacy_dict_evidence() -> None:
     steps = build_steps(
         external_checks=[
-            ReviewCheck(
+            CheckResult(
                 check_id="EXTERNAL-QR",
                 label="二维码官网核验",
                 status="MATCH",
@@ -156,6 +157,7 @@ def test_missing_page_field_routes_comparison_to_assistant() -> None:
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
+    assert step.page_target_field == "new_vehicle.vin"
     assert step.result_status == "INSUFFICIENT"
     assert step.requires_reviewer_action is True
 
@@ -172,7 +174,7 @@ def test_missing_page_field_routes_comparison_to_assistant() -> None:
 def test_business_rules_route_to_assistant(check_id: str) -> None:
     steps = build_steps(
         business_checks=[
-            ReviewCheck(
+            CheckResult(
                 check_id=check_id,
                 label="页面外规则",
                 status="MATCH",
@@ -198,7 +200,7 @@ def test_present_affiliation_safeguard_routes_to_its_page_field(
     steps = build_steps(
         page_fields={page_field: "页面值"},
         business_checks=[
-            ReviewCheck(
+            CheckResult(
                 check_id=check_id,
                 label="辅助页面字段",
                 status="MATCH",
@@ -236,7 +238,7 @@ def test_owner_type_control_is_a_non_writable_system_field() -> None:
 def test_external_check_routes_to_assistant() -> None:
     steps = build_steps(
         external_checks=[
-            ReviewCheck(
+            CheckResult(
                 check_id="QR-1",
                 label="二维码官网核验",
                 status="MATCH",
@@ -288,7 +290,7 @@ def test_duplicate_material_issue_and_limitation_are_shown_once() -> None:
 
 
 def test_non_target_profile_keeps_steps_as_assistant_contracts() -> None:
-    steps = build_review_steps(
+    steps = build_review_tasks(
         request=ReviewRequest(
             page_url="https://example.test/transfer/1",
             business_type="transfer",
@@ -309,7 +311,7 @@ def test_non_target_profile_keeps_steps_as_assistant_contracts() -> None:
 
 
 def test_assistant_match_remains_in_contract_but_needs_no_reviewer_action():
-    steps = build_steps(business_checks=[ReviewCheck(
+    steps = build_steps(business_checks=[CheckResult(
         check_id="POLICY-INVOICE-DATE",
         label="新车发票日期政策核验",
         status="MATCH",
@@ -318,6 +320,42 @@ def test_assistant_match_remains_in_contract_but_needs_no_reviewer_action():
     step = next(item for item in steps if item.step_id == "BUSINESS-POLICY-INVOICE-DATE")
     assert step.display_target == "ASSISTANT"
     assert step.requires_reviewer_action is False
+
+
+def test_policy_date_checks_merge_into_field_tasks_for_page_first_profiles() -> None:
+    checks = [
+        CheckResult(
+            check_id="POLICY-INVOICE-DATE",
+            label="新车发票日期政策核验",
+            status="MATCH",
+            reason="符合政策范围：2026-09-01 至 2026-09-30",
+        ),
+        CheckResult(
+            check_id="POLICY-DISPOSAL-DEADLINE",
+            label="回收证明交车日期政策核验",
+            status="MATCH",
+            reason="符合政策范围：不晚于 2026-10-31",
+        ),
+    ]
+    steps = build_steps(
+        page_fields={
+            "invoice.invoice_date": "2026-09-15",
+            "old_vehicle.recycle_date": "2026-10-01",
+        },
+        comparisons=[
+            matching_comparison("invoice.invoice_date", "2026-09-15"),
+            matching_comparison("old_vehicle.recycle_date", "2026-10-01"),
+        ],
+        business_checks=checks,
+    )
+
+    task_ids = {item.step_id for item in steps}
+    assert "BUSINESS-POLICY-INVOICE-DATE" not in task_ids
+    assert "BUSINESS-POLICY-DISPOSAL-DEADLINE" not in task_ids
+    invoice = next(item for item in steps if item.step_id == "FIELD-invoice.invoice_date")
+    recycle = next(item for item in steps if item.step_id == "FIELD-old_vehicle.recycle_date")
+    assert "2026-09-01 至 2026-09-30" in invoice.reason
+    assert "不晚于 2026-10-31" in recycle.reason
 
 
 def test_scrap_field_catalog_follows_the_current_dom_inventory() -> None:
@@ -371,7 +409,7 @@ def test_scrap_field_catalog_follows_the_current_dom_inventory() -> None:
 
 
 def test_affiliation_controls_are_compared_with_the_subject_type() -> None:
-    subject = ReviewCheck(
+    subject = CheckResult(
         check_id="AFFILIATION-SUBJECT-001",
         label="新旧车主体关系",
         status="MATCH",
@@ -415,7 +453,7 @@ def test_affiliation_controls_are_compared_with_the_subject_type() -> None:
 
 def test_affiliation_auxiliary_control_uses_its_material_check() -> None:
     auxiliary_checks = [
-        ReviewCheck(
+        CheckResult(
             check_id=check_id,
             label="主体辅助字段",
             status="MATCH",
@@ -480,7 +518,7 @@ def test_missing_configured_page_field_becomes_actionable_assistant_step():
 
 
 def test_changchun_collected_field_routes_to_assistant() -> None:
-    steps = build_review_steps(
+    steps = build_review_tasks(
         request=ReviewRequest(
             page_url="https://admin.forjtruck.com/scrap-replace-changchun/review/1",
             region="changchun",
@@ -502,7 +540,7 @@ def test_changchun_collected_field_routes_to_assistant() -> None:
 
 
 def test_ambiguous_collected_page_field_routes_to_assistant() -> None:
-    steps = build_review_steps(
+    steps = build_review_tasks(
         request=ReviewRequest(
             page_url="https://admin.forjtruck.com/scrap-replace-qingdao/review/1",
             region="qingdao",

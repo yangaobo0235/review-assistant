@@ -1,3 +1,4 @@
+export interface DifferenceRange { kind: "REPLACE" | "EXTRA" | "MISSING"; start: number; end: number; page_start: number; page_end: number; page_text: string; }
 export type ImageGroup = "身份证" | "回收证明" | "旧车资料" | "新车资料" | "发票及其他图片" | "未分类";
 export type BusinessType = "scrap_replacement" | "vehicle_source" | "consistency";
 export type Region = "default" | "qingdao" | "changchun";
@@ -160,9 +161,10 @@ export interface RetrySummary {
 
 export type FieldStatus = "MATCH" | "CONFLICT" | "REVIEW_REQUIRED";
 export type Recommendation = "PASS" | "REJECT_SUGGESTED" | "REVIEW_REQUIRED";
-export type ReviewCheckStatus = "MATCH" | "CONFLICT" | "INSUFFICIENT";
+export type CheckResultStatus = "MATCH" | "CONFLICT" | "INSUFFICIENT";
 
-export interface ReviewCheckValue {
+export interface CheckResultValue {
+  differences?: DifferenceRange[];
   source: string;
   value?: unknown;
   source_id?: string | null;
@@ -174,14 +176,14 @@ export interface ReviewCheckValue {
   evidence_region?: number[] | null;
 }
 
-export interface ReviewCheck {
+export interface CheckResult {
   check_id: string;
   label: string;
-  status: ReviewCheckStatus;
+  status: CheckResultStatus;
   reason: string;
-  values: ReviewCheckValue[];
-  evidence?: Evidence[];
-  details?: ReviewStepDetails;
+  values: CheckResultValue[];
+  evidence?: EvidenceFact[];
+  details?: ReviewTaskDetails;
 }
 
 export interface SubjectEvidenceRequirement {
@@ -194,20 +196,21 @@ export interface SubjectEvidenceRequirement {
   reason: string;
 }
 
-export interface ReviewStepDetails {
+export interface ReviewTaskDetails {
+  differences?: number[];
   subject_requirements?: SubjectEvidenceRequirement[];
   auxiliary_checks?: AuxiliaryCheckSummary[];
-  affiliation_subject_status?: ReviewCheckStatus;
+  affiliation_subject_status?: CheckResultStatus;
 }
 
 export interface AuxiliaryCheckSummary {
   check_id: string;
   label: string;
-  status: ReviewCheckStatus;
+  status: CheckResultStatus;
   reason: string;
 }
 
-export interface Evidence {
+export interface EvidenceFact {
   source: string;
   uncertain?: boolean;
   field?: string | null;
@@ -228,7 +231,7 @@ export interface Evidence {
 
 declare global {
   var ReviewEvidenceLabel: {
-    label(evidence: Evidence): string;
+    label(evidence: EvidenceFact): string;
     documentNames: Record<string, string>;
   };
 }
@@ -240,8 +243,9 @@ export interface FieldComparison {
   status: FieldStatus;
   source: string;
   confidence?: number | null;
-  evidence: Evidence[];
+  evidence: EvidenceFact[];
   message: string;
+  differences?: number[];
 }
 
 export interface QrCheck {
@@ -256,6 +260,8 @@ export interface QrCheck {
 }
 
 export interface ReviewResponse {
+  protocol_version: "2.0";
+  presentation: "FIELD_WORKBENCH" | "MANUAL_REVIEW";
   business_type: BusinessType;
   region: Region;
   profile_version: string;
@@ -264,7 +270,7 @@ export interface ReviewResponse {
   summary: string;
   comparisons: FieldComparison[];
   qr_checks: QrCheck[];
-  cross_checks: ReviewCheck[];
+  cross_checks: CheckResult[];
   issues: string[];
   sections: ResultSection[];
   context_summary?: {
@@ -281,34 +287,66 @@ export interface ReviewResponse {
     summary: string;
     confidence?: number | null;
     recognition_confidence?: number | null;
-    findings: ReviewCheck[];
+    findings: CheckResult[];
     basis: string[];
     limitations: string[];
   } | null;
   material_completeness?: MaterialCompletenessReport | null;
   retry_summary?: RetrySummary | null;
+  capability_plan?: CapabilityPlanEntry[];
+  capability_results?: CapabilityResult[];
   page_fill_intent?: PageFillAction[];
-  review_steps?: ReviewStep[];
+  page_actions?: PageActionIntent[];
+  review_tasks?: ReviewTask[];
+}
+
+export interface PageActionIntent {
+  action_id: string;
+  payload: Record<string, unknown>;
+  requires_authorization: boolean;
+}
+
+export interface CapabilityPlanEntry {
+  capability_id: string;
+  status: "READY" | "SKIPPED" | "BLOCKED" | "NOT_CONFIGURED";
+  stage: string;
+  reason: string;
+  dependencies: string[];
+  missing_dependencies: string[];
+}
+
+export interface CapabilityResult {
+  capability_id: string;
+  status: "READY" | "SKIPPED" | "BLOCKED" | "NOT_CONFIGURED" | "SUCCEEDED" | "FAILED";
+  checks?: CheckResult[];
+  evidence?: EvidenceFact[];
+  qr_checks?: QrCheck[];
+  display_items?: string[];
+  limitations?: string[];
+  error_code?: string | null;
+  attempts?: number;
 }
 
 export type ReviewDisplayTarget = "PAGE_FIELD" | "ASSISTANT";
 
-export interface ReviewStep {
+export interface ReviewTask {
   step_id: string;
   sequence: number;
   category: "FIELD" | "EXTERNAL" | "BUSINESS_RULE" | "MATERIAL";
   display_target: ReviewDisplayTarget;
   page_field?: string | null;
+  /** Canonical DOM field for sidebar tasks; distinct from PAGE_FIELD rendering. */
+  page_target_field?: string | null;
   page_value?: unknown;
   control_type?: string | null;
   writable?: boolean;
   requires_reviewer_action: boolean;
   label: string;
-  result_status: ReviewCheckStatus;
+  result_status: CheckResultStatus;
   reason: string;
-  values: ReviewCheckValue[];
-  evidence: Evidence[];
-  details?: ReviewStepDetails;
+  values: CheckResultValue[];
+  evidence: EvidenceFact[];
+  details?: ReviewTaskDetails;
   evidence_count?: number;
   evidence_mode?: string | null;
   evidence_sources?: string[];

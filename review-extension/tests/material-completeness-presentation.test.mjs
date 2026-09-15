@@ -20,16 +20,16 @@ test("presents unconfirmed pages without claiming the files are absent", () => {
 test("translates technical field and source names for reviewers", () => {
   const item = materialIssuePresentation({
     code: "MISSING_FIELD_SOURCE",
-    field: "transfer.invoice_date",
+    field: "invoice.invoice_date",
     missing_sources: ["invoice"],
-    message: "开票日期缺少二手车发票证据",
+    message: "开票日期缺少机动车销售发票证据",
     suggested_action: "请检查发票日期区域或补充清晰图片",
     reason_code: "recognition_uncertain",
     reason_detail: "日期区域可能模糊、遮挡或不可辨认",
   });
 
   assert.equal(item.title, "开票日期证据不完整");
-  assert.equal(item.reason, "缺少来源：二手车发票。日期区域可能模糊、遮挡或不可辨认");
+  assert.equal(item.reason, "缺少来源：机动车销售发票。日期区域可能模糊、遮挡或不可辨认");
 });
 
 test("translates technical material names in fallback issue messages", () => {

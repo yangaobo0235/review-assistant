@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewEvidenceLabel } from "../src/browser/evidence-label.ts";
 
 function loadEvidenceLabel() {
-  const source = readFileSync(new URL("../public/evidence-label.js", import.meta.url), "utf8");
-  const context = { globalThis: {} };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewEvidenceLabel;
+  return ReviewEvidenceLabel;
 }
 
 test("formats a structured image source with group order and document name", () => {

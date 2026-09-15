@@ -1,11 +1,17 @@
 import type { MaterialCompletenessIssue, RetrySummary } from "./types/review";
 
 const FIELD_LABELS: Record<string, string> = {
+  "invoice.invoice_date": "开票日期",
+  "invoice.invoice_no": "发票号码",
+  "old_vehicle.vin": "报废车辆车架号",
+  "new_vehicle.vin": "新车车架号",
+  "old_vehicle.plate_no": "报废车辆号牌",
+  "new_vehicle.plate_no": "新车号牌",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
   page: "申请页面",
-  invoice: "二手车发票",
+  invoice: "机动车销售发票",
   registration_certificate: "登记证第 2 页",
 };
 

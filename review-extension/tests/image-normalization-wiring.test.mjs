@@ -11,14 +11,13 @@ test("loads image normalization before the content collector", () => {
   const manifest = JSON.parse(publicAsset("manifest.json"));
   const scripts = manifest.content_scripts[0].js;
 
-  assert.ok(scripts.indexOf("image-normalization.js") >= 0);
-  assert.ok(scripts.indexOf("image-normalization.js") < scripts.indexOf("content.js"));
+  assert.deepEqual(scripts, ["content.js"]);
 });
 
 test("normalizes remote image blobs in the background worker", () => {
-  const source = publicAsset("background.js");
+  const source = readFileSync(new URL("../src/browser/background.ts", import.meta.url), "utf8");
 
-  assert.match(source, /importScripts\("image-normalization\.js"\)/);
+  assert.match(source, /ReviewImageNormalization/);
   assert.match(source, /ReviewImageNormalization\.readResponseBlobWithLimit\(response\)/);
   assert.match(source, /ReviewImageNormalization\.normalizeBlob\(blob\)/);
   assert.doesNotMatch(source, /response\.blob\(\)/);
@@ -28,7 +27,7 @@ test("normalizes remote image blobs in the background worker", () => {
 });
 
 test("normalizes blob and data image assets in the content collector", () => {
-  const source = publicAsset("content.js");
+  const source = readFileSync(new URL("../src/browser/content.ts", import.meta.url), "utf8");
 
   assert.match(source, /ReviewImageNormalization\.normalizeBlob\(blob\)/);
   assert.doesNotMatch(source, /图片超过 5 MB 限制/);

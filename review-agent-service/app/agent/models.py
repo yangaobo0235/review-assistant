@@ -7,6 +7,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
+from app.models.checks import CheckResult
+from app.models.evidence import FieldObservation
+
 
 class RecognizedDocument(BaseModel):
     target_id: str
@@ -177,7 +180,7 @@ class QwenExtraction(BaseModel):
 class AgentBatchResult(BaseModel):
     """一批图片的渐进式提取结果及完成、失败、超时统计。"""
 
-    observations: list[Any] = Field(default_factory=list)
+    observations: list[FieldObservation] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     confidences: list[float] = Field(default_factory=list)
     total_count: int = 0
@@ -192,30 +195,6 @@ class AgentBatchResult(BaseModel):
     retry_summary: RetrySummary = Field(default_factory=RetrySummary)
 
 
-class ReviewCheckValue(BaseModel):
-    """确定性检查中参与比较的单个来源值。"""
-
-    source: str
-    value: Any = None
-    source_id: str | None = None
-    image_id: str | None = None
-    image_index: int | None = None
-    document_type: str | None = None
-    detail: str | None = None
-    derived_from: str | None = None
-    evidence_region: list[float] | None = None
-
-
-class ReviewCheck(BaseModel):
-    """一项确定性审核检查的状态、原因和证据。"""
-
-    check_id: str
-    label: str
-    status: Literal["MATCH", "CONFLICT", "INSUFFICIENT"]
-    reason: str
-    values: list[ReviewCheckValue] = Field(default_factory=list)
-    evidence: list[Any] = Field(default_factory=list)
-    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentAdvice(BaseModel):
@@ -224,7 +203,7 @@ class AgentAdvice(BaseModel):
     decision: Literal["PASS", "REVIEW_REQUIRED"] = "REVIEW_REQUIRED"
     title: str
     summary: str
-    findings: list[ReviewCheck] = Field(default_factory=list)
+    findings: list[CheckResult] = Field(default_factory=list)
     recognition_confidence: float | None = Field(default=None, ge=0, le=1)
     # 响应契约迁移期间保留旧 confidence 字段，以兼容尚未升级的扩展版本。
     confidence: float | None = Field(default=None, ge=0, le=1)

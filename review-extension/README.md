@@ -1,8 +1,39 @@
-# Review Assistant Extension
+# Review Extension
 
-项目说明已统一合并到[项目完整手册](../docs/system-spec.md)，本目录不再重复维护。
+浏览器扩展负责页面采集、审核工作台呈现和受控写回。它通过后端协议获得事实与任务，不实现服务端业务规则。
 
-- [模块说明](../docs/system-spec.md#8-审核工作台交互规范)
-- [安装与运行](../docs/system-spec.md#12-安装运行与配置)
-- [验证与排错](../docs/system-spec.md#13-开发验收与排错)
-- [项目入口](../README.md)
+其中 `PageAdapter`（页面适配器）负责网页采集，`Renderer`（渲染器）负责工作台展示，`PageAction`（页面动作）负责受控写回；`DOM`（页面文档对象模型）只允许在浏览器侧访问。
+
+## 目录职责
+
+| 目录 | 职责 |
+| --- | --- |
+| `src/browser` | DOM 读取、页面识别、图片候选和浏览器 API |
+| `src/adapters` | 页面到 `PageData` 的适配器 |
+| `src/session` | 会话、页面动作控制和动作注册表 |
+| `src/components` | React 工作台和任务渲染器 |
+| `src/hooks` | 工作流状态和请求编排 |
+| `src/types` | 前端协议和页面动作类型 |
+| `public/manifest.json` | 扩展权限与入口声明 |
+| `dist` | 构建产物，禁止手工编辑 |
+
+## 页面扩展规则
+
+新增审核页面先添加 `PageAdapter` 和 `PageActionRegistry` 条目，再接入通用采集与工作台。页面选择器、字段定位、写回白名单只能存在适配器或动作控制器中；不要把 DOM 选择器放进后端或 React 业务组件。
+
+## 本地验证
+
+```powershell
+npm install
+npm test
+npm run lint
+npm run build
+```
+
+## 前端运行链路
+
+页面脚本通过 Adapter 采集标准 `PageData`，Hook 创建会话并调用审核 API，响应中的 `ReviewTask` 进入任务工作台。Renderer 只负责可视化和用户确认；Action Controller 在执行前重新确认页面实例、字段原值和动作权限。任何网络错误、协议错误或页面变化都应显示为可恢复状态，不能静默清空审核结果。
+
+## 代码评审重点
+
+检查组件是否只消费后端结果、Hook 是否避免重复请求、Adapter 是否处理异步 DOM 和页面刷新、Action 是否执行白名单与回读、Manifest 是否只申请必要权限、类型是否与后端协议一致。禁止直接改 `dist`、在 `public` 新增旧式业务脚本，或在 UI 层复制后端规则。

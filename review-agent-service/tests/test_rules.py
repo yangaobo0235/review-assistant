@@ -1,4 +1,4 @@
-from app.models.review import Evidence, FieldStatus
+from app.models.review import EvidenceFact, FieldStatus
 from app.rules.compare import compare_values
 from app.rules.normalize import normalize_value
 
@@ -42,7 +42,7 @@ def test_normalize_business_dates_accepts_page_and_chinese_formats() -> None:
 
 
 def test_compare_values_returns_match_for_equivalent_values() -> None:
-    result = compare_values("old_vehicle.vin", "ab c", "ABC", [Evidence(source="test")])
+    result = compare_values("old_vehicle.vin", "ab c", "ABC", [EvidenceFact(source="test")])
     assert result.status is FieldStatus.MATCH
 
 

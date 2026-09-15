@@ -19,10 +19,14 @@ from pydantic import (
 
 from app.agent.models import (
     AgentAdvice,
+    CheckResult,
     MaterialCompletenessReport,
     RetrySummary,
-    ReviewCheck,
-    ReviewCheckValue,
+)
+from app.models.checks import CheckResultValue
+from app.models.evidence import (  # noqa: F401 - public export
+    EvidenceFact,
+    FieldObservation,
 )
 
 
@@ -139,42 +143,6 @@ class ImageInput(BaseModel):
         return {**value, "business_scope": scope}
 
 
-class Evidence(BaseModel):
-    source: str
-    source_id: str | None = None
-    field: str | None = None
-    uncertain: bool = False
-    image_index: int | None = None
-    detail: str | None = None
-    image_id: str | None = None
-    business_scope: str | None = None
-    group_title: str | None = None
-    group_order: int | None = None
-    document_type: str | None = None
-    value: Any = None
-    normalized_value: str | None = None
-    derived_from: str | None = None
-    evidence_region: list[float] | None = None
-    conflicting: bool = False
-
-
-class FieldObservation(BaseModel):
-    """One independently observed value and its review-document source."""
-
-    field: str
-    source_type: str
-    source_id: str
-    value: Any = None
-    derived_from: str | None = None
-    evidence_region: list[float] | None = None
-    uncertain: bool = False
-    document_type: str | None = None
-    image_index: int | None = None
-    image_id: str | None = None
-    business_scope: str | None = None
-    group_title: str | None = None
-    group_order: int | None = None
-    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class FieldComparison(BaseModel):
@@ -184,8 +152,9 @@ class FieldComparison(BaseModel):
     status: FieldStatus
     source: str = "rule_engine"
     confidence: float | None = Field(default=None, ge=0, le=1)
-    evidence: list[Evidence] = Field(default_factory=list)
+    evidence: list[EvidenceFact] = Field(default_factory=list)
     message: str = ""
+    differences: list[int] = Field(default_factory=list)
 
 
 class QrCheck(BaseModel):
@@ -205,14 +174,40 @@ class PageFillAction(BaseModel):
     owner_type: str
 
 
-class ReviewStep(BaseModel):
+class CapabilityResult(BaseModel):
+    capability_id: str
+    status: Literal["READY", "SKIPPED", "BLOCKED", "NOT_CONFIGURED", "SUCCEEDED", "FAILED"]
+    checks: list[CheckResult] = Field(default_factory=list)
+    evidence: list[EvidenceFact] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+    page_actions: list[PageFillAction] = Field(default_factory=list)
+    qr_checks: list[QrCheck] = Field(default_factory=list)
+    display_items: list[str] = Field(default_factory=list)
+    error_code: str | None = None
+    attempts: int = 0
+
+
+class CapabilityPlanEntry(BaseModel):
+    """Serializable execution plan entry exposed by ReviewResponse."""
+
+    capability_id: str
+    status: Literal["READY", "SKIPPED", "BLOCKED", "NOT_CONFIGURED"]
+    stage: str
+    reason: str = ""
+    dependencies: list[str] = Field(default_factory=list)
+    missing_dependencies: list[str] = Field(default_factory=list)
+
+
+class ReviewTask(BaseModel):
     """一个已经实际执行、可按顺序展示的审核步骤。"""
 
     step_id: str
+    check_ids: list[str] = Field(default_factory=list)
     sequence: int = Field(ge=1)
     category: Literal["FIELD", "EXTERNAL", "BUSINESS_RULE", "MATERIAL"]
     display_target: ReviewDisplayTarget
     page_field: str | None = None
+    page_target_field: str | None = None
     page_value: Any = None
     control_type: str | None = None
     writable: bool = False
@@ -220,8 +215,8 @@ class ReviewStep(BaseModel):
     label: str
     result_status: Literal["MATCH", "CONFLICT", "INSUFFICIENT"]
     reason: str
-    values: list[ReviewCheckValue] = Field(default_factory=list)
-    evidence: list[Evidence] = Field(default_factory=list)
+    values: list[CheckResultValue] = Field(default_factory=list)
+    evidence: list[EvidenceFact] = Field(default_factory=list)
     details: dict[str, Any] = Field(default_factory=dict)
     evidence_count: int = 0
     evidence_mode: str | None = None
@@ -230,19 +225,24 @@ class ReviewStep(BaseModel):
     normalized_page_value: str | None = None
 
     @model_validator(mode="after")
-    def validate_display_contract(self) -> "ReviewStep":
+    def validate_display_contract(self) -> "ReviewTask":
         if self.display_target is ReviewDisplayTarget.PAGE_FIELD and not self.page_field:
             raise ValueError("PAGE_FIELD review steps require page_field")
-        if (
-            self.display_target is ReviewDisplayTarget.ASSISTANT
-            and self.page_field is not None
-        ):
-            raise ValueError("ASSISTANT review steps cannot declare page_field")
+        # Assistant tasks use page_target_field for controlled DOM location and
+        # write-back. ``page_field`` remains reserved for PAGE_FIELD display.
+        if self.display_target is ReviewDisplayTarget.ASSISTANT and self.page_field:
+            raise ValueError("ASSISTANT review steps must not bind page_field; use page_target_field")
         if self.result_status == "MATCH" and self.requires_reviewer_action:
             raise ValueError("MATCH review steps cannot require reviewer action")
         if self.result_status != "MATCH" and not self.requires_reviewer_action:
             raise ValueError("non-MATCH review steps must require reviewer action")
         return self
+
+
+# Backward-compatible import for clients that still use the pre-v2 name.
+# The object is the same validated contract; new code should use ReviewTask.
+ReviewStep = ReviewTask
+
 
 
 class ReviewFieldSnapshot(BaseModel):
@@ -311,6 +311,7 @@ class ReviewRequest(BaseModel):
             "collection_diagnostics", "collectionDiagnostics"
         ),
     )
+    trace_id: str | None = Field(default=None, validation_alias=AliasChoices("trace_id", "traceId"))
 
 
 class CollectionDiagnostics(BaseModel):
@@ -379,7 +380,21 @@ class ResultSection(BaseModel):
     fields: list[str] = Field(default_factory=list)
 
 
+class PageActionIntent(BaseModel):
+    """Backend-proposed reversible page action; execution stays in the adapter."""
+
+    action_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    requires_authorization: bool = True
+
+
 class ReviewResponse(BaseModel):
+    capability_plan: list[CapabilityPlanEntry] = Field(default_factory=list)
+    capability_results: list[CapabilityResult] = Field(default_factory=list)
+    evidence_facts: list[EvidenceFact] = Field(default_factory=list)
+    protocol_version: Literal["2.0"] = "2.0"
+    trace_id: str = ""
+    presentation: Literal["FIELD_WORKBENCH", "MANUAL_REVIEW"] = "MANUAL_REVIEW"
     business_type: BusinessType = BusinessType.SCRAP_REPLACEMENT
     region: Region = Region.DEFAULT
     profile_version: str = "1.0"
@@ -388,7 +403,7 @@ class ReviewResponse(BaseModel):
     summary: str
     comparisons: list[FieldComparison] = Field(default_factory=list)
     qr_checks: list[QrCheck] = Field(default_factory=list)
-    cross_checks: list[ReviewCheck] = Field(default_factory=list)
+    cross_checks: list[CheckResult] = Field(default_factory=list)
     issues: list[str] = Field(default_factory=list)
     sections: list[ResultSection] = Field(default_factory=list)
     context_summary: dict[str, Any] = Field(default_factory=dict)
@@ -396,7 +411,8 @@ class ReviewResponse(BaseModel):
     material_completeness: MaterialCompletenessReport | None = None
     retry_summary: RetrySummary | None = None
     page_fill_intent: list[PageFillAction] = Field(default_factory=list)
-    review_steps: list[ReviewStep] = Field(default_factory=list)
+    page_actions: list[PageActionIntent] = Field(default_factory=list)
+    review_tasks: list[ReviewTask] = Field(default_factory=list)
 
 
 class ReviewProgress(BaseModel):

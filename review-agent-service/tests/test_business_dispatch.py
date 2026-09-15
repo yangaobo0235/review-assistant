@@ -177,7 +177,7 @@ async def test_transfer_response_passes_without_qr_when_all_rules_match(
         step.category == "EXTERNAL"
         or "POLICY" in step.step_id
         or "AFFILIATION" in step.step_id
-        for step in result.review_steps
+        for step in result.review_tasks
     )
 
 

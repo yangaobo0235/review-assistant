@@ -6,7 +6,7 @@
 """
 
 
-from app.agent.models import ReviewCheckValue
+from app.models.checks import CheckResultValue
 from app.models.review import FieldComparison, FieldStatus
 
 
@@ -39,5 +39,5 @@ def raw_settled_value(
     return settled_value(comparisons, field)
 
 
-def check_value(source: str, value: object | None) -> ReviewCheckValue:
-    return ReviewCheckValue(source=source, value=value)
+def check_value(source: str, value: object | None) -> CheckResultValue:
+    return CheckResultValue(source=source, value=value)

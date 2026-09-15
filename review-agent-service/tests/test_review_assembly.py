@@ -5,7 +5,7 @@
 同字段比较冲突和二维码官网冲突，业务规则检查结果不抬升风险级别。
 """
 
-from app.agent.models import AgentBatchResult, ReviewCheck
+from app.agent.models import AgentBatchResult, CheckResult
 from app.models.review import (
     BusinessType,
     FieldComparison,
@@ -25,6 +25,7 @@ def response_for(
     issues: list[str] | None = None,
 ) -> ReviewResponse:
     return ReviewResponse(
+        presentation=("FIELD_WORKBENCH" if business_type is BusinessType.SCRAP_REPLACEMENT else "MANUAL_REVIEW"),
         business_type=business_type,
         region=region,
         profile_version="1.0",
@@ -46,8 +47,8 @@ def comparison(field: str, status: FieldStatus) -> FieldComparison:
     )
 
 
-def conflict_business_check() -> ReviewCheck:
-    return ReviewCheck(
+def conflict_business_check() -> CheckResult:
+    return CheckResult(
         check_id="CROSS-TRANSFER-DATE-001",
         label="过户日期核验",
         status="CONFLICT",

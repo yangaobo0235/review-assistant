@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
+import { ReviewPageFieldWriter } from "../src/browser/page-field-writer.ts";
 
 function loadWriter(globalOverrides = {}) {
-  const source = readFileSync(new URL("../public/page-field-writer.js", import.meta.url), "utf8");
-  const context = { globalThis: { ...globalOverrides } };
-  vm.runInNewContext(source, context);
-  return context.globalThis.ReviewPageFieldWriter;
+  Object.assign(globalThis, globalOverrides);
+  return ReviewPageFieldWriter;
 }
 
 function option(text, { disabled = false, value = text } = {}) {

@@ -4,13 +4,13 @@ import test from "node:test";
 
 import {
   acknowledgeStep,
-  createReviewStepState,
-  nextReviewStep,
-  previousReviewStep,
+  createReviewTaskState,
+  nextReviewTask,
+  previousReviewTask,
   reviewStepTitle,
   isAffiliationRelationshipStep,
   reviewStepStatusLabel,
-  sortedReviewSteps,
+  sortedReviewTasks,
 } from "../src/reviewSteps.ts";
 
 const steps = [
@@ -37,7 +37,7 @@ const steps = [
 ];
 
 test("keeps exactly the backend review steps in sequence order", () => {
-  const result = sortedReviewSteps(steps);
+  const result = sortedReviewTasks(steps);
 
   assert.deepEqual(result.map((step) => step.step_id), [
     "BUSINESS-POLICY-ORIGIN-001",
@@ -47,7 +47,7 @@ test("keeps exactly the backend review steps in sequence order", () => {
 });
 
 test("records an exception acknowledgement only in local step state", () => {
-  const state = createReviewStepState(steps);
+  const state = createReviewTaskState(steps);
   const next = acknowledgeStep(state, "BUSINESS-AFFILIATION-SUBJECT-001", "MANUAL_REVIEW");
 
   assert.equal(next.decisions["BUSINESS-AFFILIATION-SUBJECT-001"], "MANUAL_REVIEW");
@@ -56,9 +56,9 @@ test("records an exception acknowledgement only in local step state", () => {
 });
 
 test("moves through steps without requiring a decision for matched items", () => {
-  const initial = createReviewStepState(steps);
-  const afterNext = nextReviewStep(initial);
-  const afterPrevious = previousReviewStep(afterNext);
+  const initial = createReviewTaskState(steps);
+  const afterNext = nextReviewTask(initial);
+  const afterPrevious = previousReviewTask(afterNext);
 
   assert.equal(afterNext.index, 1);
   assert.equal(afterPrevious.index, 0);
