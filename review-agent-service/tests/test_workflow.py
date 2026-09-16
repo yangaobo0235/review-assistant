@@ -42,6 +42,8 @@ async def test_workflow_returns_both_cross_checks_and_two_state_advice() -> None
         "AFFILIATION-SUBJECT-001",
         "AFFILIATION-AUX-CUSTOMER-NAME",
         "MATERIAL-COMPLETENESS",
+        "FIELD-INVOICE-CODE-NO",
+        "FIELD-NEW-VEHICLE-VIN",
     }
     assert result.recommendation.value == "REVIEW_REQUIRED"
     assert result.agent_advice.decision == "REVIEW_REQUIRED"

@@ -1,5 +1,5 @@
 import type { DomElement, DomRoot } from "./dom.ts";
-import type { PageFillAction, PageWriteAction } from "../types/review.ts";
+import type { PageFillAction, PageWriteAction, PageWriteGroupAction } from "../types/review.ts";
 type Guard = (() => boolean) | undefined;
 interface ResolvedControl {
   item: DomElement; control: DomElement; trigger?: DomElement | null; listboxId?: string | null;
@@ -8,6 +8,18 @@ interface ResolvedControl {
 }
 type Resolution = ResolvedControl | { error: string; item?: never; control?: never; nativeSelect?: never; radioInputs?: never };
 type PopupControl = Pick<ResolvedControl, "control" | "trigger" | "listboxId">;
+type GroupPrepared = {
+  field: string;
+  control: DomElement;
+  custom: boolean;
+  original: string;
+  resolved: PopupControl;
+};
+type GroupPreparationFailure = {
+  error: string;
+  code?: string;
+  currentValue?: string;
+};
 type Failure = { error: string; wrote?: boolean };
 type Preparation = { error?: never; prepared: { action: PageFillAction; resolved: ResolvedControl }[] } | (Failure & { prepared?: never });
 interface OriginalValue { label: string; raw?: string; selectedOptions?: HTMLOptionElement[]; selectedRadio?: DomElement; }
@@ -615,4 +627,73 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     return { ok: true, message: "字段已回填并回读，已定位到页面字段", actions: [{ field: action.field, label: action.field, value: after, status: "FILLED" }] };
   }
 
-  export const ReviewPageFieldWriter = { execute, preflight, executeValue, captureValue, triggerInvoiceVerification };
+  async function executeValueGroup(
+    root: DomRoot,
+    entries: Array<{ field: string; element: DomElement; expectedValue?: string | null }>,
+    action: PageWriteGroupAction,
+    guard: Guard,
+  ) {
+    if (!action.fields.length || action.fields.length !== entries.length || !String(action.value || "").trim()) {
+      return { ok: false, message: "组合字段回填参数不完整", actions: [] };
+    }
+    const prepared: Array<GroupPrepared | GroupPreparationFailure> = entries.map((entry) => {
+      if (!ALLOWED_VALUE_FIELDS.has(entry.field)) return { error: `${entry.field}不在报废置换允许回填范围内` };
+      const control = writableValueControl(entry.element);
+      const custom = control?.getAttribute?.("role") === "combobox";
+      if (!control || !writable(control, custom)) return { error: `${entry.field}目标控件不可写` };
+      const current = readValueControl(control);
+      const expected = entry.expectedValue ?? action.expectedValues[entry.field];
+      if (expected != null && normalize(current) !== normalize(expected)) {
+        return { error: `${entry.field}当前值已变化，请重新采集后回填`, code: "FIELD_VALUE_CHANGED", currentValue: current };
+      }
+      return {
+        field: entry.field,
+        control,
+        custom,
+        original: current,
+        resolved: { control, trigger: customTrigger(control), listboxId: control.getAttribute?.("aria-controls") || control.getAttribute?.("aria-owns") },
+      };
+    });
+    const failed = prepared.find((item): item is GroupPreparationFailure => "error" in item);
+    if (failed) return { ok: false, message: failed.error, code: failed.code, currentValue: failed.currentValue, actions: [] };
+    const successful = prepared.filter((item): item is GroupPrepared => "control" in item);
+    const written: GroupPrepared[] = [];
+    const rollback = async (message: string) => {
+      const errors: string[] = [];
+      if (!sameCollectedRecord(guard)) return { ok: false, message: `${message}；页面身份已失效，已停止回滚写入`, actions: [] };
+      for (const item of [...written].reverse()) {
+        const restoreError = item.custom
+          ? await restoreCustomOption(root, item.resolved, item.field, item.original, guard)
+          : dispatchValue(item.control, item.original, root);
+        if (restoreError) errors.push(String(restoreError));
+      }
+      await settle();
+      return errors.length
+        ? { ok: false, message: `${message}；自动回滚未完成（${errors.join("；")}），请人工核对页面`, actions: [] }
+        : { ok: false, message: `${message}；已回滚`, actions: [] };
+    };
+    for (const item of successful) {
+      if (!sameCollectedRecord(guard)) return await rollback("页面身份已失效，已停止组合回填");
+      const error = item.custom
+        ? await restoreCustomOption(root, item.resolved, item.field, action.value, guard)
+        : dispatchValue(item.control, action.value, root);
+      if (error) return await rollback(String(error));
+      written.push(item);
+      await settle();
+    }
+    if (!sameCollectedRecord(guard)) return await rollback("页面身份已失效，已停止组合回填");
+    const results = [];
+    for (const item of successful) {
+      const after = readValueControl(item.control);
+      if (normalize(after) !== normalize(action.value)) return await rollback(`${item.field}回填后回读失败`);
+      results.push({ field: item.field, label: item.field, value: after, status: "FILLED" });
+      const target = item.control.closest?.<DomElement>(".ant-input-affix-wrapper, .ant-select, .ant-picker, .el-input, .el-select, .el-date-editor") || item.control;
+      target.animate?.([
+        { outline: "3px solid #1677ff", outlineOffset: "3px", backgroundColor: "#e6f4ff" },
+        { outline: "3px solid transparent", outlineOffset: "3px" },
+      ], { duration: 4000 });
+    }
+    return { ok: true, message: "组合字段已同时回填并回读", actions: results };
+  }
+
+  export const ReviewPageFieldWriter = { execute, preflight, executeValue, executeValueGroup, captureValue, triggerInvoiceVerification };

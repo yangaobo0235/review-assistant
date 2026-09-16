@@ -164,7 +164,7 @@ async def test_scrap_runs_route_collected_field_to_page_and_rest_to_assistant(re
         range(1, len(result.review_tasks) + 1)
     )
     vin_step = next(
-        step for step in result.review_tasks if step.step_id == "FIELD-new_vehicle.vin"
+        step for step in result.review_tasks if step.step_id == "FIELD-NEW-VEHICLE-VIN"
     )
     assert vin_step.display_target == "ASSISTANT"
     assert vin_step.page_field is None
@@ -172,7 +172,7 @@ async def test_scrap_runs_route_collected_field_to_page_and_rest_to_assistant(re
     assert all(
         step.display_target == "ASSISTANT" and step.page_field is None
         for step in result.review_tasks
-        if step.step_id != "FIELD-new_vehicle.vin"
+        if step.step_id != "FIELD-NEW-VEHICLE-VIN"
     )
     # 缺少主体关系证据时不生成任何挂靠填写意图。
     assert result.page_fill_intent == []

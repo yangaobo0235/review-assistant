@@ -17,7 +17,7 @@ from app.models.review import (
     ReviewRequest,
     ReviewResponse,
 )
-from app.rules.aggregate import aggregate_field
+from app.rules.aggregate import aggregate_field, aggregate_old_vehicle_vin
 from app.rules.check_results import unique_checks
 from app.rules.field_evidence_policies import (
     MATERIAL_FIELD_BY_PAGE_FIELD,
@@ -108,15 +108,40 @@ def _build_comparisons(
         material_field = MATERIAL_FIELD_BY_PAGE_FIELD.get(field_name, field_name)
         return [item for item in observations if item.field == (field_name if item.source_type == "page" else material_field)]
 
-    comparisons = [
-        aggregate_field(
-            field_name,
-            filter_allowed_observations(field_name, field_observations(field_name)),
-            uncertain_requires_review=uncertain_requires_review,
-            single_evidence_requires_review=(field_policy(field_name).allow_single_evidence is False if field_policy(field_name) else True),
+    comparisons = []
+    for field_name in fields:
+        observations_for_field = filter_allowed_observations(
+            field_name, field_observations(field_name)
         )
-        for field_name in fields
-    ]
+        if field_name == "old_vehicle.vin" and uncertain_requires_review:
+            comparisons.append(aggregate_old_vehicle_vin(observations_for_field))
+            continue
+        policy = field_policy(field_name)
+        if policy and policy.mode == "SYSTEM":
+            comparison = aggregate_field(
+                field_name,
+                observations_for_field,
+                uncertain_requires_review=False,
+                single_evidence_requires_review=False,
+            )
+            has_page_value = request.page_fields.get(field_name) not in (None, "")
+            comparisons.append(comparison.model_copy(update={
+                "status": FieldStatus.MATCH if has_page_value else FieldStatus.REVIEW_REQUIRED,
+                "message": (
+                    "以页面填写值为准，不参与材料比对"
+                    if has_page_value
+                    else "页面字段未填写，请人工确认"
+                ),
+            }))
+            continue
+        comparisons.append(aggregate_field(
+            field_name,
+            observations_for_field,
+            uncertain_requires_review=uncertain_requires_review,
+            single_evidence_requires_review=(
+                policy.allow_single_evidence is False if policy else True
+            ),
+        ))
     return comparisons
 
 

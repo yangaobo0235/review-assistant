@@ -41,11 +41,10 @@ def test_ocr_vin_compares_its_own_page_value_against_shared_materials(profile, v
     steps = build_review_tasks(request=request, profile=profile, comparisons=comparisons,
                                external_checks=[], business_checks=[], completeness=None, limitations=[])
     by_id = {item.step_id: item for item in steps}
-    main, ocr = by_id["FIELD-new_vehicle.vin"], by_id["FIELD-page_ocr.new_vehicle_vin"]
-    assert ocr.page_value == value
-    assert ocr.result_status == status.value
-    assert ocr.requires_reviewer_action == (status is FieldStatus.CONFLICT)
-    assert [item.image_id for item in ocr.evidence] == [item.image_id for item in main.evidence]
-    assert len(ocr.evidence) == 3
-    assert ocr.evidence_mode == main.evidence_mode == "PARALLEL"
-    assert [item.value for item in ocr.values if item.image_id] == ["VIN-NEW"] * 3
+    task = by_id["FIELD-NEW-VEHICLE-VIN"]
+    assert task.page_values[0].value == "VIN-NEW"
+    assert task.page_values[1].value == value
+    assert task.result_status == ("CONFLICT" if value != "VIN-NEW" else "MATCH")
+    assert task.requires_reviewer_action == (value != "VIN-NEW")
+    assert len(task.evidence) == 3
+    assert [item.value for item in task.values if item.image_id] == ["VIN-NEW"] * 3

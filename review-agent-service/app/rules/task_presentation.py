@@ -60,19 +60,25 @@ def prepare_display_tasks(
     result = []
     grouped = [
         ("QR-GROUP", "二维码官网核验", "EXTERNAL", [item for item in tasks if item.step_id.startswith("QR-") or item.step_id == "EXTERNAL-scrap_certificate_qr"], qr_enabled, "INSUFFICIENT", "未取得可核验的二维码"),
-        ("MATERIAL-GROUP", "材料完整性和识别异常", "MATERIAL", [item for item in tasks if item.category == "MATERIAL"], completeness is not None and (completeness.status != "COMPLETE" or any(item.category == "MATERIAL" for item in tasks)), "MATCH" if completeness and completeness.status == "COMPLETE" else "INSUFFICIENT", "必需材料已采集并完成识别" if completeness and completeness.status == "COMPLETE" else "材料不完整或存在识别异常"),
+        ("MATERIAL-GROUP", "材料完整性", "MATERIAL", [item for item in tasks if item.category == "MATERIAL"], completeness is not None and (completeness.status != "COMPLETE" or any(item.category == "MATERIAL" for item in tasks)), "MATCH" if completeness and completeness.status == "COMPLETE" else "INSUFFICIENT", "必需材料已采集" if completeness and completeness.status == "COMPLETE" else "材料不完整或待确认"),
     ]
     for task_id, label, category, members, enabled, fallback, reason in grouped:
         if not enabled and not members:
             continue
         consumed.update(item.step_id for item in members)
-        status = "MATCH" if members else fallback
+        # 材料任务的公开语义只有“是否齐全”。识别限制、字段异常等
+        # 内部诊断不能通过任务 reason 泄漏到工作台。
+        status = (
+            "MATCH"
+            if completeness is not None and completeness.status == "COMPLETE"
+            else fallback
+        ) if category == "MATERIAL" else ("MATCH" if members else fallback)
         base = ReviewTask(
             step_id=task_id, sequence=min((item.sequence for item in members), default=10000),
             category=category, display_target="ASSISTANT", label=label,
             result_status=status, requires_reviewer_action=status != "MATCH",
             reason="" if members else reason,
         )
-        result.append(_merge(base, members))
+        result.append(base if category == "MATERIAL" else _merge(base, members))
     result.extend(replacements.get(item.step_id, item) for item in tasks if item.step_id not in consumed)
     return [item.model_copy(update={"sequence": i}) for i, item in enumerate(sorted(result, key=lambda item: item.sequence), 1)]

@@ -177,7 +177,6 @@ def test_routes_invoice_policy_fields_only_from_new_vehicle_scope() -> None:
         "invoice.invoice_no": "INV-001",
         "invoice.invoice_date": "2026-09-10",
         "new_vehicle.origin": "长春市",
-        "application.terminal_phone": "0431-12345678",
     }
     assert limitation is None
 

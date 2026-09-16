@@ -13,6 +13,7 @@ from app.agent.models import (
 from app.models.checks import CheckResultValue
 from app.models.review import FieldComparison, FieldStatus, QrCheck
 from app.rules.check_results import qr_review_checks, unique_checks
+from app.rules.composite_fields import PAGE_FIELD_COMPOSITES
 from app.rules.review_fields import SCRAP_PAGE_FIELD_LABELS
 
 FIELD_LABELS = {
@@ -58,10 +59,17 @@ def build_final_advice(
     *,
     completeness: MaterialCompletenessReport | None = None,
 ) -> tuple[str, AgentAdvice]:
+    composite_check_ids = {item.check_id for item in cross_checks}
+    superseded_fields = {
+        field
+        for spec in PAGE_FIELD_COMPOSITES
+        if spec.check_id in composite_check_ids
+        for field in (spec.primary_field, spec.secondary_field)
+    }
     findings = [
         _field_finding(item)
         for item in comparisons
-        if item.status is not FieldStatus.MATCH
+        if item.status is not FieldStatus.MATCH and item.field not in superseded_fields
     ]
     findings.extend(item for item in cross_checks if item.status != "MATCH")
     if completeness is not None and completeness.enforced:

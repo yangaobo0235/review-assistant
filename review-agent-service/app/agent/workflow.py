@@ -57,6 +57,7 @@ from app.rules.capabilities import (
     RuleExecutionResult,
 )
 from app.rules.check_results import qr_review_checks, unique_checks
+from app.rules.composite_fields import build_page_composite_checks
 from app.rules.cross_document_common import raw_settled_value
 from app.rules.evidence_values import batch_observations
 from app.rules.external_check_registry import ExternalCheckRegistry
@@ -492,6 +493,10 @@ class ReviewWorkflow:
             business_checks=[],
             defer_advice=True,
         )
+        composite_checks = build_page_composite_checks(
+            state["request"],
+            {item.field: item for item in response.comparisons},
+        )
         return {
             "response": response,
             "external_results": unique_checks(
@@ -500,6 +505,10 @@ class ReviewWorkflow:
                     *qr_review_checks(response.qr_checks, state["request"].images),
                 ]
             ),
+            "cross_checks": unique_checks([
+                *state.get("cross_checks", []),
+                *composite_checks,
+            ]),
         }
 
     async def _assemble_facts(self, state: ReviewState) -> dict[str, Any]:
@@ -693,4 +702,3 @@ class ReviewWorkflow:
             # return a typed empty batch together with the structured response.
             batch = AgentBatchResult(total_count=len(request.images))
         return response, batch
-

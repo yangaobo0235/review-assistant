@@ -24,6 +24,11 @@ from app.models.review import (
     ReviewTask,
 )
 from app.rules.affiliation_subject_checks import normalize_page_owner_type
+from app.rules.composite_fields import (
+    COMPOSITE_FIELDS_BY_MEMBER,
+    PAGE_FIELD_COMPOSITES,
+    build_page_composite_checks,
+)
 from app.rules.field_evidence_policies import field_policy
 from app.rules.final_advice import FIELD_LABELS
 from app.rules.normalize import normalize_value
@@ -93,7 +98,9 @@ def _step(
     reason: str,
     page_field: str | None = None,
     page_target_field: str | None = None,
+    page_target_fields: Sequence[str] = (),
     page_value: object | None = None,
+    page_values: Sequence[CheckResultValue] = (),
     control_type: str | None = None,
     writable: bool = False,
     values: Sequence[CheckResultValue] = (),
@@ -114,7 +121,9 @@ def _step(
         display_target=display_target,
         page_field=page_field if display_target is ReviewDisplayTarget.PAGE_FIELD else None,
         page_target_field=page_target_field,
+        page_target_fields=list(page_target_fields),
         page_value=page_value,
+        page_values=list(page_values),
         control_type=control_type,
         writable=writable,
         requires_reviewer_action=(result_status != "MATCH") if requires_reviewer_action is None else requires_reviewer_action,
@@ -234,6 +243,47 @@ def _page_catalog_step(snapshot: ReviewFieldSnapshot, step_id: str) -> ReviewTas
         control_type=snapshot.control_type,
         writable=False,
         values=[CheckResultValue(source="申请页面字段", value=snapshot.value)],
+    )
+
+
+def _composite_field_step(
+    request: ReviewRequest,
+    check: CheckResult,
+    *,
+    page_interaction: bool,
+) -> ReviewTask:
+    """Render one task for a pair of page controls with one material value."""
+
+    spec = next(item for item in PAGE_FIELD_COMPOSITES if item.check_id == check.check_id)
+    page_values = [
+        CheckResultValue(source=spec.primary_label, value=request.page_fields.get(spec.primary_field)),
+        CheckResultValue(source=spec.secondary_label, value=request.page_fields.get(spec.secondary_field)),
+    ]
+    material_values = [item for item in check.values if item.source not in {
+        spec.primary_field,
+        spec.secondary_field,
+    }]
+    return _step(
+        step_id=check.check_id,
+        category="FIELD",
+        display_target=ReviewDisplayTarget.ASSISTANT,
+        label=check.label,
+        result_status=check.status,
+        reason=check.reason,
+        page_target_field=spec.primary_field if page_interaction else None,
+        page_target_fields=(spec.primary_field, spec.secondary_field) if page_interaction else (),
+        page_value=request.page_fields.get(spec.primary_field),
+        page_values=page_values,
+        writable=page_interaction,
+        values=material_values,
+        evidence=[item for item in check.evidence if item.source != "申请页面字段"],
+        details={
+            **check.details,
+            "comparison_basis": "PAGE_PAIR_THEN_MATERIAL",
+            "paired_page_fields": [spec.primary_field, spec.secondary_field],
+            "material_field": spec.material_field,
+        },
+        requires_reviewer_action=check.status != "MATCH",
     )
 
 
@@ -364,10 +414,23 @@ def _scrap_field_steps(
     business_checks: Sequence[CheckResult],
 ) -> list[ReviewTask]:
     if not request.review_fields:
-        return [
-            _field_step(request, comparison, page_interaction=True)
-            for comparison in comparisons
-        ]
+        composite_checks = {
+            item.check_id: item
+            for item in business_checks
+            if any(item.check_id == spec.check_id for spec in PAGE_FIELD_COMPOSITES)
+        }
+        result: list[ReviewTask] = []
+        emitted: set[str] = set()
+        for comparison in comparisons:
+            composite = COMPOSITE_FIELDS_BY_MEMBER.get(comparison.field)
+            if composite is None:
+                result.append(_field_step(request, comparison, page_interaction=True))
+                continue
+            check = composite_checks.get(composite.check_id)
+            if check is not None and composite.check_id not in emitted:
+                result.append(_composite_field_step(request, check, page_interaction=True))
+                emitted.add(composite.check_id)
+        return result
 
     comparisons_by_field = {item.field: item for item in comparisons}
     auxiliary_by_field = {
@@ -379,12 +442,23 @@ def _scrap_field_steps(
         (item for item in business_checks if item.check_id == "AFFILIATION-SUBJECT-001"),
         None,
     )
+    composite_checks = {
+        item.check_id: item
+        for item in business_checks
+        if any(item.check_id == spec.check_id for spec in PAGE_FIELD_COMPOSITES)
+    }
     mapped_counts: dict[str, int] = {}
     for snapshot in request.review_fields:
         if snapshot.field:
             mapped_counts[snapshot.field] = mapped_counts.get(snapshot.field, 0) + 1
 
+    snapshots_by_field = {
+        item.field: item
+        for item in request.review_fields
+        if item.field and mapped_counts.get(item.field) == 1
+    }
     steps: list[ReviewTask] = []
+    emitted_composites: set[str] = set()
     for index, snapshot in enumerate(
         sorted(request.review_fields, key=lambda item: item.order), start=1
     ):
@@ -393,6 +467,25 @@ def _scrap_field_steps(
         if not snapshot.editable and not snapshot.field:
             continue
         field = snapshot.field if mapped_counts.get(snapshot.field or "") == 1 else None
+        composite = COMPOSITE_FIELDS_BY_MEMBER.get(field or "")
+        if composite is not None:
+            check = composite_checks.get(composite.check_id)
+            if check is not None and composite.check_id not in emitted_composites:
+                paired_snapshots = [
+                    snapshots_by_field.get(composite.primary_field),
+                    snapshots_by_field.get(composite.secondary_field),
+                ]
+                step = _composite_field_step(
+                    request,
+                    check,
+                    page_interaction=True,
+                ).model_copy(update={
+                    "writable": all(item is not None and item.editable for item in paired_snapshots),
+                    "control_type": "group",
+                })
+                steps.append(step)
+                emitted_composites.add(composite.check_id)
+            continue
         if field == "application.owner_type":
             steps.append(_owner_type_system_step(snapshot))
             continue
@@ -457,7 +550,6 @@ def _material_steps(
     limitations: Sequence[str],
 ) -> list[ReviewTask]:
     steps: list[ReviewTask] = []
-    issue_causes: set[str] = set()
     if completeness is not None and profile.material_policy is not None:
         # 材料完整时不生成材料成功步骤，只展示实际存在的问题。
         for index, issue in enumerate(completeness.issues, start=1):
@@ -471,26 +563,8 @@ def _material_steps(
                     reason=f"{issue.message}；{issue.suggested_action}",
                 )
             )
-            issue_causes.update(
-                cause for cause in (issue.reason_detail, issue.message) if cause
-            )
-    # 同一根因的材料问题和识别限制只保留材料问题这一个步骤。
-    unique_limitations = [
-        limitation
-        for limitation in dict.fromkeys(limitations)
-        if limitation not in issue_causes
-    ]
-    steps.extend(
-        _step(
-            step_id=f"LIMITATION-{index}",
-            category="MATERIAL",
-            display_target=ReviewDisplayTarget.ASSISTANT,
-            label="识别限制",
-            result_status="INSUFFICIENT",
-            reason=limitation,
-        )
-        for index, limitation in enumerate(unique_limitations, start=1)
-    )
+    # 识别限制保留在响应诊断中，但不再生成独立工作台任务；材料任务
+    # 只表示材料是否齐全，避免审核员看到“识别异常字段”类细节。
     return steps
 
 
@@ -523,12 +597,31 @@ def build_review_tasks(
 ) -> list[ReviewTask]:
     """一次返回完整、有序、带展示目标的审核步骤列表。"""
     page_interaction = profile_uses_page_interaction(profile)
+    # 组合字段是页面原始值与材料值之间的公开协议。工作流会提前生成
+    # 这些检查，但路由函数也必须自洽，以保证重放、测试和其他调用方不会
+    # 因遗漏 synthetic check 而退化成两个独立字段任务。
+    comparison_by_field = {item.field: item for item in comparisons}
+    generated_composites = build_page_composite_checks(request, comparison_by_field)
+    business_checks_by_id = {item.check_id: item for item in business_checks}
+    business_checks_ordered = list(business_checks)
+    for generated in generated_composites:
+        if generated.check_id in business_checks_by_id:
+            index = next(
+                index
+                for index, item in enumerate(business_checks_ordered)
+                if item.check_id == generated.check_id
+            )
+            business_checks_ordered[index] = generated
+        else:
+            business_checks_ordered.append(generated)
+        business_checks_by_id[generated.check_id] = generated
+    effective_business_checks = tuple(business_checks_ordered)
     steps: list[ReviewTask] = []
     # PAGE_FIELD 只用于目标 Profile 且请求中存在该规范字段；
     # 缺失字段转为 ASSISTANT + INSUFFICIENT。
     # 外部规则、派生规则和材料异常使用 ASSISTANT。
     if page_interaction:
-        steps.extend(_scrap_field_steps(request, comparisons, business_checks))
+        steps.extend(_scrap_field_steps(request, comparisons, effective_business_checks))
     else:
         steps.extend(
             _field_step(request, comparison, page_interaction=False)
@@ -546,7 +639,10 @@ def build_review_tasks(
         steps.append(_external_step(check))
     steps.extend(
         _business_step(request, check, page_interaction=page_interaction)
-        for check in business_checks
+        for check in effective_business_checks
+        if check.check_id not in {
+            spec.check_id for spec in PAGE_FIELD_COMPOSITES
+        }
     )
     steps.extend(_material_steps(profile, completeness, limitations))
     from app.rules.task_presentation import prepare_display_tasks

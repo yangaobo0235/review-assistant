@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { evidencePresentation } from "../evidencePresentation";
+import { fieldLabel } from "../reviewPanelConfig";
 import { isBlockingPageFillFailure, type PageFillResult } from "../pageFillClient";
 import { REVIEW_TASK_IDS, isMaterialTask, isQrTask } from "../reviewSteps";
 import type { EvidenceFact, MaterialCompletenessReport, PageData, PageFillAction, QrCheck, ReviewResponse, ReviewTask, SubjectEvidenceRequirement } from "../types/review";
@@ -10,6 +11,7 @@ interface Props {
   pageData?: PageData | null;
   onFocusImage?: (imageId: string) => Promise<void>;
   onApplyPageFieldValue?: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
+  onApplyPageFieldGroupValue?: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   onApplyAffiliationFill?: (actions: PageFillAction[]) => Promise<PageFillResult>;
   onRerun?: () => Promise<void>;
   assistantStep?: ReviewTask | null;
@@ -37,7 +39,7 @@ function LegacyAssistantFallback({ assistantStep, blockingIssue, onDecide, onFoc
   return <section className="assistant-review" aria-label="审核助手"><h2>{assistantStep.label}</h2><p className="assistant-review-reason">{assistantStep.reason}</p>{assistantStep.values.map((item, index) => <p key={`${item.source}-${index}`}><b>{item.source}</b> {String(item.value ?? "")}</p>)}<EvidenceActions evidence={assistantStep.evidence} onFocusImage={onFocusImage} />{assistantStep.requires_reviewer_action ? <div className="assistant-review-actions"><button type="button" onClick={() => onDecide?.(assistantStep.step_id, "CONFIRMED")}>确认无误</button><button type="button" onClick={() => onDecide?.(assistantStep.step_id, "MARKED_EXCEPTION")}>标记异常</button></div> : null}</section>;
 }
 
-function Workbench({ review, pageData, onFocusImage = async () => {}, onApplyPageFieldValue = async () => ({ ok: false, message: "页面写回未配置" }), onApplyAffiliationFill = async () => ({ ok: false, message: "挂靠写回未配置" }), onRerun }: Props & { review: ReviewResponse }) {
+function Workbench({ review, pageData, onFocusImage = async () => {}, onApplyPageFieldValue = async () => ({ ok: false, message: "页面写回未配置" }), onApplyPageFieldGroupValue = async () => ({ ok: false, message: "页面组合字段写回未配置" }), onApplyAffiliationFill = async () => ({ ok: false, message: "挂靠写回未配置" }), onRerun }: Props & { review: ReviewResponse }) {
   const steps = useMemo(() => [...(review.review_tasks ?? [])].sort((a, b) => a.sequence - b.sequence), [review.review_tasks]);
   // The backend canonicalizes all material issues into MATERIAL-GROUP. Keep
   // a defensive filter for older/partial responses so the same material
@@ -74,7 +76,7 @@ function Workbench({ review, pageData, onFocusImage = async () => {}, onApplyPag
     setMessage(failure.message);
     if (isBlockingPageFillFailure(failure)) setBlockingIssue(failure.message);
   }, []);
-  const fill = async (step: ReviewTask, value: string) => { const field = fieldFromStep(step); if (!field || !pageData || busy || blockingIssue) return; const oldValue = pageData.pageFields[field] ?? ""; setBusy(true); setMessage("正在回填并回读页面字段..."); try { const result = await onApplyPageFieldValue(field, value, oldValue); if (result.ok) { setFilledCount((count) => count + 1); setMessage(`${stepTitle(step)}已回填并回读，已定位到页面字段；核对后请点击“标记人工复核”`); } else handleWriteFailure(result); } catch (error) { handleWriteFailure(error); } finally { setBusy(false); } };
+  const fill = async (step: ReviewTask, value: string) => { const field = fieldFromStep(step); if (!field || !pageData || busy || blockingIssue) return; const fields = step.page_target_fields?.length ? step.page_target_fields : [field]; const expectedValues = Object.fromEntries(fields.map((targetField) => [targetField, pageData.pageFields[targetField] ?? null])); setBusy(true); setMessage(fields.length > 1 ? "正在联合回填并回读页面字段..." : "正在回填并回读页面字段..."); try { const result = fields.length > 1 ? await onApplyPageFieldGroupValue(fields, value, expectedValues) : await onApplyPageFieldValue(field, value, expectedValues[field]); if (result.ok) { setFilledCount((count) => count + 1); setMessage(`${stepTitle(step)}已${fields.length > 1 ? "同时回填两个字段并" : ""}回读，已定位到页面字段；核对后请点击“标记人工复核”`); } else handleWriteFailure(result); } catch (error) { handleWriteFailure(error); } finally { setBusy(false); } };
   const fillAffiliation = useCallback(async () => { if (affiliationFilled || busy || blockingIssue) return; const actions = review.page_fill_intent ?? []; if (actions.length !== 2) { setMessage("当前主体关系没有可用的挂靠填写建议"); return; } setBusy(true); setMessage("正在联合校验并填写挂靠字段..."); try { const result = await onApplyAffiliationFill(actions); if (result.ok) { setAffiliationFilled(true); setFilledCount((count) => count + (result.actions?.length ?? 2)); } else handleWriteFailure(result); setMessage(result.message); } catch (error) { handleWriteFailure(error); } finally { setBusy(false); } }, [affiliationFilled, busy, blockingIssue, review.page_fill_intent, onApplyAffiliationFill, handleWriteFailure]);
   useEffect(() => { const id = pageData?.collectionId; const actions = review.page_fill_intent ?? []; if (!id || actions.length !== 2 || automaticAttempt.current === id) return; const subject = displaySteps.find((step) => step.step_id === REVIEW_TASK_IDS.affiliationSubject); if (subject && subject.details?.affiliation_subject_status !== "MATCH" && subject.result_status !== "MATCH") return; if (!actions.some((a) => a.field === "old_vehicle.affiliation") || !actions.some((a) => a.field === "new_vehicle.affiliation")) return; automaticAttempt.current = id; void Promise.resolve().then(() => fillAffiliation()); }, [pageData?.collectionId, review.page_fill_intent, displaySteps, fillAffiliation]);
   const allDone = pending.length === 0;
@@ -84,12 +86,26 @@ function Workbench({ review, pageData, onFocusImage = async () => {}, onApplyPag
 function fieldFromStep(step: ReviewTask) { return step.page_field ?? step.page_target_field ?? null; }
 function stepTitle(step: ReviewTask) { return step.label; }
 function StepDetail({ step, pageData, qrChecks, affiliationActions, affiliationFilled, disabled, onFocusImage, onFill, onFillAffiliation, onChoose, materialReport }: { step: ReviewTask; pageData?: PageData | null; qrChecks: QrCheck[]; affiliationActions: PageFillAction[]; affiliationFilled: boolean; disabled: boolean; onFocusImage: (id: string) => Promise<void>; materialReport?: MaterialCompletenessReport | null; onFill: (step: ReviewTask, value: string) => Promise<void>; onFillAffiliation: () => void; onChoose: (step: ReviewTask, decision: Decision) => void }) {
-  const field = fieldFromStep(step); const pageValue = field ? pageData?.pageFields[field] ?? step.page_value : step.page_value;
+  const field = fieldFromStep(step);
+  const pageValue = field ? pageData?.pageFields[field] ?? step.page_value : step.page_value;
   const values = isQrTask(step) ? [] : step.values.filter((item) => item.source !== "申请页面字段" && item.value != null && String(item.value).trim() && String(item.value) !== "[object Object]");
   const images = new Map((pageData?.images ?? []).filter((image) => image.imageId).map((image) => [image.imageId as string, image]));
   const effectiveStatus = step.result_status;
   const requiresAction = step.requires_reviewer_action;
- return <article className="workbench-card"><div className="workbench-card-title"><div><small>{step.category === "FIELD" ? "页面字段" : "页面外核验"}</small><h2>{stepTitle(step)}</h2></div><b className={`status-${effectiveStatus.toLowerCase()}`}>{statusText[effectiveStatus]}</b></div>{step.category === "FIELD" ? <div className="page-value"><span>页面原始值</span><strong>{cleanPageValue(pageValue) || "未采集"}</strong></div> : null}{values.length ? <div className="candidate-list"><span className="evidence-section-title">材料提取值</span>{values.map((item, index) => { const image = (item.image_id ? images.get(item.image_id) : undefined) || (pageData?.images ?? []).find((candidate) => item.image_index != null && candidate.index === item.image_index); return <div className="candidate" key={`${item.source}-${index}`}><div><strong>{renderDiff(item.value, item.differences)}</strong><small>{item.source === "图片识别" ? evidencePresentation(item).label : item.source}{item.derived_from === "invoice.invoice_no" ? " · 由发票数电号码适配" : ""}</small>{image ? <div className="candidate-evidence"><img src={image.dataUrl || image.src} alt="材料" />{image.imageId ? <button type="button" onClick={() => void onFocusImage(image.imageId as string)}>查看原图</button> : null}</div> : null}</div>{field && step.result_status !== "MATCH" ? <button aria-label={`${stepTitle(step)}回填材料值`} className="fill-value-button" type="button" disabled={disabled || !step.writable} onClick={() => void onFill(step, String(item.value))}>回填此值</button> : null}</div>; })}</div> : null}<p className="workbench-reason">{step.reason}</p>{field ? <ManualValueInput key={`${pageData?.collectionId}-${field}`} initialValue={cleanPageValue(pageValue)} label={stepTitle(step)} disabled={disabled || !pageData || !step.writable} onFill={(value) => onFill(step, value)} /> : null}{isMaterialTask(step) ? <MaterialChecklist report={materialReport} pageData={pageData} onFocusImage={onFocusImage} /> : null}{step.step_id === REVIEW_TASK_IDS.affiliationSubject ? <SubjectRequirements requirements={step.details?.subject_requirements || []} pageData={pageData} onFocusImage={onFocusImage} /> : null}{isQrTask(step) ? qrChecks.map((check, index) => <QrUrl check={check} key={`${check.image_index}-${index}`} />) : null}<StructuredEvidence evidence={step.evidence} />{step.step_id === REVIEW_TASK_IDS.affiliationSubject && (step.details?.affiliation_subject_status === "MATCH" || step.result_status === "MATCH") && affiliationActions.length === 2 ? <button type="button" className="affiliation-fill-action" disabled={affiliationFilled || disabled} onClick={() => void onFillAffiliation()}>{affiliationFilled ? "挂靠字段已填写" : "自动填写挂靠字段"}</button> : null}{requiresAction ? <div className="workbench-actions"><button type="button" disabled={disabled} className="secondary-action" onClick={() => onChoose(step, "MARKED_EXCEPTION")}>标记人工复核</button></div> : null}</article>;
+  const pageValues = step.page_values?.length ? step.page_values : [{ source: "页面原始值", value: pageValue }];
+  return <article className="workbench-card">
+    <div className="workbench-card-title"><div><small>{step.category === "FIELD" ? "页面字段" : "页面外核验"}</small><h2>{stepTitle(step)}</h2></div><b className={`status-${effectiveStatus.toLowerCase()}`}>{statusText[effectiveStatus]}</b></div>
+    {step.category === "FIELD" ? <div className="page-value"><span>页面原始值</span>{pageValues.map((item) => <div className="page-value-row" key={item.source}><small>{pageValueLabel(item.source)}</small><strong>{cleanPageValue(item.value) || "未采集"}</strong></div>)}</div> : null}
+    {values.length ? <div className="candidate-list"><span className="evidence-section-title">材料提取值</span>{values.map((item, index) => { const image = (item.image_id ? images.get(item.image_id) : undefined) || (pageData?.images ?? []).find((candidate) => item.image_index != null && candidate.index === item.image_index); return <div className="candidate" key={`${item.source}-${index}`}><div><strong>{renderDiff(item.value, item.differences)}</strong><small>{item.source === "图片识别" ? evidencePresentation(item).label : item.source}{item.derived_from === "invoice.invoice_no" ? " · 由发票数电号码适配" : ""}</small>{image ? <div className="candidate-evidence"><img src={image.dataUrl || image.src} alt="材料" />{image.imageId ? <button type="button" onClick={() => void onFocusImage(image.imageId as string)}>查看原图</button> : null}</div> : null}</div>{field && step.result_status !== "MATCH" ? <button aria-label={`${stepTitle(step)}回填材料值`} className="fill-value-button" type="button" disabled={disabled || !step.writable} onClick={() => void onFill(step, String(item.value))}>回填此值</button> : null}</div>; })}</div> : null}
+    {!isMaterialTask(step) ? <p className="workbench-reason">{step.reason}</p> : null}
+    {field ? <ManualValueInput key={`${pageData?.collectionId}-${field}`} initialValue={cleanPageValue(pageValue)} label={stepTitle(step)} disabled={disabled || !pageData || !step.writable} onFill={(value) => onFill(step, value)} /> : null}
+    {isMaterialTask(step) ? <MaterialChecklist report={materialReport} pageData={pageData} onFocusImage={onFocusImage} /> : null}
+    {step.step_id === REVIEW_TASK_IDS.affiliationSubject ? <SubjectRequirements requirements={step.details?.subject_requirements || []} pageData={pageData} onFocusImage={onFocusImage} /> : null}
+    {isQrTask(step) ? qrChecks.map((check, index) => <QrUrl check={check} key={`${check.image_index}-${index}`} />) : null}
+    {!isMaterialTask(step) ? <StructuredEvidence evidence={step.evidence} /> : null}
+    {step.step_id === REVIEW_TASK_IDS.affiliationSubject && (step.details?.affiliation_subject_status === "MATCH" || step.result_status === "MATCH") && affiliationActions.length === 2 ? <button type="button" className="affiliation-fill-action" disabled={affiliationFilled || disabled} onClick={() => void onFillAffiliation()}>{affiliationFilled ? "挂靠字段已填写" : "自动填写挂靠字段"}</button> : null}
+    {requiresAction ? <div className="workbench-actions"><button type="button" disabled={disabled} className="secondary-action" onClick={() => onChoose(step, "MARKED_EXCEPTION")}>标记人工复核</button></div> : null}
+  </article>;
 }
 function ManualValueInput({ initialValue, label, disabled, onFill }: {
   initialValue: string;
@@ -110,6 +126,9 @@ function ManualValueInput({ initialValue, label, disabled, onFill }: {
 }
 
 function cleanPageValue(value: unknown) { return String(value ?? "").trim(); }
+function pageValueLabel(source: string) {
+  return fieldLabel(source);
+}
 function renderDiff(value: unknown, differences: import("../types/review").DifferenceRange[] = []) {
   const chars = [...String(value ?? "")];
   return [...chars, ""].map((char, index) => <span key={index}>
@@ -136,27 +155,7 @@ function QrUrl({ check }: { check: QrCheck }) {
 function MaterialChecklist({ report, pageData, onFocusImage }: { report?: MaterialCompletenessReport | null; pageData?: PageData | null; onFocusImage: (id: string) => Promise<void> }) {
   const images = pageData?.images || [];
   const imageById = new Map(images.map((image) => [image.imageId, image]));
-  const details = (report?.issues || []).flatMap((issue) => issue.field_details || []);
-  return <>
-    {details.length ? <section className="material-field-issues" aria-label="识别异常字段">
-      <strong>需要核对的字段</strong>
-      {details.map((detail, index) => {
-        const image = (detail.image_id ? imageById.get(detail.image_id) : undefined)
-          || images.find((item) => detail.image_index != null && item.index === detail.image_index);
-        const value = detail.value == null || detail.value === "" ? "未识别到有效值"
-          : typeof detail.value === "object" ? JSON.stringify(detail.value) : String(detail.value);
-        return <div className="material-field-issue" key={`${detail.image_id}-${detail.field}-${index}`}>
-          <strong>{detail.material_name} · {detail.field_label}</strong>
-          <span>识别值：<b>{value}</b></span>
-          <small>识别结果不确定，请对照原图核对</small>
-          {image ? <div className="candidate-evidence">
-            <img src={image.dataUrl || image.src} alt={`${detail.material_name}原图`} />
-            {image.imageId ? <button type="button" onClick={() => void onFocusImage(image.imageId as string)}>查看原图</button> : null}
-          </div> : <small>本次采集未取得对应图片，请重新采集后查看</small>}
-        </div>;
-      })}
-    </section> : null}
-    <div className="material-checklist">{(report?.checklist || []).map((item) =>
+  return <div className="material-checklist">{(report?.checklist || []).map((item) =>
       <div className="material-checklist-row" key={item.key}>
         <span>{item.display_name}</span>
         <b>{item.status === "PRESENT" ? "材料已提供" : item.status === "MISSING" ? "缺失" : "待确认"}</b>
@@ -165,8 +164,7 @@ function MaterialChecklist({ report, pageData, onFocusImage }: { report?: Materi
             {imageById.get(id)?.src ? <img src={imageById.get(id)?.dataUrl || imageById.get(id)?.src} alt="材料" /> : null}
             <button type="button" onClick={() => void onFocusImage(id)}>查看原图</button>
           </div>)}</div> : null}
-      </div>)}</div>
-  </>;
+      </div>)}</div>;
 }
 
 function SubjectRequirements({ requirements, pageData, onFocusImage }: { requirements: SubjectEvidenceRequirement[]; pageData?: PageData | null; onFocusImage: (id: string) => Promise<void> }) { if (!requirements.length) return null; const images = new Map((pageData?.images || []).map((image) => [image.imageId, image])); return <div className="subject-requirements">{requirements.map((item, index) => <div className="subject-requirement" key={`${item.party}-${item.document}-${index}`}><div><strong>{item.subject_name} · {subjectDocumentLabel(item.document)}</strong><small>{item.reason}</small></div><b>{item.status === "PRESENT" ? "已核验" : item.status === "MISSING" ? "缺失" : "待确认"}</b>{item.image_ids?.length ? <div className="evidence-actions">{item.image_ids.map((id: string) => <div className="evidence-image" key={id}>{images.get(id)?.src ? <img src={images.get(id)?.dataUrl || images.get(id)?.src} alt="材料" /> : null}<button type="button" onClick={() => void onFocusImage(id)}>查看原图</button></div>)}</div> : null}</div>)}</div>; }function subjectDocumentLabel(document: string) { return ({ identity_card_front: "身份证正面", identity_card_back: "身份证反面", business_license: "营业执照" } as Record<string,string>)[document] || document; }function StructuredEvidence({ evidence }: { evidence: EvidenceFact[] }) { const rows = evidence.flatMap((item) => item.value && typeof item.value === "object" && !Array.isArray(item.value) ? Object.entries(item.value as Record<string, unknown>).filter(([, value]) => value != null && value !== "").map(([key, value]) => ({ source: item.source, key, value: String(value) })) : item.field?.startsWith("business_license.") && item.value != null && item.value !== "" ? [{ source: item.source, key: item.field, value: String(item.value) }] : []); return rows.length ? <dl className="structured-evidence">{rows.map((row, index) => <div key={`${row.source}-${row.key}-${index}`}><dt>{row.source} · {structuredFieldLabel(row.key)}</dt><dd>{row.value}</dd></div>)}</dl> : null; }

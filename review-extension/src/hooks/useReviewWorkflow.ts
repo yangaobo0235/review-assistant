@@ -13,7 +13,7 @@ import {
   fetchReviewJob,
 } from "../reviewClient";
 import { pollReviewJob } from "../reviewJobs";
-import { applyPageFieldValue, applyPageFillIntent, verifyInvoice, type PageFillResult } from "../pageFillClient";
+import { applyPageFieldGroupValue, applyPageFieldValue, applyPageFillIntent, verifyInvoice, type PageFillResult } from "../pageFillClient";
 import { focusReviewImage } from "../imageFocusClient";
 import { PageActionRegistry } from "../session/pageActionRegistry";
 import {
@@ -59,6 +59,7 @@ export interface ReviewWorkflow {
   startReview: () => Promise<void>;
   applyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   applyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
+  applyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   focusOriginalImage: (imageId: string) => Promise<void>;
 }
 
@@ -184,6 +185,24 @@ export function useReviewWorkflow(
     return result;
   }, [pageData]);
 
+  const applyFieldGroupValue = useCallback(async (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => {
+    if (!pageData) return { ok: false, message: "没有找到原审核页面" };
+    const expected = expectedValues || Object.fromEntries(fields.map((field) => [field, pageData.pageFields[field] ?? null]));
+    const result = await applyPageFieldGroupValue({ fields, value, expectedValues: expected }, {
+      tabId: pageData.sourceTabId,
+      pageUrl: pageData.pageUrl,
+      pageInstanceId: pageData.pageInstanceId,
+      pageFingerprint: pageData.pageFingerprint,
+      collectionId: pageData.collectionId,
+    });
+    if (result.ok) {
+      setPageData((current) => current?.collectionId === pageData.collectionId
+        ? { ...current, pageFields: { ...current.pageFields, ...Object.fromEntries(fields.map((field) => [field, value])) } }
+        : current);
+    }
+    return result;
+  }, [pageData]);
+
   const focusOriginalImage = useCallback(async (imageId: string) => {
     if (!pageData) {
       setNotice("没有找到原审核页面");
@@ -207,6 +226,7 @@ export function useReviewWorkflow(
     startReview,
     applyAffiliationFill,
     applyPageFieldValue: applyFieldValue,
+    applyPageFieldGroupValue: applyFieldGroupValue,
     focusOriginalImage,
   };
 }

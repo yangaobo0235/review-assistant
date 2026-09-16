@@ -9,6 +9,7 @@ export interface WorkbenchRendererProps {
   pageData: PageData | null;
   onFocusImage: (imageId: string) => Promise<void>;
   onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
+  onApplyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   onApplyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   onRerun: () => Promise<void>;
 }

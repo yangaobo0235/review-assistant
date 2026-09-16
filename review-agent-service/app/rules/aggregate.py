@@ -179,3 +179,105 @@ def aggregate_field(
         message=message,
         differences=sorted(set(differences)),
     )
+
+
+def aggregate_old_vehicle_vin(
+    observations: list[FieldObservation],
+    *,
+    uncertain_requires_review: bool = True,
+) -> FieldComparison:
+    """Use the verified QR VIN as authority and compare document suffixes."""
+
+    allowed = [
+        item
+        for item in observations
+        if item.source_type in {"page", "qr_page"}
+        or item.source_type == "image"
+        and item.document_type in {"vehicle_license", "registration_certificate"}
+    ]
+    valid = _deduplicate_sources(
+        "old_vehicle.vin",
+        [item for item in allowed if str(item.value or "").strip()],
+    )
+    page = next((item for item in valid if item.source_type == "page"), None)
+    qr_items = [item for item in valid if item.source_type == "qr_page"]
+    image_items = [item for item in valid if item.source_type == "image"]
+    qr_values = {
+        normalize_value("old_vehicle.vin", item.value)
+        for item in qr_items
+        if normalize_value("old_vehicle.vin", item.value)
+    }
+    qr_value = next(iter(qr_values)) if len(qr_values) == 1 else None
+    page_value = normalize_value("old_vehicle.vin", page.value) if page else None
+
+    if qr_items and len(qr_values) != 1:
+        status = FieldStatus.CONFLICT
+        message = "二维码官网返回多个不同车架号"
+    elif uncertain_requires_review and any(item.uncertain for item in valid):
+        status = FieldStatus.REVIEW_REQUIRED
+        message = "行驶证或登记证车架号识别不确定，请核对原图"
+    elif not qr_items or not qr_value:
+        status = FieldStatus.REVIEW_REQUIRED
+        message = "未取得二维码官网车架号，无法建立权威比较基准"
+    elif not page_value:
+        status = FieldStatus.REVIEW_REQUIRED
+        message = "页面报废车辆车架号缺失"
+    elif page_value != qr_value:
+        status = FieldStatus.CONFLICT
+        message = "页面车架号与二维码官网车架号不一致"
+    elif any(
+        (normalize_value("old_vehicle.vin", item.value) or "")[-8:]
+        != qr_value[-8:]
+        for item in image_items
+    ):
+        status = FieldStatus.CONFLICT
+        message = "行驶证或登记证车架号后 8 位与二维码官网车架号不一致"
+    else:
+        status = FieldStatus.MATCH
+        message = "页面车架号与二维码官网一致，行驶证和登记证后 8 位一致"
+
+    evidence = []
+    for item in valid:
+        normalized = normalize_value("old_vehicle.vin", item.value)
+        if item.source_type == "qr_page":
+            conflicting = len(qr_values) != 1
+        elif item.source_type == "page":
+            conflicting = bool(qr_value and normalized != qr_value)
+        else:
+            conflicting = bool(qr_value and (normalized or "")[-8:] != qr_value[-8:])
+        evidence.append(EvidenceFact(
+            source=EVIDENCE_SOURCE_LABELS.get(item.source_type, item.source_type),
+            source_id=item.source_id,
+            field=item.field,
+            uncertain=item.uncertain,
+            image_index=item.image_index,
+            detail=item.source_id,
+            image_id=item.image_id,
+            business_scope=item.business_scope,
+            group_title=item.group_title,
+            group_order=item.group_order,
+            document_type=item.document_type,
+            value=item.value,
+            normalized_value=normalized,
+            derived_from=item.derived_from,
+            evidence_region=item.evidence_region,
+            conflicting=conflicting,
+        ))
+
+    differences = []
+    if page and qr_items and page_value != qr_value:
+        left = page_value or ""
+        right = qr_value or ""
+        differences = [i for i, (a, b) in enumerate(zip(left, right)) if a != b]
+        differences.extend(range(min(len(left), len(right)), max(len(left), len(right))))
+    confidences = [item.confidence for item in valid if item.confidence is not None]
+    return FieldComparison(
+        field="old_vehicle.vin",
+        left_value=qr_items[0].value if qr_items else None,
+        right_value=page.value if page else None,
+        status=status,
+        confidence=sum(confidences) / len(confidences) if confidences else None,
+        evidence=evidence,
+        message=message,
+        differences=sorted(set(differences)),
+    )

@@ -100,12 +100,12 @@ def test_present_comparison_routes_to_assistant_field() -> None:
         comparisons=[matching_comparison("new_vehicle.vin")],
     )
 
-    step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
+    step = next(item for item in steps if item.step_id == "FIELD-NEW-VEHICLE-VIN")
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
-    assert step.page_target_field == "new_vehicle.vin"
-    assert step.requires_reviewer_action is False
+    assert step.page_target_fields == ["new_vehicle.vin", "page_ocr.new_vehicle_vin"]
+    assert step.requires_reviewer_action is True
 
 
 def test_field_step_counts_only_unique_material_images_as_evidence() -> None:
@@ -153,7 +153,7 @@ def test_external_step_accepts_legacy_dict_evidence() -> None:
 def test_missing_page_field_routes_comparison_to_assistant() -> None:
     steps = build_steps(comparisons=[matching_comparison("new_vehicle.vin")])
 
-    step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
+    step = next(item for item in steps if item.step_id == "FIELD-NEW-VEHICLE-VIN")
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
@@ -400,11 +400,11 @@ def test_scrap_field_catalog_follows_the_current_dom_inventory() -> None:
     ]
     assert [item.step_id for item in field_steps] == [
         "FIELD-DOM-1",
-        "FIELD-new_vehicle.vin",
+        "FIELD-NEW-VEHICLE-VIN",
         "FIELD-new_vehicle.fuel_type",
     ]
     assert field_steps[0].result_status == "INSUFFICIENT"
-    assert field_steps[1].result_status == "MATCH"
+    assert field_steps[1].result_status == "INSUFFICIENT"
     assert field_steps[2].result_status == "INSUFFICIENT"
 
 
@@ -511,7 +511,7 @@ def test_page_only_field_is_visible_but_never_falsely_marked_as_matching() -> No
 def test_missing_configured_page_field_becomes_actionable_assistant_step():
     step = next(item for item in build_steps(
         comparisons=[matching_comparison("new_vehicle.vin")],
-    ) if item.step_id == "FIELD-new_vehicle.vin")
+    ) if item.step_id == "FIELD-NEW-VEHICLE-VIN")
     assert step.display_target == "ASSISTANT"
     assert step.result_status == "INSUFFICIENT"
     assert step.requires_reviewer_action is True
@@ -532,11 +532,11 @@ def test_changchun_collected_field_routes_to_assistant() -> None:
         limitations=[],
     )
 
-    step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
+    step = next(item for item in steps if item.step_id == "FIELD-NEW-VEHICLE-VIN")
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
-    assert step.requires_reviewer_action is False
+    assert step.requires_reviewer_action is True
 
 
 def test_ambiguous_collected_page_field_routes_to_assistant() -> None:
@@ -557,7 +557,7 @@ def test_ambiguous_collected_page_field_routes_to_assistant() -> None:
         limitations=[],
     )
 
-    step = next(item for item in steps if item.step_id == "FIELD-new_vehicle.vin")
+    step = next(item for item in steps if item.step_id == "FIELD-NEW-VEHICLE-VIN")
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.result_status == "INSUFFICIENT"

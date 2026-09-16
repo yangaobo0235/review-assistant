@@ -181,7 +181,7 @@ test("workbench hides duplicate date policy cards when the field card is present
   assert.match(html, /开票日期/);
 });
 
-test("material anomalies show Chinese field names, values and corresponding thumbnails", () => {
+test("material tasks show only the completeness checklist", () => {
   const step = makeStep({step_id: "MATERIAL-GROUP", category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, reason: "报废证明存在无法确认的字段"});
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
     review: workbenchReview([step], {material_completeness: {status: "UNCERTAIN", issues: [{
@@ -192,12 +192,11 @@ test("material anomalies show Chinese field names, values and corresponding thum
     }], checklist: [{key: "scrap", display_name: "报废证明", status: "PRESENT", image_ids: []}]}}),
     pageData: {pageFields: {}, images: [{imageId: "scrap-1", src: "scrap-1.jpg"}, {imageId: "scrap-2", src: "scrap-2.jpg"}]},
   }));
-  assert.match(html, /报废证明 · 报废车辆车架号/);
-  assert.match(html, /LG6\?123/);
-  assert.match(html, /未识别到有效值/);
-  assert.match(html, /src="scrap-1.jpg"/);
-  assert.match(html, /src="scrap-2.jpg"/);
-  assert.equal((html.match(/查看原图/g) || []).length, 2);
+  assert.doesNotMatch(html, /报废证明 · 报废车辆车架号/);
+  assert.doesNotMatch(html, /LG6\?123/);
+  assert.doesNotMatch(html, /未识别到有效值/);
+  assert.doesNotMatch(html, /scrap-1.jpg|scrap-2.jpg/);
+  assert.equal((html.match(/查看原图/g) || []).length, 0);
   assert.match(html, /材料已提供/);
   assert.doesNotMatch(html, /scrap_certificate|old_vehicle.vin|已核验/);
 });
@@ -327,6 +326,73 @@ test("workbench marks differing identifier positions in red", () => {
 
   assert.match(html, /class="value-diff"/);
   assert.match(html, /<mark class="value-diff"[^>]*>0<\/mark>/);
+});
+
+test("composite VIN task uses Chinese page labels and preserves material diff marks", () => {
+  const field = makeStep({
+    step_id: "FIELD-NEW-VEHICLE-VIN",
+    sequence: 1,
+    category: "FIELD",
+    label: "新车车架号",
+    page_target_field: "new_vehicle.vin",
+    page_target_fields: ["new_vehicle.vin", "page_ocr.new_vehicle_vin"],
+    page_values: [
+      { source: "新车车架号", value: "VIN-PAGE" },
+      { source: "OCR新车车架号", value: "VIN-PAGE" },
+    ],
+    writable: true,
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+    values: [{
+      source: "图片识别",
+      value: "VIN-MATERIAL",
+      image_id: "vin",
+      document_type: "vehicle_license",
+      differences: [{ kind: "REPLACE", start: 4, end: 5, page_start: 4, page_end: 5, page_text: "P" }],
+    }],
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([field]),
+    pageData: { pageFields: { "new_vehicle.vin": "VIN-PAGE", "page_ocr.new_vehicle_vin": "VIN-PAGE" }, images: [] },
+    onApplyPageFieldGroupValue: async () => ({ ok: true, message: "组合字段已同时回填并回读" }),
+  }));
+
+  assert.match(html, /新车车架号/);
+  assert.match(html, /OCR新车车架号/);
+  assert.doesNotMatch(html, /new_vehicle\.vin/);
+  assert.doesNotMatch(html, /page_ocr\.new_vehicle_vin/);
+  assert.match(html, /class="value-diff"/);
+  assert.match(html, /回填此值/);
+});
+
+test("composite invoice task uses Chinese page labels and keeps both write targets", () => {
+  const field = makeStep({
+    step_id: "FIELD-INVOICE-CODE-NO",
+    sequence: 1,
+    category: "FIELD",
+    label: "发票代码/号码",
+    page_target_field: "invoice.code",
+    page_target_fields: ["invoice.code", "invoice.invoice_no"],
+    page_values: [
+      { source: "发票代码", value: "INV-PAGE" },
+      { source: "发票号码", value: "INV-PAGE" },
+    ],
+    writable: true,
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+    values: [{ source: "机动车销售发票", value: "INV-MATERIAL", differences: [{ kind: "REPLACE", start: 4, end: 5, page_start: 4, page_end: 5, page_text: "P" }] }],
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([field]),
+    pageData: { pageFields: { "invoice.code": "INV-PAGE", "invoice.invoice_no": "INV-PAGE" }, images: [] },
+  }));
+
+  assert.match(html, /发票代码/);
+  assert.match(html, /发票号码/);
+  assert.doesNotMatch(html, /invoice\.code/);
+  assert.doesNotMatch(html, /invoice\.invoice_no/);
+  assert.match(html, /class="value-diff"/);
+  assert.match(html, /回填此值/);
 });
 
 test("workbench labels a page invoice code derived from the invoice digital number", () => {

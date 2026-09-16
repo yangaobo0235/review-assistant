@@ -106,13 +106,11 @@ def route_fields(
                 "invoice.invoice_date",
                 "new_vehicle.origin",
                 "invoice.terminal_certificate_no",
-                "invoice.phone",
             }
         )
         if is_allowed_passthrough:
             target_field = {
                 "invoice.terminal_certificate_no": "application.terminal_certificate_no",
-                "invoice.phone": "application.terminal_phone",
             }.get(field_name, field_name)
             routed[target_field] = value
     if normalized_type == "invoice" and business_scope == "new_vehicle":

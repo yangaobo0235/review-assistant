@@ -6,7 +6,7 @@ import { ReviewImageNormalization } from "./image-normalization.ts";
 import { ReviewPageFieldCollector } from "./page-field-collector.ts";
 import { ReviewPageFieldWriter } from "./page-field-writer.ts";
 import { buildPageFingerprint, createPageInstanceId } from "./page-identity.ts";
-import type { BusinessSelection, PageFillAction, PageImage } from "../types/review.ts";
+import type { BusinessSelection, PageFillAction, PageImage, PageWriteGroupAction } from "../types/review.ts";
 /**
  * 功能：协调页面采集、图片标准化和原图定位消息。
  * 职责边界：复杂识别逻辑委托给独立公共脚本；DOM 元素不跨消息传输。
@@ -30,6 +30,7 @@ const MESSAGE_TYPES = Object.freeze({
   focusReviewImage: "FOCUS_REVIEW_IMAGE",
   applyPageFillIntent: "APPLY_PAGE_FILL_INTENT",
   applyPageFieldValue: "APPLY_PAGE_FIELD_VALUE",
+  applyPageFieldGroupValue: "APPLY_PAGE_FIELD_GROUP_VALUE",
   verifyInvoice: "VERIFY_INVOICE",
 });
 type ReviewMessage = {
@@ -76,17 +77,17 @@ const sameActiveCollection = (message: ReviewMessage) =>
 const sameReviewIdentity = (message: ReviewMessage) => sameCollectedRecord(message) && sameActiveCollection(message);
 // The target field may have been normalized by a framework after collection;
 // identity remains valid when every anchor except that field is unchanged.
-const sameReviewIdentityExceptField = (message: ReviewMessage, field: string) => {
+const sameReviewIdentityExceptFields = (message: ReviewMessage, fields: string[]) => {
   if (sameReviewIdentity(message)) return true;
   if (message.expectedPageUrl !== window.location.href || message.expectedPageInstanceId !== pageInstanceId || message.expectedCollectionId !== activeCollectionId) return false;
   const current = controlFields(ReviewPageFieldCollector.collect(document, null));
-  const expected = JSON.parse(message.expectedPageFingerprint || "[]");
-  const expectedMap = new Map(expected);
-  const actual = JSON.parse(pageFingerprint(current) || "[]");
-  const actualMap = new Map(actual);
+  const expected: Array<[string, unknown]> = JSON.parse(message.expectedPageFingerprint || "[]");
+  const expectedMap = new Map<string, unknown>(expected);
+  const actual: Array<[string, unknown]> = JSON.parse(pageFingerprint(current) || "[]");
+  const actualMap = new Map<string, unknown>(actual);
   let stableAnchor = false;
   for (const [anchor, value] of expectedMap) {
-    if (anchor === field) continue;
+    if (fields.includes(anchor)) continue;
     // Some framework controls are temporarily absent while a form item
     // rerenders. Only reject a write when a comparable anchor is present and
     // has actually changed; the target field itself is allowed to differ.
@@ -96,6 +97,8 @@ const sameReviewIdentityExceptField = (message: ReviewMessage, field: string) =>
   }
   return stableAnchor || expectedMap.size === 1;
 };
+
+const sameReviewIdentityExceptField = (message: ReviewMessage, field: string) => sameReviewIdentityExceptFields(message, [field]);
 
 const focusReviewImage = (message: ReviewMessage) => {
   if (!sameCollectedRecord(message) || !message.expectedCollectionId || message.expectedCollectionId !== activeCollectionId) {
@@ -180,6 +183,54 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
         sendResponse(result);
       })
       .catch((error) => sendResponse({ ok: false, message: error instanceof Error ? error.message : "字段回填失败", actions: [] }));
+    return true;
+  }
+  if (message.type === MESSAGE_TYPES.applyPageFieldGroupValue) {
+    const action = message.action as PageWriteGroupAction | undefined;
+    const fields = action?.fields || [];
+    if (!action || fields.length < 2 || new Set(fields).size !== fields.length || typeof action.value !== "string") {
+      sendResponse({ ok: false, message: "组合字段回填参数不完整", actions: [] });
+      return true;
+    }
+    if (!sameReviewIdentityExceptFields(message, fields)) {
+      sendResponse({ ok: false, code: "PAGE_IDENTITY_CHANGED", message: "页面已变化，请重新审核", actions: [] });
+      return true;
+    }
+    const entries = fields.map((field) => ({ field, entry: reviewFieldElements.get(field) })).map(({ field, entry }) => ({
+      field,
+      element: entry?.element,
+      expectedValue: action.expectedValues?.[field] ?? entry?.collectedValue,
+      entry,
+    }));
+    if (entries.some((item) => !item.element || item.entry?.collectionId !== activeCollectionId || !SCRAP_WRITABLE_FIELDS.has(item.field))) {
+      sendResponse({ ok: false, message: "未找到组合字段的当前页面控件或字段不在允许范围内", actions: [] });
+      return true;
+    }
+    if (entries.some((item) => item.entry.controlSnapshot && ReviewPageFieldWriter.captureValue(item.element)?.control !== item.entry.controlSnapshot.control)) {
+      sendResponse({ ok: false, code: "FIELD_TARGET_CHANGED", message: "组合字段控件已重新加载，请重新采集后回填", actions: [] });
+      return true;
+    }
+    ReviewPageFieldWriter.executeValueGroup(
+      document,
+      entries.map((item) => ({ field: item.field, element: item.element, expectedValue: item.expectedValue })),
+      action,
+      () => sameReviewIdentityExceptFields(message, fields),
+    ).then((result) => {
+      if (result.ok) {
+        for (const item of entries) {
+          const filled = result.actions?.find((candidate) => candidate.field === item.field);
+          if (filled) {
+            verifiedFieldWrites.set(item.field, {
+              original: item.expectedValue,
+              value: filled.value,
+            });
+            item.entry.controlSnapshot = ReviewPageFieldWriter.captureValue(item.element);
+            item.entry.collectedValue = filled.value;
+          }
+        }
+      }
+      sendResponse(result);
+    }).catch((error) => sendResponse({ ok: false, message: error instanceof Error ? error.message : "组合字段回填失败", actions: [] }));
     return true;
   }
   if (message.type === MESSAGE_TYPES.applyPageFillIntent) {

@@ -73,7 +73,6 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
         "invoice.invoice_date",
         "new_vehicle.origin",
         "invoice.terminal_certificate_no",
-        "invoice.phone",
         "vehicle.vin",
         "vehicle.owner",
     )
@@ -163,7 +162,7 @@ def test_scrap_replacement_prompts_use_scope_specific_allowlists_and_confusion_g
     assert "vehicle.engine_model" not in new_registration
     assert "第13项‘燃料种类’" in new_registration
     assert "模型不要输出 invoice.code" in invoice
-    assert "销货单位信息区域中‘电话’" in invoice
+    assert "invoice.phone" not in invoice
     assert "图片可能横向" in invoice
 
 

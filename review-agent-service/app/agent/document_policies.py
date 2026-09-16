@@ -92,7 +92,6 @@ class DocumentPolicy:
                 "invoice.invoice_date",
                 "new_vehicle.origin",
                 "invoice.terminal_certificate_no",
-                "invoice.phone",
                 "vehicle.vin",
                 "vehicle.owner",
             )
@@ -134,8 +133,7 @@ class DocumentPolicy:
                 "vehicle.vin 只读取车辆识别代号/车架号码，不读取合格证号。"
                 "vehicle.owner 只读取购买方名称，不读取销货单位名称；"
                 "invoice.terminal_certificate_no 只读取购买方的统一社会信用代码/身份证号码，"
-                "不得读取销货单位纳税人识别号。invoice.phone 只读取销货单位信息区域中‘电话’标签对应的值，"
-                "不得读取账号、税号、主管税务机关代码、吨位、限乘人数或其他数字。"
+                "不得读取销货单位纳税人识别号、电话、账号、税号、主管税务机关代码、吨位、限乘人数或其他数字。"
             )
         return self.field_guidance
 
@@ -232,13 +230,12 @@ DOCUMENT_POLICIES: dict[str, DocumentPolicy] = {
             "invoice.invoice_date",
             "new_vehicle.origin",
             "invoice.terminal_certificate_no",
-            "invoice.phone",
             "vehicle.vin",
             "vehicle.owner",
         ),
         field_guidance=(
             "读取发票号码、价税合计（小写）、开票日期、产地、车辆识别代号、购买方名称、"
-            "购买方统一社会信用代码和销货单位信息区域明确标注的电话。"
+            "购买方统一社会信用代码；不提取销货单位电话。"
             "模型不要输出 invoice.code；数电号码到页面发票代码的兼容由系统完成。"
             "invoice.amount 必须读取票面价税合计（小写）的实际金额，不能输出字段名称、"
             "不含税价、税额或大写金额。"

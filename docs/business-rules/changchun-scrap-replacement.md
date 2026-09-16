@@ -1,6 +1,6 @@
 # 长春报废置换审核规则（`scrap_replacement | changchun | 1.0`）
 
-本文档是长春 Profile 的业务基线。代码实现分别位于后端 `app/businesses/profiles.py`、`app/businesses/replacement_policies.py`、`app/rules/replacement_policy_checks.py`、`app/rules/material_completeness.py`、`app/rules/affiliation_subject_checks.py`，以及前端 `src/adapters`、`src/browser`、`src/components` 和 `src/session`。长春与青岛共用审核流程和材料策略，但政策窗口、产地范围和能力 ID 必须保持地区一致。
+本文档是长春 Profile 的业务基线。代码实现分别位于后端 `app/businesses/profiles.py`、`app/businesses/replacement_policies.py`、`app/rules/replacement_policy_checks.py`、`app/rules/material_completeness.py`、`app/rules/affiliation_subject_checks.py`，以及前端 `src/adapters`、`src/browser`、`src/components` 和 `src/session`。长春与青岛共用审核流程和材料策略，但政策窗口、产地范围和能力 ID 必须保持地区一致。旧车 VIN、发票/新车 VIN 组合核验、手机号和材料展示遵循通用字段协议：二维码官网 VIN 为最高标准，行驶证/登记证只核对后 8 位；发票代码/号码、新车 VIN/OCR VIN 先校验页面双值一致再比材料；手机号只认页面值；材料任务只显示是否齐全。
 
 `Profile`（业务配置档案）定义长春这一业务版本；`Registry`（注册表）按 ID 查找实现；`Capability`（审核能力）由 `Handler`（处理器）或 `Subgraph`（子图）执行；`Renderer`（渲染器）负责前端工作台展示。本文中的代码 ID 保持英文以便与实现对应，后文首次出现的专业术语均按此含义理解。
 
@@ -26,7 +26,7 @@
 - 旧车：`old_vehicle.type`、`old_vehicle.recycle_date`、`scrap_certificate.certificate_no`、`old_vehicle.vin`、`old_vehicle.plate_no`、`old_vehicle.owner`、`old_vehicle.engine_model`。
 - 新车和发票：`new_vehicle.fuel_type`、`invoice.code`、`invoice.invoice_no`、`invoice.amount`、`invoice.invoice_date`、`new_vehicle.vin`、`new_vehicle.plate_no`、`new_vehicle.owner`、`new_vehicle.registration_date`、`application.terminal_certificate_no`、`application.customer_name`、`application.terminal_phone`。
 
-页面附加字段 `application.owner_type`、`application.dealer_name`、`application.submitted_at` 和 `page_ocr.new_vehicle_vin` 只用于展示、主体类型声明或识别诊断，不能被前端转化为资格结论。
+页面附加字段 `application.owner_type`、`application.dealer_name`、`application.submitted_at` 和 `page_ocr.new_vehicle_vin` 只用于展示、主体类型声明或组合字段核验，不能被前端转化为资格结论。
 
 ## 3. 材料清单和页码
 
@@ -69,7 +69,7 @@
 
 页面动作只能通过注册的 `fill_affiliation_fields` 执行，必须一次准备两个动作、校验页面实例和原值、写入后回读并在失败时回滚。刷新页面或重新采集后，旧动作自动失效。
 
-长春页面遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：日期或产地冲突显示红色并同时显示页面/材料值，缺失材料、识别不确定、二维码不可用和政策无法校验显示橙色待复核状态；发票日期和报废交车日期政策直接显示在字段卡片。材料只保留一个 `MATERIAL-GROUP`（材料完整性和识别异常统一任务）。带 `page_target_field` 的冲突任务显示默认页面原值的人工输入框和“回填此值”，成功后定位并高亮页面控件约 4 秒，回读失败则显示错误并回滚。主体关系通过且动作意图合法时自动选择个人/公司挂靠，页面失效时所有写回按钮立即禁用。
+长春页面遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：日期或产地冲突显示红色并同时显示页面/材料值，缺失材料、识别不确定、二维码不可用和政策无法校验显示橙色待复核状态；发票日期和报废交车日期政策直接显示在字段卡片。材料只保留一个 `MATERIAL-GROUP`，且只展示材料是否齐全，不展示识别异常。组合字段显示两个页面原始值，点击回填时两个页面字段必须原子写入、回读和失败回滚。带 `page_target_field` 的冲突任务显示默认页面原值的人工输入框和“回填此值”，成功后定位并高亮页面控件约 4 秒，回读失败则显示错误并回滚。主体关系通过且动作意图合法时自动选择个人/公司挂靠，页面失效时所有写回按钮立即禁用。
 
 ## 8. 规则变更记录
 

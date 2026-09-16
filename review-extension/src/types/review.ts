@@ -337,7 +337,11 @@ export interface ReviewTask {
   page_field?: string | null;
   /** Canonical DOM field for sidebar tasks; distinct from PAGE_FIELD rendering. */
   page_target_field?: string | null;
+  /** All DOM fields written together when this is a composite field task. */
+  page_target_fields?: string[];
   page_value?: unknown;
+  /** Raw values captured from each page field in a composite task. */
+  page_values?: CheckResultValue[];
   control_type?: string | null;
   writable?: boolean;
   requires_reviewer_action: boolean;
@@ -365,6 +369,12 @@ export interface PageWriteAction {
   field: string;
   value: string;
   expectedValue?: string | null;
+}
+
+export interface PageWriteGroupAction {
+  fields: string[];
+  value: string;
+  expectedValues: Record<string, string | null | undefined>;
 }
 
 export interface ResultSection {

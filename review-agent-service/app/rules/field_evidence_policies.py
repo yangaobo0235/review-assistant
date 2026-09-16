@@ -32,7 +32,7 @@ FIELD_EVIDENCE_POLICIES: dict[str, FieldEvidencePolicy] = {
     "old_vehicle.type": _p("old_vehicle.type", "PARALLEL", ("vehicle_license", "registration_certificate", "scrap_certificate"), normalizer="vehicle_type"),
     "old_vehicle.recycle_date": _p("old_vehicle.recycle_date", "SINGLE_SOURCE", ("scrap_certificate",), normalizer="date"),
     "scrap_certificate.certificate_no": _p("scrap_certificate.certificate_no", "SINGLE_SOURCE", ("scrap_certificate",)),
-    "old_vehicle.vin": _p("old_vehicle.vin", "PARALLEL", ("vehicle_license", "registration_certificate", "scrap_certificate"), normalizer="vin"),
+    "old_vehicle.vin": _p("old_vehicle.vin", "PARALLEL", ("vehicle_license", "registration_certificate"), normalizer="vin"),
     "old_vehicle.plate_no": _p("old_vehicle.plate_no", "SINGLE_SOURCE", ("vehicle_license",), ("vehicle_license",), normalizer="plate"),
     "old_vehicle.engine_model": _p("old_vehicle.engine_model", "SINGLE_SOURCE", ("registration_certificate",), ("registration_certificate",)),
     "old_vehicle.owner": _p("old_vehicle.owner", "PARALLEL", ("vehicle_license", "scrap_certificate"), normalizer="party_name"),
@@ -47,7 +47,7 @@ FIELD_EVIDENCE_POLICIES: dict[str, FieldEvidencePolicy] = {
     "new_vehicle.registration_date": _p("new_vehicle.registration_date", "SINGLE_SOURCE", ("vehicle_license",), ("vehicle_license",), normalizer="date"),
     "application.terminal_certificate_no": _p("application.terminal_certificate_no", "SINGLE_SOURCE", ("invoice",)),
     "application.customer_name": _p("application.customer_name", "SINGLE_SOURCE", ("invoice",), normalizer="party_name"),
-    "application.terminal_phone": _p("application.terminal_phone", "SINGLE_SOURCE", ("invoice",)),
+    "application.terminal_phone": _p("application.terminal_phone", "SYSTEM", missing="SYSTEM"),
     "old_vehicle.affiliation": _p("old_vehicle.affiliation", "DERIVED", missing="DERIVED"),
     "new_vehicle.affiliation": _p("new_vehicle.affiliation", "DERIVED", missing="DERIVED"),
 }

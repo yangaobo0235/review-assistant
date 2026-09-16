@@ -1,5 +1,5 @@
 from app.models.review import FieldObservation, FieldStatus
-from app.rules.aggregate import aggregate_field
+from app.rules.aggregate import aggregate_field, aggregate_old_vehicle_vin
 
 
 def observation(
@@ -255,3 +255,55 @@ def test_aggregate_distinguishes_application_page_and_qr_official_evidence() -> 
         "申请页面字段",
         "二维码官网字段",
     ]
+
+
+def vehicle_vin_observation(value: str, source_id: str, source_type: str, document_type: str | None = None) -> FieldObservation:
+    return FieldObservation(
+        field="old_vehicle.vin",
+        value=value,
+        source_id=source_id,
+        source_type=source_type,
+        document_type=document_type,
+    )
+
+
+def test_old_vehicle_vin_uses_qr_as_authority_and_only_document_suffixes() -> None:
+    comparison = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("VIN-0000ABCDEF12", "page", "page"),
+        vehicle_vin_observation("VIN-0000ABCDEF12", "qr", "qr_page"),
+        vehicle_vin_observation("OTHER-9999ABCDEF12", "license", "image", "vehicle_license"),
+        vehicle_vin_observation("REG-8888ABCDEF12", "registration", "image", "registration_certificate"),
+        vehicle_vin_observation("WRONG-000000999999", "scrap", "image", "scrap_certificate"),
+    ])
+
+    assert comparison.status is FieldStatus.MATCH
+    assert "后 8 位一致" in comparison.message
+    assert all(item.source_id != "scrap" or not item.conflicting for item in comparison.evidence)
+
+
+def test_old_vehicle_vin_rejects_page_or_document_suffix_conflicts() -> None:
+    page_conflict = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("PAGE-WRONG-ABCDEF", "page", "page"),
+        vehicle_vin_observation("VIN-000000ABCDEF", "qr", "qr_page"),
+    ])
+    suffix_conflict = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("VIN-000000ABCDEF", "page", "page"),
+        vehicle_vin_observation("VIN-000000ABCDEF", "qr", "qr_page"),
+        vehicle_vin_observation("DOC-000000999999", "license", "image", "vehicle_license"),
+    ])
+
+    assert page_conflict.status is FieldStatus.CONFLICT
+    assert suffix_conflict.status is FieldStatus.CONFLICT
+
+
+def test_old_vehicle_vin_requires_one_unique_qr_value() -> None:
+    missing = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("VIN-000000ABCDEF", "page", "page"),
+    ])
+    multiple = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("VIN-000000ABCDEF", "qr-1", "qr_page"),
+        vehicle_vin_observation("VIN-000000999999", "qr-2", "qr_page"),
+    ])
+
+    assert missing.status is FieldStatus.REVIEW_REQUIRED
+    assert multiple.status is FieldStatus.CONFLICT

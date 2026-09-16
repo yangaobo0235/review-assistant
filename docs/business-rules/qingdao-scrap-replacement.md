@@ -29,7 +29,11 @@
 
 `new_vehicle.fuel_type`（新车燃料类型）、`invoice.code`（发票代码）、`invoice.invoice_no`（发票号码）、`invoice.amount`（开票金额）、`invoice.invoice_date`（开票日期）、`new_vehicle.vin`（新车架号）、`new_vehicle.plate_no`（新车车牌号）、`new_vehicle.owner`（新车所有人）、`new_vehicle.registration_date`（注册日期）、`application.terminal_certificate_no`（终端证件号）、`application.customer_name`（客户名称）、`application.terminal_phone`（终端客户手机号）。
 
-页面还可能采集 `application.submitted_at`、`application.owner_type`、`application.dealer_name` 和 `page_ocr.new_vehicle_vin`，这些字段用于展示、辅助主体判断或 OCR 诊断；它们不能被前端当作新的业务规则。
+页面还可能采集 `application.submitted_at`、`application.owner_type`、`application.dealer_name` 和 `page_ocr.new_vehicle_vin`，这些字段用于展示、辅助主体判断或组合字段核验；它们不能被前端当作新的业务规则。
+
+旧车 VIN 以二维码官网返回值为最高标准：页面 `old_vehicle.vin` 与官网值比较完整车架号，旧车行驶证和机动车登记证只比较车架号后 8 位，报废证明中的 OCR 车架号不参与该比较。二维码缺失或官网返回多个不同车架号时必须人工复核。
+
+发票代码与发票号码合并为一个组合任务，先校验页面两个原始值一致，再与发票材料提取值比较；新车车架号与 `page_ocr.new_vehicle_vin` 同样合并，先校验页面原始值一致，再与材料值比较。终端客户手机号以页面填写值为准，不与发票材料比较。
 
 ## 3. 材料清单和页码
 
@@ -85,7 +89,7 @@
 
 页面动作只允许 `old_vehicle.affiliation` 和 `new_vehicle.affiliation`。写回前检查页面实例、采集 ID、目标控件唯一性、原值和动作授权；写回后回读，任何失败都执行回滚并要求重新采集。
 
-青岛页面必须遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：`CONFLICT` 字段和政策结果使用红色冲突标记，`INSUFFICIENT`、材料不确定和外部降级使用橙色待复核标记；页面值、材料值和证据来源同时展示。日期政策直接显示在对应字段卡片，不重复显示页面外核验。材料只展示 `MATERIAL-GROUP`（材料完整性和识别异常统一任务）。带 `page_target_field`（页面定位字段）的冲突任务必须显示默认填入页面原值的人工输入框和“回填此值”按钮；写回成功后定位控件并高亮约 4 秒，回读成功才显示成功。主体关系通过且动作意图合法时自动选择个人/公司挂靠，两个字段必须原子回填。
+青岛页面必须遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：`CONFLICT` 字段和政策结果使用红色冲突标记，`INSUFFICIENT`、材料不确定和外部降级使用橙色待复核标记；页面值、材料值和证据来源同时展示。日期政策直接显示在对应字段卡片，不重复显示页面外核验。材料只展示 `MATERIAL-GROUP`，且只显示材料是否齐全，不展示识别异常字段。组合字段任务显示两个页面原始值；点击回填时两个页面字段必须原子写入、回读并在失败时回滚。带 `page_target_field`（页面定位字段）的冲突任务必须显示默认填入页面原值的人工输入框和“回填此值”按钮；写回成功后定位控件并高亮约 4 秒，回读成功才显示成功。主体关系通过且动作意图合法时自动选择个人/公司挂靠，两个字段必须原子回填。
 
 ## 8. 规则变更记录
 

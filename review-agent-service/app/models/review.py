@@ -208,7 +208,9 @@ class ReviewTask(BaseModel):
     display_target: ReviewDisplayTarget
     page_field: str | None = None
     page_target_field: str | None = None
+    page_target_fields: list[str] = Field(default_factory=list)
     page_value: Any = None
+    page_values: list[CheckResultValue] = Field(default_factory=list)
     control_type: str | None = None
     writable: bool = False
     requires_reviewer_action: bool

@@ -32,6 +32,7 @@ interface ReviewResultsProps {
   onFocusImage: (imageId: string) => Promise<void>;
   pageFillResult: PageFillResult | null;
   onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
+  onApplyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   onApplyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   onRerun: () => Promise<void>;
 }
@@ -39,7 +40,7 @@ interface ReviewResultsProps {
 export function ReviewResults(props: ReviewResultsProps) {
   const { review, onFocusImage } = props;
   const renderer = resolveWorkbenchRenderer(review);
-  if (renderer) return renderer({ review, pageData: props.pageData, onFocusImage, onApplyPageFieldValue: props.onApplyPageFieldValue, onApplyAffiliationFill: props.onApplyAffiliationFill, onRerun: props.onRerun });
+  if (renderer) return renderer({ review, pageData: props.pageData, onFocusImage, onApplyPageFieldValue: props.onApplyPageFieldValue, onApplyPageFieldGroupValue: props.onApplyPageFieldGroupValue, onApplyAffiliationFill: props.onApplyAffiliationFill, onRerun: props.onRerun });
   return <LegacyReviewResults {...props} />;
 }
 
