@@ -48,6 +48,18 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
   // 兼容 Ant Design、Element 及无 role 的自定义列表；文本节点可能包在子节点内。
   const OPTION_SELECTOR = ".ant-select-item-option, .ant-select-dropdown-menu-item, .el-select-dropdown__item, [role='option'], li[data-value], li[data-label], [data-value], [data-label]";
   const normalize = (value: unknown) => String(value || "").replace(/[＊*]/g, "").replace(/\s+/g, "").replace(/[：:]$/, "");
+  const normalizeAmount = (value: unknown) => {
+    const raw = String(value ?? "").trim().replace(/[￥¥,，\s]/g, "");
+    if (!raw) return "";
+    const match = raw.match(/^([+-]?)(\d*)(?:\.(\d*))?$/);
+    if (!match) return raw;
+    const integer = (match[2] || "0").replace(/^0+(?=\d)/, "");
+    const fraction = (match[3] || "").replace(/0+$/, "");
+    const sign = match[1] === "-" && (integer !== "0" || fraction) ? "-" : "";
+    return `${sign}${integer}${fraction ? `.${fraction}` : ""}`;
+  };
+  const normalizeFieldValue = (field: string, value: unknown) =>
+    field === "invoice.amount" ? normalizeAmount(value) : normalize(value);
   // `innerText` is an empty string for virtualized/transitioning Ant options
   // even though `textContent` already contains the label.  Nullish fallback
   // is therefore insufficient; choose the first non-empty representation.
@@ -587,7 +599,7 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     if (!String(action.value ?? "").trim()) return { ok: false, message: "回填值不能为空" };
     const original = readValueControl(control);
     const originalRaw = control.tagName === "SELECT" ? String(control.value ?? "") : original;
-    if (action.expectedValue != null && normalize(original) !== normalize(action.expectedValue)) {
+    if (action.expectedValue != null && normalizeFieldValue(action.field, original) !== normalizeFieldValue(action.field, action.expectedValue)) {
       return { ok: false, code: "FIELD_VALUE_CHANGED", currentValue: original,
         message: "该字段当前值与采集时不同，已更新页面值，请核对后再次回填" };
     }
@@ -602,7 +614,7 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     await settle();
     if (!sameCollectedRecord(guard) || !connected(control)) return { ok: false, message: guardError };
     const after = readValueControl(control);
-    if (normalize(after) !== normalize(action.value)) {
+    if (normalizeFieldValue(action.field, after) !== normalizeFieldValue(action.field, action.value)) {
       if (sameCollectedRecord(guard)) {
         if (custom) {
           const restoreError = await restoreCustomOption(root, resolved, action.field, original, guard);
@@ -643,7 +655,7 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
       if (!control || !writable(control, custom)) return { error: `${entry.field}目标控件不可写` };
       const current = readValueControl(control);
       const expected = entry.expectedValue ?? action.expectedValues[entry.field];
-      if (expected != null && normalize(current) !== normalize(expected)) {
+      if (expected != null && normalizeFieldValue(entry.field, current) !== normalizeFieldValue(entry.field, expected)) {
         return { error: `${entry.field}当前值已变化，请重新采集后回填`, code: "FIELD_VALUE_CHANGED", currentValue: current };
       }
       return {
@@ -685,7 +697,7 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     const results = [];
     for (const item of successful) {
       const after = readValueControl(item.control);
-      if (normalize(after) !== normalize(action.value)) return await rollback(`${item.field}回填后回读失败`);
+      if (normalizeFieldValue(item.field, after) !== normalizeFieldValue(item.field, action.value)) return await rollback(`${item.field}回填后回读失败`);
       results.push({ field: item.field, label: item.field, value: after, status: "FILLED" });
       const target = item.control.closest?.<DomElement>(".ant-input-affix-wrapper, .ant-select, .ant-picker, .el-input, .el-select, .el-date-editor") || item.control;
       target.animate?.([

@@ -9,6 +9,7 @@ import {
   previousReviewTask,
   reviewStepTitle,
   isAffiliationRelationshipStep,
+  isScrapReplacementTaskVisible,
   reviewStepStatusLabel,
   sortedReviewTasks,
 } from "../src/reviewSteps.ts";
@@ -83,6 +84,18 @@ test("identifies only the affiliation relationship conclusion by structured step
     isAffiliationRelationshipStep({ ...steps[0], step_id: "BUSINESS-OTHER", label: "新旧车挂靠主体关系" }),
     false,
   );
+});
+
+test("central scrap presentation policy hides material and affiliation tasks by stable identity", () => {
+  const hidden = [
+    { ...steps[0], step_id: "BUSINESS-AFFILIATION-SUBJECT-001" },
+    { ...steps[0], step_id: "BUSINESS-AFFILIATION-AUX-CUSTOMER-NAME" },
+    { ...steps[0], step_id: "MATERIAL-GROUP", category: "MATERIAL" },
+    { ...steps[0], step_id: "FIELD-old_vehicle.affiliation", category: "FIELD", page_target_field: "old_vehicle.affiliation" },
+  ];
+
+  assert.equal(hidden.every((step) => !isScrapReplacementTaskVisible(step)), true);
+  assert.equal(isScrapReplacementTaskVisible(steps[1]), true);
 });
 
 test("keeps generic step evidence readable in a narrow panel", () => {

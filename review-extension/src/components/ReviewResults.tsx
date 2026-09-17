@@ -15,7 +15,7 @@ import {
 import { exceptionComparisons, exceptionSections, type ExceptionFilter } from "../exceptionPresentation";
 import { qrCheckPresentation } from "../qrPresentation";
 import { fieldLabel, groupStatusLabel, statusLabel } from "../reviewPanelConfig";
-import type { EvidenceFact, FieldComparison, JobStatus, PageData, PageFillAction, ReviewJobSnapshot, ReviewResponse } from "../types/review";
+import type { EvidenceFact, FieldComparison, JobStatus, PageData, ReviewJobSnapshot, ReviewResponse } from "../types/review";
 import { diffValue, diffValueByPosition } from "../valueDiff";
 import { ReviewAdvice } from "./ReviewAdvice";
 import { MaterialCompleteness } from "./MaterialCompleteness";
@@ -33,14 +33,13 @@ interface ReviewResultsProps {
   pageFillResult: PageFillResult | null;
   onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   onApplyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
-  onApplyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   onRerun: () => Promise<void>;
 }
 
 export function ReviewResults(props: ReviewResultsProps) {
   const { review, onFocusImage } = props;
   const renderer = resolveWorkbenchRenderer(review);
-  if (renderer) return renderer({ review, pageData: props.pageData, onFocusImage, onApplyPageFieldValue: props.onApplyPageFieldValue, onApplyPageFieldGroupValue: props.onApplyPageFieldGroupValue, onApplyAffiliationFill: props.onApplyAffiliationFill, onRerun: props.onRerun });
+  if (renderer) return renderer({ review, pageData: props.pageData, onFocusImage, onApplyPageFieldValue: props.onApplyPageFieldValue, onApplyPageFieldGroupValue: props.onApplyPageFieldGroupValue, onRerun: props.onRerun });
   return <LegacyReviewResults {...props} />;
 }
 

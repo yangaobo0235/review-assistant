@@ -463,7 +463,7 @@ test("collects select and plaintext-only contenteditable controls", () => {
   assert.equal(result.pageFields["old_vehicle.recycle_date"], "2026-07-20");
 });
 
-test("collects a role=combobox affiliation control from a custom form shell", () => {
+test("ignores a role=combobox affiliation control from a custom form shell", () => {
   const collector = loadCollector();
   const combo = element({ tag: "div", label: "报废车挂靠", section: "old_vehicle" });
   combo.getAttribute = (name) => {
@@ -481,14 +481,8 @@ test("collects a role=combobox affiliation control from a custom form shell", ()
 
   const result = collector.collect(root, "scrap_replacement");
 
-  assert.deepEqual(Array.from(result.writableTargets, (target) => ({ ...target })), [{
-    field: "old_vehicle.affiliation",
-    label: "报废车挂靠",
-    present: true,
-    currentValue: null,
-  }]);
-  assert.equal(result.reviewFields[0].field, "old_vehicle.affiliation");
-  assert.equal(result.reviewFields[0].controlType, "select");
+  assert.deepEqual(Array.from(result.writableTargets), []);
+  assert.deepEqual(Array.from(result.reviewFields), []);
 });
 
 test("collects a readonly two-node container through DOM extraction", () => {
@@ -581,7 +575,7 @@ test("falls back to a date-like invoice candidate when section matching is ambig
   assert.equal(result.pageFields["invoice.invoice_date"], "2026-01-28");
 });
 
-test("collects auxiliary page fields and preserves empty affiliation targets", () => {
+test("collects auxiliary page fields without exposing retired affiliation targets", () => {
   const result = loadCollector().collectCandidates([
     { label: "车辆所有人类型", value: "公司", section: "unknown", source: "control" },
     { label: "OCR新车车架号", value: "VIN-NEW", section: "unknown", source: "control" },
@@ -593,10 +587,7 @@ test("collects auxiliary page fields and preserves empty affiliation targets", (
   assert.equal(result.pageFields["application.owner_type"], "公司");
   assert.equal(result.pageFields["page_ocr.new_vehicle_vin"], "VIN-NEW");
   assert.equal(result.pageFields["application.customer_name"], "甲运输有限公司");
-  assert.deepEqual(Array.from(result.writableTargets, (item) => ({ ...item })), [
-    { field: "old_vehicle.affiliation", label: "报废车挂靠", present: true, currentValue: null },
-    { field: "new_vehicle.affiliation", label: "新车挂靠", present: true, currentValue: null },
-  ]);
+  assert.deepEqual(Array.from(result.writableTargets), []);
 });
 
 test("collects all page-only scrap fields that have no direct material comparison", () => {
@@ -655,20 +646,10 @@ test("builds the review catalog from editable controls instead of fixed page tex
       operationOnly: false,
       order: 2,
     },
-    {
-      field: "new_vehicle.affiliation",
-      label: "新车挂靠",
-      value: "",
-      controlType: "text",
-      editable: true,
-      section: "new_vehicle",
-      operationOnly: true,
-      order: 3,
-    },
   ]);
 });
 
-test("normalizes duplicated affiliation labels and excludes system result controls", () => {
+test("excludes duplicated affiliation labels and system result controls", () => {
   const oldAffiliation = control({ label: "报废车挂靠 报废车挂靠", value: "", section: "old_vehicle" });
   const newAffiliation = control({ label: "新车挂靠 新车挂靠", value: "", section: "new_vehicle" });
   const reviewResult = control({ label: "审核结果 通过", value: "true" });
@@ -678,14 +659,7 @@ test("normalizes duplicated affiliation labels and excludes system result contro
     "scrap_replacement",
   );
 
-  assert.deepEqual(Array.from(result.reviewFields, (item) => ({
-    field: item.field,
-    label: item.label,
-    operationOnly: item.operationOnly,
-  })), [
-    { field: "old_vehicle.affiliation", label: "报废车挂靠", operationOnly: true },
-    { field: "new_vehicle.affiliation", label: "新车挂靠", operationOnly: true },
-  ]);
+  assert.deepEqual(Array.from(result.reviewFields), []);
 });
 
 test("scopes collection to the open approval modal when list filters reuse ids", () => {
@@ -726,17 +700,23 @@ test("keeps read-only known fields in the review catalog without making them wri
   assert.equal(result.reviewFields[0].editable, false);
 });
 
-test("marks duplicate affiliation controls as ambiguous instead of writable", () => {
+test("does not expose duplicate retired affiliation controls", () => {
   const result = loadCollector().collectCandidates([
     { label: "报废车挂靠", value: "", section: "old_vehicle", source: "control" },
     { label: "新车挂靠", value: "", section: "new_vehicle", source: "control" },
     { label: "新车挂靠", value: "", section: "new_vehicle", source: "control" },
   ]);
 
-  assert.deepEqual(Array.from(result.writableTargets, (item) => ({ ...item })), [
-    { field: "old_vehicle.affiliation", label: "报废车挂靠", present: true, currentValue: null },
+  assert.deepEqual(Array.from(result.writableTargets), []);
+  assert.equal(Array.from(result.ambiguousFields).includes("new_vehicle.affiliation"), false);
+});
+
+test("treats a standalone invoice currency symbol as an empty amount", () => {
+  const result = loadCollector().collectCandidates([
+    { label: "开票金额", value: "￥", section: "new_vehicle", source: "control" },
   ]);
-  assert.ok(Array.from(result.ambiguousFields).includes("new_vehicle.affiliation"));
+
+  assert.equal(result.pageFields["invoice.amount"], "");
 });
 
 test("only one accepted DOM candidate becomes a review target", () => {

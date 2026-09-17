@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { PageData, PageFillAction, ReviewResponse } from "../types/review";
+import type { PageData, ReviewResponse } from "../types/review";
 import type { PageFillResult } from "../pageFillClient";
 import { ScrapReplacementReview } from "./ScrapReplacementReview";
 import { ReviewTaskWorkbench } from "./ReviewTaskWorkbench";
@@ -10,7 +10,6 @@ export interface WorkbenchRendererProps {
   onFocusImage: (imageId: string) => Promise<void>;
   onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   onApplyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
-  onApplyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   onRerun: () => Promise<void>;
 }
 

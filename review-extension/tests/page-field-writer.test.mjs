@@ -764,3 +764,20 @@ test("single-field writer restores the original value after failed readback", as
   assert.match(result.message, /回读失败/);
   assert.equal(input.value, "VIN-OLD");
 });
+
+test("invoice amount accepts the page currency formatting during readback", async () => {
+  const input = valueInput("￥");
+  input.dispatchEvent = (event) => {
+    if (event.type === "change") input.value = "￥423,000.00";
+  };
+
+  const result = await loadWriter({ setTimeout }).executeValue(
+    { defaultView: { Event: class Event { constructor(type) { this.type = type; } } } },
+    input,
+    { field: "invoice.amount", value: "423000.00", expectedValue: "" },
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(input.value, "￥423,000.00");
+  assert.equal(result.actions[0].value, "￥423,000.00");
+});

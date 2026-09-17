@@ -181,7 +181,7 @@ test("workbench hides duplicate date policy cards when the field card is present
   assert.match(html, /开票日期/);
 });
 
-test("material tasks show only the completeness checklist", () => {
+test("workbench hides material completeness tasks while retaining backend response data", () => {
   const step = makeStep({step_id: "MATERIAL-GROUP", category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, reason: "报废证明存在无法确认的字段"});
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
     review: workbenchReview([step], {material_completeness: {status: "UNCERTAIN", issues: [{
@@ -197,8 +197,8 @@ test("material tasks show only the completeness checklist", () => {
   assert.doesNotMatch(html, /未识别到有效值/);
   assert.doesNotMatch(html, /scrap-1.jpg|scrap-2.jpg/);
   assert.equal((html.match(/查看原图/g) || []).length, 0);
-  assert.match(html, /材料已提供/);
-  assert.doesNotMatch(html, /scrap_certificate|old_vehicle.vin|已核验/);
+  assert.doesNotMatch(html, /材料已提供|材料完整性|资料完整性/);
+  assert.match(html, /页面外核验 \(0\)/);
 });
 
 test("field and external reviews only expose the manual review completion action", () => {
@@ -460,7 +460,7 @@ test("workbench reports the actual DOM-derived field count and unknown controls"
   assert.match(html, /新增值/);
 });
 
-test("workbench renders the six-item material checklist and blocks confirming a missing upload", () => {
+test("workbench does not render the material checklist or count it as an external task", () => {
   const materialStep = makeStep({ step_id: "MATERIAL-GROUP", sequence: 1, category: "MATERIAL", result_status: "INSUFFICIENT", requires_reviewer_action: true, label: "资料完整性", reason: "缺少新车行驶证" });
   const checklist = [
     ["old_vehicle:vehicle_license", "旧车行驶证", "PRESENT"],
@@ -472,23 +472,20 @@ test("workbench renders the six-item material checklist and blocks confirming a 
   ].map(([key, display_name, status]) => ({ key, display_name, status, material_type: key.split(":")[1], business_scope: key.split(":")[0], required_pages: [], present_pages: [], missing_pages: [], image_ids: [], reason: status === "MISSING" ? `缺少${display_name}` : "材料已确认" }));
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([materialStep], { material_completeness: { phase: "EXTRACTED", status: "INCOMPLETE", enforced: true, issues: [], checklist } }), pageData: { pageFields: {}, images: [] } }));
 
-  assert.equal((html.match(/材料已提供/g) ?? []).length, 5);
-  assert.match(html, /新车行驶证/);
-  assert.match(html, /缺失/);
-  assert.doesNotMatch(html, /确认已核对/);
-  assert.match(html, /标记人工复核/);
+  assert.equal((html.match(/材料已提供/g) ?? []).length, 0);
+  assert.doesNotMatch(html, /新车行驶证|资料完整性|标记人工复核/);
+  assert.match(html, /页面外核验 \(0\)/);
 });
 
-test("workbench renders dynamic identity requirements in the affiliation card", () => {
+test("workbench hides the affiliation subject task and its identity requirements", () => {
   const subject = makeStep({ step_id: "BUSINESS-AFFILIATION-SUBJECT-001", sequence: 1, category: "BUSINESS_RULE", result_status: "INSUFFICIENT", requires_reviewer_action: true, label: "新旧车挂靠主体关系", reason: "张三缺少身份证反面", details: { subject_requirements: [{ party: "SHARED", subject_name: "张三", subject_type: "PERSONAL", document: "identity_card_front", status: "PRESENT", image_ids: ["id-front"], reason: "身份证正面已确认" }, { party: "SHARED", subject_name: "张三", subject_type: "PERSONAL", document: "identity_card_back", status: "MISSING", image_ids: [], reason: "张三缺少身份证反面" }] } });
   const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([subject]), pageData: { pageFields: {}, images: [{ imageId: "id-front", src: "front.jpg", alt: "身份证正面" }] } }));
 
-  assert.match(html, /张三 · 身份证正面/);
-  assert.match(html, /张三 · 身份证反面/);
-  assert.match(html, /查看原图/);
+  assert.doesNotMatch(html, /新旧车挂靠主体关系|张三|身份证正面|身份证反面|查看原图/);
+  assert.match(html, /页面外核验 \(0\)/);
 });
 
-test("affiliation card includes customer identity blockers and shows subject images", () => {
+test("workbench hides affiliation auxiliary tasks together with the subject task", () => {
   const subject = makeStep({
     step_id: "BUSINESS-AFFILIATION-SUBJECT-001",
     sequence: 1,
@@ -521,9 +518,7 @@ test("affiliation card includes customer identity blockers and shows subject ima
     ] },
   }));
 
-  assert.doesNotMatch(html, /关联辅助核验/);
-  assert.match(html, /客户名称/);
-  assert.match(html, /页面或材料未取得可比较的明确值/);
-  assert.doesNotMatch(html, /src="license.jpg"/);
-  assert.doesNotMatch(html, /src="registration.jpg"/);
+  assert.doesNotMatch(html, /新旧车挂靠主体关系|客户名称|页面或材料未取得可比较的明确值/);
+  assert.doesNotMatch(html, /src="license.jpg"|src="registration.jpg"/);
+  assert.match(html, /页面外核验 \(0\)/);
 });

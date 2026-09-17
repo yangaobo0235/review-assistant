@@ -131,14 +131,11 @@ const isDomElement = (value: unknown): value is DomElement => {
     adjacent: 100,
   };
   // Ant Design's a-select exposes an input role=combobox; some deployed
-  // shells put the role on the trigger itself. Include both forms so the
-  // affiliation controls are never omitted from the inventory.
+  // shells put the role on the trigger itself.
   const CONTROL_SELECTOR = "input, textarea, select, [role='combobox'], input[aria-controls], input[aria-owns], [contenteditable]:not([contenteditable='false'])";
   const FORM_ITEM_SELECTOR = ".ant-form-item, .el-form-item, .form-item, [data-form-item], [data-index][class*='form'], [class*='FormItem'], [class*='formItem']";
-  const WRITABLE_TARGETS = {
-    "报废车挂靠": "old_vehicle.affiliation",
-    "新车挂靠": "new_vehicle.affiliation",
-  };
+  const WRITABLE_TARGETS: Record<string, string> = {};
+  const IGNORED_CONTROL_LABELS = new Set(["报废车挂靠", "新车挂靠"]);
   const SYSTEM_CONTROL_LABELS = new Set(["审核状态", "审核进度", "审核结果"]);
 
   const normalizeText = (value: unknown) => String(value || "")
@@ -215,6 +212,18 @@ const isDomElement = (value: unknown): value is DomElement => {
     return [...SYSTEM_CONTROL_LABELS].some((systemLabel) =>
       normalized === systemLabel || normalized.startsWith(systemLabel),
     );
+  };
+
+  const isIgnoredControlLabel = (label: string) => {
+    const normalized = normalizeText(label);
+    return [...IGNORED_CONTROL_LABELS].some((ignored) =>
+      normalized === ignored || normalized.startsWith(ignored),
+    );
+  };
+
+  const normalizeCollectedFieldValue = (field: string | null | undefined, value: unknown) => {
+    const raw = String(value ?? "").trim();
+    return field === "invoice.amount" && /^[￥¥\s]*$/.test(raw) ? "" : raw;
   };
 
   const isSectionRequired = (field: string) => Boolean(FIELD_DEFINITIONS[field]?.sectionRequired);
@@ -329,6 +338,7 @@ const isDomElement = (value: unknown): value is DomElement => {
         writableTargetField(candidate.label) ||
         isKnownLabel(candidate.label)
       ))
+      .filter((candidate) => !isIgnoredControlLabel(candidate.label))
       .filter((candidate) => !isVerificationCandidate(candidate));
 
   const isEditableControl = (control: DomElement | null | undefined) => {
@@ -523,7 +533,7 @@ const isDomElement = (value: unknown): value is DomElement => {
     for (const control of controls) {
       const label = controlLabel(root, control);
       if (!label) continue;
-      if (isSearchFilterControl(control) || isSystemControlLabel(label)) continue;
+      if (isSearchFilterControl(control) || isSystemControlLabel(label) || isIgnoredControlLabel(label)) continue;
       const container = control.closest?.<DomElement>(FORM_ITEM_SELECTOR) || control;
       if (seenLogicalControls.has(container)) continue;
       seenLogicalControls.add(container);
@@ -545,7 +555,7 @@ const isDomElement = (value: unknown): value is DomElement => {
       inventory.push({
         field: operationField || resolved?.field || null,
         label: operationLabel || resolved?.definition.aliases[0] || displayLabel(label),
-        value: candidate.value,
+        value: normalizeCollectedFieldValue(operationField || resolved?.field, candidate.value),
         controlType: controlType(control),
         editable: isEditableControl(control),
         section: candidate.section,
@@ -637,7 +647,7 @@ const isDomElement = (value: unknown): value is DomElement => {
         continue;
       }
       const [accepted] = top;
-      pageFields[field] = accepted.candidate.value;
+      pageFields[field] = normalizeCollectedFieldValue(field, accepted.candidate.value);
       if (accepted.candidate.element) {
         fieldTargets.push({ field, element: accepted.candidate.element });
       }
@@ -684,7 +694,7 @@ const isDomElement = (value: unknown): value is DomElement => {
         ...controls,
         ...structuredCandidates(scopedRoot),
         ...adjacentCandidates(scopedRoot),
-      ].filter((candidate) => !inSearchFilter(candidate) && !isSystemControlLabel(candidate.label) && !isVerificationCandidate(candidate)),
+      ].filter((candidate) => !inSearchFilter(candidate) && !isSystemControlLabel(candidate.label) && !isIgnoredControlLabel(candidate.label) && !isVerificationCandidate(candidate)),
       rawControls.length,
       businessType,
       reviewFields,

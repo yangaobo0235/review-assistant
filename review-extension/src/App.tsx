@@ -82,7 +82,6 @@ function App() {
           onFocusImage={workflow.focusOriginalImage}
           onApplyPageFieldValue={workflow.applyPageFieldValue}
           onApplyPageFieldGroupValue={workflow.applyPageFieldGroupValue}
-          onApplyAffiliationFill={workflow.applyAffiliationFill}
           onRerun={workflow.startReview}
           pageFillResult={workflow.pageFillResult}
         />

@@ -65,11 +65,11 @@
 
 前端业务选择显示为“长春报废置换审核”，自动识别路径为 `/scrap-replace-changchun`，手动选择产生 `scrap_replacement / changchun / 1.0`。长春和青岛共享 `ScrapReplacementReview` Renderer，但通过 Profile Key 绑定，不能在组件中写地区判断来替代后端规则。
 
-工作台展示材料清单、字段比较、二维码结果、政策检查、主体证据和降级原因。前端只负责呈现和用户操作；日期范围、产地关键词、材料是否足够和主体关系均由后端决定。
+工作台展示字段比较、二维码结果、政策检查和降级原因。当前前端集中排除材料完整性、挂靠主体关系及辅助任务和两个挂靠字段；日期范围、产地关键词、材料是否足够、主体关系及最终建议仍由后端决定。
 
-页面动作只能通过注册的 `fill_affiliation_fields` 执行，必须一次准备两个动作、校验页面实例和原值、写入后回读并在失败时回滚。刷新页面或重新采集后，旧动作自动失效。
+后端返回的 `fill_affiliation_fields` 只保留兼容读取，当前工作台不触发。兼容写入器仍要求一次准备两个动作、校验页面实例和原值、写入后回读并在失败时回滚。
 
-长春页面遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：日期或产地冲突显示红色并同时显示页面/材料值，缺失材料、识别不确定、二维码不可用和政策无法校验显示橙色待复核状态；发票日期和报废交车日期政策直接显示在字段卡片。材料只保留一个 `MATERIAL-GROUP`，且只展示材料是否齐全，不展示识别异常。组合字段显示两个页面原始值，点击回填时两个页面字段必须原子写入、回读和失败回滚。带 `page_target_field` 的冲突任务显示默认页面原值的人工输入框和“回填此值”，成功后定位并高亮页面控件约 4 秒，回读失败则显示错误并回滚。主体关系通过且动作意图合法时自动选择个人/公司挂靠，页面失效时所有写回按钮立即禁用。
+长春页面遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：日期或产地冲突显示红色并同时显示页面/材料值，二维码不可用和政策无法校验显示橙色待复核状态；发票日期和报废交车日期政策直接显示在字段卡片。当前 Renderer 不展示 `MATERIAL-GROUP`、挂靠主体关系及辅助任务和两个挂靠字段，页签数量以过滤后的任务为准。组合字段显示两个页面原始值，点击回填时两个页面字段必须原子写入、回读和失败回滚。开票金额回读允许货币符号、千分位和小数尾零的等价格式，只有 `￥` 时按空值采集。带 `page_target_field` 的冲突任务显示默认页面原值的人工输入框和“回填此值”，成功后定位并高亮页面控件约 4 秒，回读失败则显示错误并回滚。页面失效时所有回填按钮立即禁用。
 
 ## 8. 规则变更记录
 
@@ -110,7 +110,7 @@ Profile 的 `binding_declarations`、`capability_specs` 和注册表 Handler 必
 - `ScrapReplacementPageAdapter`（报废置换页面适配器）：识别 URL `/scrap-replace-changchun`，返回 `changchun / 1.0`。
 - `PageAdapterRegistry`（页面适配器注册表）：负责页面适配器解析和页面身份校验。
 - `RendererRegistry`（渲染器注册表）：键 `scrap_replacement|changchun|1.0` 映射到共享的 `ScrapReplacementReview`（报废置换审核工作台）。
-- `PageActionRegistry`（页面动作注册表）：执行后端返回的 `fill_affiliation_fields`（填写挂靠字段），实际 DOM（页面文档对象模型）写回由 Adapter（适配器）/Content Script（内容脚本）守卫。
+- `PageActionRegistry`（页面动作注册表）：保留 `fill_affiliation_fields`（填写挂靠字段）的兼容实现及 DOM（页面文档对象模型）守卫；当前 `ScrapReplacementReview` 不触发该动作。
 
 ## 10. 子图和主图调用关系
 

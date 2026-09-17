@@ -87,9 +87,9 @@
 
 前端业务选择显示为“青岛报废置换审核”；手动选择会产生 `scrap_replacement / qingdao / 1.0`。字段优先工作台按后端 `ReviewTask` 展示页面原值、材料值、差异位置、证据图片和处理状态。前端只负责标签、排序、人工选择和调用写回动作，不重新计算日期、产地或主体关系。
 
-页面动作只允许 `old_vehicle.affiliation` 和 `new_vehicle.affiliation`。写回前检查页面实例、采集 ID、目标控件唯一性、原值和动作授权；写回后回读，任何失败都执行回滚并要求重新采集。
+后端仍可能为兼容 Profile 返回 `old_vehicle.affiliation` 和 `new_vehicle.affiliation` 页面动作，但当前前端不采集这两个控件、不展示对应任务，也不执行挂靠填写意图。兼容写入器仍保留页面实例、采集 ID、目标控件唯一性、回读和回滚保护，不能作为当前工作台入口调用。
 
-青岛页面必须遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：`CONFLICT` 字段和政策结果使用红色冲突标记，`INSUFFICIENT`、材料不确定和外部降级使用橙色待复核标记；页面值、材料值和证据来源同时展示。日期政策直接显示在对应字段卡片，不重复显示页面外核验。材料只展示 `MATERIAL-GROUP`，且只显示材料是否齐全，不展示识别异常字段。组合字段任务显示两个页面原始值；点击回填时两个页面字段必须原子写入、回读并在失败时回滚。带 `page_target_field`（页面定位字段）的冲突任务必须显示默认填入页面原值的人工输入框和“回填此值”按钮；写回成功后定位控件并高亮约 4 秒，回读成功才显示成功。主体关系通过且动作意图合法时自动选择个人/公司挂靠，两个字段必须原子回填。
+青岛页面必须遵守统一的[审核工作台前端展示规范](../frontend-presentation.md)：`CONFLICT` 字段和政策结果使用红色冲突标记，`INSUFFICIENT` 和外部降级使用橙色待复核标记；页面值、材料值和证据来源同时展示。日期政策直接显示在对应字段卡片，不重复显示页面外核验。当前 Renderer 集中排除 `MATERIAL-GROUP`、挂靠主体关系及辅助任务和两个挂靠字段，并以过滤后的任务计算页签数量；后端规则和最终建议保持不变。组合字段任务显示两个页面原始值；点击回填时两个页面字段必须原子写入、回读并在失败时回滚。开票金额回读允许货币符号、千分位和小数尾零的等价格式，只有 `￥` 时按空值采集。带 `page_target_field`（页面定位字段）的冲突任务必须显示默认填入页面原值的人工输入框和“回填此值”按钮；写回成功后定位控件并高亮约 4 秒，回读成功才显示成功。
 
 ## 8. 规则变更记录
 
@@ -130,7 +130,7 @@ Profile 的 `binding_declarations` 与 `capability_specs` 必须一一对应。�
 - `ScrapReplacementPageAdapter`（报废置换页面适配器）：识别 URL `/scrap-replace-qingdao`，返回 `qingdao / 1.0`。
 - `PageAdapterRegistry`（页面适配器注册表）：负责页面适配器解析和页面身份校验。
 - `RendererRegistry`（渲染器注册表）：键 `scrap_replacement|qingdao|1.0` 映射到 `ScrapReplacementReview`（报废置换审核工作台）。
-- `PageActionRegistry`（页面动作注册表）：执行后端返回的 `fill_affiliation_fields`（填写挂靠字段），实际 DOM（页面文档对象模型）写回由 Adapter（适配器）/Content Script（内容脚本）守卫。
+- `PageActionRegistry`（页面动作注册表）：保留 `fill_affiliation_fields`（填写挂靠字段）的兼容实现及 DOM（页面文档对象模型）守卫；当前 `ScrapReplacementReview` 不触发该动作。
 
 ## 10. 子图和主图调用关系
 
