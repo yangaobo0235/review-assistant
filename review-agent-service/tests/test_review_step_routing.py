@@ -11,6 +11,7 @@ from app.businesses.profiles import (
     SCRAP_REPLACEMENT_QINGDAO,
     TRANSFER_DEFAULT,
 )
+from app.models.evidence import DifferenceRange, EvidenceFact
 from app.models.review import (
     FieldComparison,
     FieldStatus,
@@ -133,6 +134,46 @@ def test_field_step_counts_only_unique_material_images_as_evidence() -> None:
     assert all(item.image_id for item in step.evidence)
 
 
+def test_old_vehicle_vin_task_preserves_backend_difference_ranges() -> None:
+    difference = DifferenceRange(
+        kind="REPLACE",
+        start=11,
+        end=19,
+        page_start=9,
+        page_end=17,
+        page_text="7G1E22467",
+    )
+    comparison = FieldComparison(
+        field="old_vehicle.vin",
+        left_value="LFWSRXSJ7G1E22467",
+        right_value="LFWSRXSJ7G1E22467",
+        status=FieldStatus.CONFLICT,
+        message="行驶证或登记证车架号后 8 位与二维码官网车架号不一致",
+        evidence=[
+            EvidenceFact(
+                source="图片识别",
+                source_id="registration",
+                image_id="registration-image",
+                value="CA4250P66K24T1A1E4",
+                conflicting=True,
+                differences=[difference],
+            ),
+        ],
+    )
+
+    step = next(
+        item
+        for item in build_steps(
+            page_fields={"old_vehicle.vin": "LFWSRXSJ7G1E22467"},
+            comparisons=[comparison],
+        )
+        if item.step_id == "FIELD-old_vehicle.vin"
+    )
+
+    assert step.result_status == "CONFLICT"
+    assert step.values[0].differences == [difference]
+
+
 def test_external_step_accepts_legacy_dict_evidence() -> None:
     steps = build_steps(
         external_checks=[
@@ -251,8 +292,16 @@ def test_external_check_routes_to_assistant() -> None:
     assert steps[0].page_field is None
 
 
-def test_complete_material_report_creates_no_assistant_step() -> None:
+def test_complete_material_report_creates_one_material_group() -> None:
     steps = build_steps(
+        business_checks=[
+            CheckResult(
+                check_id="MATERIAL-COMPLETENESS",
+                label="材料完整性",
+                status="MATCH",
+                reason="材料完整",
+            )
+        ],
         completeness=MaterialCompletenessReport(
             phase="EXTRACTED",
             status="COMPLETE",
@@ -260,7 +309,14 @@ def test_complete_material_report_creates_no_assistant_step() -> None:
         )
     )
 
-    assert not any(item.category == "MATERIAL" for item in steps)
+    material_steps = [item for item in steps if item.category == "MATERIAL"]
+    assert [(item.step_id, item.result_status) for item in material_steps] == [
+        ("MATERIAL-GROUP", "MATCH")
+    ]
+    assert not any(
+        item.step_id == "BUSINESS-MATERIAL-COMPLETENESS"
+        for item in steps
+    )
 
 
 def test_duplicate_material_issue_and_limitation_are_shown_once() -> None:
@@ -274,6 +330,14 @@ def test_duplicate_material_issue_and_limitation_are_shown_once() -> None:
         suggested_action="请查看新车发票原图",
     )
     steps = build_steps(
+        business_checks=[
+            CheckResult(
+                check_id="MATERIAL-COMPLETENESS",
+                label="材料完整性",
+                status="INSUFFICIENT",
+                reason="材料缺失或存在不确定证据",
+            )
+        ],
         completeness=MaterialCompletenessReport(
             phase="EXTRACTED",
             status="INCOMPLETE",
@@ -286,7 +350,12 @@ def test_duplicate_material_issue_and_limitation_are_shown_once() -> None:
     material_steps = [item for item in steps if item.category == "MATERIAL"]
 
     assert len(material_steps) == 1
+    assert material_steps[0].step_id == "MATERIAL-GROUP"
     assert material_steps[0].display_target is ReviewDisplayTarget.ASSISTANT
+    assert not any(
+        item.step_id == "BUSINESS-MATERIAL-COMPLETENESS"
+        for item in steps
+    )
 
 
 def test_non_target_profile_keeps_steps_as_assistant_contracts() -> None:

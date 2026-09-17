@@ -328,6 +328,32 @@ test("workbench marks differing identifier positions in red", () => {
   assert.match(html, /<mark class="value-diff"[^>]*>0<\/mark>/);
 });
 
+test("old vehicle VIN keeps the page value plain and marks differing material characters", () => {
+  const difference = { kind: "REPLACE", start: 16, end: 17, page_start: 16, page_end: 17, page_text: "5" };
+  const field = makeStep({
+    step_id: "FIELD-old_vehicle.vin",
+    sequence: 1,
+    category: "FIELD",
+    label: "报废车辆车架号",
+    page_value: "LFNAFRJM6BAK00025",
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+    values: [
+      { source: "申请页面字段", value: "LFNAFRJM6BAK00025", differences: [] },
+      { source: "行驶证", value: "LFNAFRJM6BAK00024", differences: [difference] },
+      { source: "机动车登记证书", value: "LFNAFRJM6BAK00024", differences: [difference] },
+      { source: "二维码官网字段", value: "LFNAFRJM6BAK00024", differences: [difference] },
+    ],
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([field]),
+    pageData: { pageFields: { "old_vehicle.vin": "LFNAFRJM6BAK00025" }, images: [] },
+  }));
+
+  assert.doesNotMatch(html, /<mark class="value-diff"[^>]*>5<\/mark>/);
+  assert.equal((html.match(/<mark class="value-diff"[^>]*>4<\/mark>/g) ?? []).length, 3);
+});
+
 test("composite VIN task uses Chinese page labels and preserves material diff marks", () => {
   const field = makeStep({
     step_id: "FIELD-NEW-VEHICLE-VIN",

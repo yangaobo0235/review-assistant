@@ -57,10 +57,16 @@ def prepare_display_tasks(
             "details": {**subject.details, "affiliation_subject_status": subject.result_status},
         })
         consumed.update(item.step_id for item in auxiliary)
+    material_members = [
+        item
+        for item in tasks
+        if item.category == "MATERIAL"
+        or item.step_id == "BUSINESS-MATERIAL-COMPLETENESS"
+    ]
     result = []
     grouped = [
         ("QR-GROUP", "二维码官网核验", "EXTERNAL", [item for item in tasks if item.step_id.startswith("QR-") or item.step_id == "EXTERNAL-scrap_certificate_qr"], qr_enabled, "INSUFFICIENT", "未取得可核验的二维码"),
-        ("MATERIAL-GROUP", "材料完整性", "MATERIAL", [item for item in tasks if item.category == "MATERIAL"], completeness is not None and (completeness.status != "COMPLETE" or any(item.category == "MATERIAL" for item in tasks)), "MATCH" if completeness and completeness.status == "COMPLETE" else "INSUFFICIENT", "必需材料已采集" if completeness and completeness.status == "COMPLETE" else "材料不完整或待确认"),
+        ("MATERIAL-GROUP", "材料完整性", "MATERIAL", material_members, completeness is not None, "MATCH" if completeness and completeness.status == "COMPLETE" else "INSUFFICIENT", "必需材料已采集" if completeness and completeness.status == "COMPLETE" else "材料不完整或待确认"),
     ]
     for task_id, label, category, members, enabled, fallback, reason in grouped:
         if not enabled and not members:

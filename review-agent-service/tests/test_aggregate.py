@@ -279,6 +279,7 @@ def test_old_vehicle_vin_uses_qr_as_authority_and_only_document_suffixes() -> No
     assert comparison.status is FieldStatus.MATCH
     assert "后 8 位一致" in comparison.message
     assert all(item.source_id != "scrap" or not item.conflicting for item in comparison.evidence)
+    assert all(not item.differences for item in comparison.evidence)
 
 
 def test_old_vehicle_vin_rejects_page_or_document_suffix_conflicts() -> None:
@@ -294,6 +295,58 @@ def test_old_vehicle_vin_rejects_page_or_document_suffix_conflicts() -> None:
 
     assert page_conflict.status is FieldStatus.CONFLICT
     assert suffix_conflict.status is FieldStatus.CONFLICT
+    page_evidence = next(item for item in page_conflict.evidence if item.source_id == "page")
+    qr_evidence = next(item for item in page_conflict.evidence if item.source_id == "qr")
+    suffix_evidence = next(item for item in suffix_conflict.evidence if item.source_id == "license")
+    assert page_evidence.conflicting is True
+    assert page_evidence.differences == []
+    assert qr_evidence.differences
+    assert suffix_evidence.conflicting is True
+    assert suffix_evidence.differences
+    assert all(item.start >= len("DOC-000000999999") - 8 for item in suffix_evidence.differences)
+
+
+def test_old_vehicle_vin_suffix_differences_preserve_matching_document_prefixes() -> None:
+    comparison = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("LFWSRXSJ7G1E22467", "page", "page"),
+        vehicle_vin_observation("LFWSRXSJ7G1E22467", "qr", "qr_page"),
+        vehicle_vin_observation("CA4250P66K24T1A1E4", "registration", "image", "registration_certificate"),
+        vehicle_vin_observation("OTHER-99997G1E22467", "license", "image", "vehicle_license"),
+    ])
+
+    registration = next(item for item in comparison.evidence if item.source_id == "registration")
+    license_evidence = next(item for item in comparison.evidence if item.source_id == "license")
+    assert comparison.status is FieldStatus.CONFLICT
+    assert registration.conflicting is True
+    assert registration.differences
+    assert all(item.start >= len("CA4250P66K24T1A1E4") - 8 for item in registration.differences)
+    assert license_evidence.conflicting is False
+    assert license_evidence.differences == []
+
+
+def test_old_vehicle_vin_marks_material_values_that_differ_from_the_page() -> None:
+    comparison = aggregate_old_vehicle_vin([
+        vehicle_vin_observation("LFNAFRJM6BAK00025", "page", "page"),
+        vehicle_vin_observation("LFNAFRJM6BAK00024", "qr", "qr_page"),
+        vehicle_vin_observation("LFNAFRJM6BAK00024", "license", "image", "vehicle_license"),
+        vehicle_vin_observation("LFNAFRJM6BAK00024", "registration", "image", "registration_certificate"),
+    ])
+
+    page = next(item for item in comparison.evidence if item.source_id == "page")
+    materials = [
+        item
+        for item in comparison.evidence
+        if item.source_id in {"qr", "license", "registration"}
+    ]
+    assert comparison.status is FieldStatus.CONFLICT
+    assert page.differences == []
+    assert len(materials) == 3
+    assert all(item.differences for item in materials)
+    assert all(
+        difference.start == len(str(item.value)) - 1
+        for item in materials
+        for difference in item.differences
+    )
 
 
 def test_old_vehicle_vin_requires_one_unique_qr_value() -> None:

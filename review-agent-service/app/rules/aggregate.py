@@ -8,7 +8,7 @@
 from collections import Counter
 
 from app.fields.differences import value_differences
-from app.models.evidence import EvidenceFact, FieldObservation
+from app.models.evidence import DifferenceRange, EvidenceFact, FieldObservation
 from app.models.review import FieldComparison, FieldStatus
 from app.rules.normalize import format_like_page, normalize_value
 
@@ -239,12 +239,41 @@ def aggregate_old_vehicle_vin(
     evidence = []
     for item in valid:
         normalized = normalize_value("old_vehicle.vin", item.value)
+        evidence_differences: list[DifferenceRange] = []
         if item.source_type == "qr_page":
             conflicting = len(qr_values) != 1
+            if page and page_value != normalized:
+                evidence_differences = value_differences(
+                    "old_vehicle.vin",
+                    page.value,
+                    item.value,
+                )
         elif item.source_type == "page":
             conflicting = bool(qr_value and normalized != qr_value)
         else:
             conflicting = bool(qr_value and (normalized or "")[-8:] != qr_value[-8:])
+            if page_value and (normalized or "")[-8:] != page_value[-8:]:
+                # 业务结论仍以二维码官网 VIN 为权威基准，但工作台以页面
+                # 原始值为展示基准，把材料中不同的后 8 位字符标红。
+                # 不能比较完整证件 VIN，否则允许不同的前缀也会被误标。
+                material_text = str(item.value)
+                material_suffix = (normalized or "")[-8:]
+                suffix_differences = value_differences(
+                    "old_vehicle.vin",
+                    page_value[-8:],
+                    material_suffix,
+                )
+                value_offset = max(0, len(material_text) - len(material_suffix))
+                page_offset = max(0, len(page_value) - 8)
+                evidence_differences = [
+                    difference.model_copy(update={
+                        "start": difference.start + value_offset,
+                        "end": difference.end + value_offset,
+                        "page_start": difference.page_start + page_offset,
+                        "page_end": difference.page_end + page_offset,
+                    })
+                    for difference in suffix_differences
+                ]
         evidence.append(EvidenceFact(
             source=EVIDENCE_SOURCE_LABELS.get(item.source_type, item.source_type),
             source_id=item.source_id,
@@ -262,6 +291,7 @@ def aggregate_old_vehicle_vin(
             derived_from=item.derived_from,
             evidence_region=item.evidence_region,
             conflicting=conflicting,
+            differences=evidence_differences,
         ))
 
     differences = []
