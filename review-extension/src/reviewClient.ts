@@ -11,8 +11,8 @@ import type {
   ReviewJobSnapshot,
 } from "./types/review";
 
-const agentBaseUrl = "http://127.0.0.1:8010";
-// const agentBaseUrl = "http://192.168.2.23:8010";
+/** 腾讯云上的审核服务；插件安装后无需用户配置本地 Agent。 */
+export const agentBaseUrl = "http://175.178.6.214:18110";
 
 export type Fetcher = typeof fetch;
 

@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  agentBaseUrl,
   completionNotice,
   createReviewJob,
   fetchReviewJob,
 } from "../src/reviewClient.ts";
+
+test("uses the deployed Tencent Cloud Agent endpoint", () => {
+  assert.equal(agentBaseUrl, "http://175.178.6.214:18110");
+});
 
 test("returns the existing partial and client-deadline notices", () => {
   assert.match(completionNotice({ status: "RUNNING" }), /60 秒/);

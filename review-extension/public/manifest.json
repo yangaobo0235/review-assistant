@@ -12,6 +12,7 @@
   "host_permissions": [
     "http://127.0.0.1:8010/*",
     "http://localhost:8010/*",
+    "http://175.178.6.214:18110/*",
     "http://test.forjtruck.com/*",
     "https://test.forjtruck.com/*",
     "https://admin.forjtruck.com/*",

@@ -441,6 +441,7 @@ test("content rejects a mapped image when its source changes after collection", 
 
 test("manifest grants access to the production review host", () => {
   assert.ok(manifest.host_permissions.includes("https://admin.forjtruck.com/*"));
+  assert.ok(manifest.host_permissions.includes("http://175.178.6.214:18110/*"));
 });
 
 test("collector scans every valid contenteditable form", () => {
