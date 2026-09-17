@@ -19,7 +19,7 @@
 - [extension-guide.md](extension-guide.md)：新增审核页面或新审核业务的完整流程，包括 PageAdapter（页面适配器）、PageAction（页面动作）和 Renderer（渲染器）。
 - [ai-change-policy.md](ai-change-policy.md)：AI 和开发者修改代码时的强制约束。
 - [testing-and-release.md](testing-and-release.md)：测试分层、验证命令、版本和发布流程。
-- [server-deployment.md](server-deployment.md)：腾讯云容器部署、SSH 本地端口转发、更新与回滚。
+- [server-deployment.md](server-deployment.md)：腾讯云完整上线流程，包括本地打包、上传、更新、验证、清理与回滚。
 
 ## 阅读顺序
 

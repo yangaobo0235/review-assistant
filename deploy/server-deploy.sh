@@ -6,13 +6,17 @@ env_file="${project_dir}/review-agent-service/.env"
 
 cd "${project_dir}"
 
-if [[ ! -f "${env_file}" ]]; then
-  echo "Missing ${env_file}. Copy .env.example to .env and configure DASHSCOPE_API_KEY first." >&2
+if [[ ! -s "${env_file}" ]]; then
+  echo "Missing ${env_file}. Create it and configure DASHSCOPE_API_KEY first." >&2
   exit 1
 fi
 
-docker compose -f docker-compose.server.yml build review-agent
-docker compose -f docker-compose.server.yml up -d --no-build review-agent
+if ! docker image inspect review-agent-service:main >/dev/null 2>&1; then
+  echo "Missing review-agent-service:main. Load the locally built image before deploying." >&2
+  exit 1
+fi
+
+docker compose -f docker-compose.server.yml up -d --no-build --force-recreate review-agent
 docker compose -f docker-compose.server.yml ps
 
 echo
