@@ -15,6 +15,7 @@ Review Assistant 是一个面向车辆审核页面的浏览器扩展与审核服
 - [新增审核页面扩展手册](docs/extension-guide.md)
 - [AI 与开发者改动准则](docs/ai-change-policy.md)
 - [测试、提交与发布](docs/testing-and-release.md)
+- [腾讯云部署](docs/server-deployment.md)
 - [GitHub 协作规范](CONTRIBUTING.md)
 - [安全边界](SECURITY.md)
 
