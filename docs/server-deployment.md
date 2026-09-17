@@ -102,12 +102,18 @@ Invoke-RestMethod http://175.178.6.214:18110/health
 
 ## 构建和分发浏览器扩展
 
-扩展已配置为直接请求 `http://175.178.6.214:18110`：
+使用公网构建命令时，扩展会直接请求 `http://175.178.6.214:18110`：
 
 ```powershell
 npm --prefix review-extension ci
-npm --prefix review-extension run build
+npm --prefix review-extension run build:public
 Compress-Archive -Path .\review-extension\dist\* -DestinationPath .\.tmp\review-extension.zip -Force
+```
+
+本地开发时运行普通构建，扩展会请求 IDEA 启动的 `http://127.0.0.1:8010`：
+
+```powershell
+npm --prefix review-extension run build
 ```
 
 将 `review-extension.zip` 发给朋友。朋友解压后，在 Chromium 浏览器扩展管理页启用开发者模式，选择“加载已解压的扩展程序”，选择解压后的目录即可。之后无需运行其他程序。

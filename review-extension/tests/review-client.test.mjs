@@ -6,10 +6,19 @@ import {
   completionNotice,
   createReviewJob,
   fetchReviewJob,
+  localAgentBaseUrl,
+  publicAgentBaseUrl,
+  resolveAgentBaseUrl,
 } from "../src/reviewClient.ts";
 
-test("uses the deployed Tencent Cloud Agent endpoint", () => {
-  assert.equal(agentBaseUrl, "http://175.178.6.214:18110");
+test("selects local and public Agent endpoints by build mode", () => {
+  assert.equal(agentBaseUrl, localAgentBaseUrl);
+  assert.equal(resolveAgentBaseUrl("development", undefined), localAgentBaseUrl);
+  assert.equal(resolveAgentBaseUrl("public", undefined), publicAgentBaseUrl);
+  assert.equal(
+    resolveAgentBaseUrl("public", "http://example.test:9000/"),
+    "http://example.test:9000",
+  );
 });
 
 test("returns the existing partial and client-deadline notices", () => {

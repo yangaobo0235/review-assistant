@@ -30,6 +30,8 @@ npm run lint
 npm run build
 ```
 
+普通 `npm run build` 生成连接本地 `127.0.0.1:8010` 的开发版；`npm run build:public` 生成连接腾讯云审核服务的朋友试用版。需要临时连接其他环境时，可在构建进程中设置 `VITE_AGENT_BASE_URL`。
+
 ## 前端运行链路
 
 页面脚本通过 Adapter 采集标准 `PageData`，Hook 创建会话并调用审核 API，响应中的 `ReviewTask` 进入任务工作台。Renderer 只负责可视化和用户确认；Action Controller 在执行前重新确认页面实例、字段原值和动作权限。任何网络错误、协议错误或页面变化都应显示为可恢复状态，不能静默清空审核结果。
