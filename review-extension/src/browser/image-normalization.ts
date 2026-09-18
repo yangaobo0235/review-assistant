@@ -15,7 +15,23 @@ interface NormalizationDependencies {
   const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
   const MAX_DIMENSION = 2048;
   const JPEG_QUALITY = 0.85;
-  let normalizationQueue: Promise<unknown> = Promise.resolve();
+  const NORMALIZATION_CONCURRENCY = 2;
+  let activeNormalizations = 0;
+  const normalizationQueue: Array<() => void> = [];
+
+  const acquireNormalizationSlot = () => new Promise<void>((resolve) => {
+    const start = () => {
+      activeNormalizations += 1;
+      resolve();
+    };
+    if (activeNormalizations < NORMALIZATION_CONCURRENCY) start();
+    else normalizationQueue.push(start);
+  });
+
+  const releaseNormalizationSlot = () => {
+    activeNormalizations = Math.max(0, activeNormalizations - 1);
+    normalizationQueue.shift()?.();
+  };
 
   const calculateTargetSize = (width: number, height: number): [number, number] => {
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
@@ -68,17 +84,19 @@ interface NormalizationDependencies {
     }
   };
 
-  const normalizeBlob = (blob: Blob, dependencies: NormalizationDependencies = {}) => {
+  const normalizeBlob = async (blob: Blob, dependencies: NormalizationDependencies = {}) => {
     if (!(blob instanceof globalThis.Blob) || !Number.isFinite(blob.size) || blob.size < 0) {
-      return Promise.reject(new Error("图片读取失败"));
+      throw new Error("图片读取失败");
     }
     if (blob.size > MAX_SOURCE_BYTES) {
-      return Promise.reject(new Error("图片超过 20 MB 原始文件限制"));
+      throw new Error("图片超过 20 MB 原始文件限制");
     }
-
-    const task = normalizationQueue.then(() => normalizeBlobNow(blob, dependencies));
-    normalizationQueue = task.catch(() => undefined);
-    return task;
+    await acquireNormalizationSlot();
+    try {
+      return await normalizeBlobNow(blob, dependencies);
+    } finally {
+      releaseNormalizationSlot();
+    }
   };
 
   const readResponseBlobWithLimit = async (response: Response) => {
@@ -113,6 +131,7 @@ interface NormalizationDependencies {
     MAX_OUTPUT_BYTES,
     MAX_DIMENSION,
     JPEG_QUALITY,
+    NORMALIZATION_CONCURRENCY,
     calculateTargetSize,
     normalizeBlob,
     readResponseBlobWithLimit

@@ -5,14 +5,19 @@
 修改人：wuyi
 """
 
+import asyncio
+import base64
 import logging
+import os
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 
 from app.businesses.context_validation import BusinessContextMismatch
 from app.businesses.registry import BusinessProfileNotFound
 from app.contracts.review_schema import review_contract_schema
 from app.models.review import (
+    ImageInput,
     ReviewJobCreated,
     ReviewJobSnapshot,
     ReviewRequest,
@@ -26,6 +31,9 @@ review_service = ReviewService()
 review_jobs = ReviewJobManager(review_service)
 # 使用 Uvicorn 已配置的 logger，确保 INFO 日志直接显示在启动终端。
 logger = logging.getLogger("uvicorn.error")
+MAX_STREAM_IMAGE_BYTES = 5 * 1024 * 1024
+UPLOAD_GLOBAL_LIMIT = max(1, int(os.getenv("REVIEW_UPLOAD_GLOBAL_CONCURRENCY", "8")))
+upload_slots = asyncio.Semaphore(UPLOAD_GLOBAL_LIMIT)
 
 
 def validate_business_profile(request: ReviewRequest) -> None:
@@ -90,6 +98,90 @@ def create_review_job(request: ReviewRequest) -> ReviewJobCreated:
     created = review_jobs.create(request)
     logger.info("Review job created: job_id=%s", created.job_id)
     return created
+
+
+@app.post(
+    "/api/review/jobs/stream",
+    response_model=ReviewJobCreated,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def create_stream_review_job(request: ReviewRequest) -> ReviewJobCreated:
+    """先创建任务；图片由后续接口逐张上传并立即识别。"""
+
+    validate_business_profile(request)
+    try:
+        created = review_jobs.create_stream(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    logger.info(
+        "Stream review job created: job_id=%s expected_images=%d",
+        created.job_id,
+        len(request.images),
+    )
+    return created
+
+
+@app.post(
+    "/api/review/jobs/{job_id}/images",
+    response_model=ReviewJobSnapshot,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_stream_review_image(
+    job_id: str,
+    metadata: Annotated[str, Form()],
+    file: Annotated[UploadFile | None, File()] = None,
+) -> ReviewJobSnapshot:
+    """接收一张规范化图片；无文件时 metadata 必须携带采集错误。"""
+
+    await upload_slots.acquire()
+    try:
+        try:
+            image = ImageInput.model_validate_json(metadata)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="图片元数据格式无效") from exc
+        if file is not None:
+            content = await file.read(MAX_STREAM_IMAGE_BYTES + 1)
+            if len(content) > MAX_STREAM_IMAGE_BYTES:
+                raise HTTPException(status_code=413, detail="单张图片不能超过 5 MB")
+            mime_type = file.content_type or image.mime_type or "image/jpeg"
+            image = image.model_copy(update={
+                "mime_type": mime_type,
+                "size_bytes": len(content),
+                "data_url": f"data:{mime_type};base64,{base64.b64encode(content).decode('ascii')}",
+                "collection_error": None,
+            })
+        elif not image.collection_error:
+            raise HTTPException(status_code=422, detail="图片文件缺失且没有采集错误")
+        try:
+            return review_jobs.add_stream_image(job_id, image)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="审核任务不存在或已过期") from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    finally:
+        upload_slots.release()
+
+
+@app.post(
+    "/api/review/jobs/{job_id}/complete",
+    response_model=ReviewJobSnapshot,
+)
+def complete_stream_review_upload(job_id: str) -> ReviewJobSnapshot:
+    try:
+        return review_jobs.complete_stream(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="审核任务不存在或已过期") from exc
+
+
+@app.delete(
+    "/api/review/jobs/{job_id}",
+    response_model=ReviewJobSnapshot,
+)
+def cancel_review_job(job_id: str) -> ReviewJobSnapshot:
+    try:
+        return review_jobs.cancel(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="审核任务不存在或已过期") from exc
 
 
 @app.get("/api/review/jobs/{job_id}", response_model=ReviewJobSnapshot)

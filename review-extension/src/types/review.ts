@@ -383,10 +383,12 @@ export interface ResultSection {
   fields: string[];
 }
 
-export type JobStatus = "RUNNING" | "PARTIAL" | "COMPLETED" | "FAILED";
+export type JobStatus = "RUNNING" | "PARTIAL" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type ReviewJobPhase = "PREPARING" | "UPLOADING" | "RECOGNIZING" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export interface ReviewProgress {
   total_count: number;
+  uploaded_count: number;
   completed_count: number;
   failed_count: number;
   timed_out_count: number;
@@ -412,4 +414,5 @@ export interface ReviewJobSnapshot {
   message?: string | null;
   material_completeness?: MaterialCompletenessReport | null;
   retry_summary?: RetrySummary | null;
+  phase: ReviewJobPhase;
 }

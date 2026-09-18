@@ -1,4 +1,4 @@
-export type PollableJobStatus = "RUNNING" | "PARTIAL" | "COMPLETED" | "FAILED";
+export type PollableJobStatus = "RUNNING" | "PARTIAL" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export interface PollableJobSnapshot {
   status: PollableJobStatus;
@@ -14,7 +14,7 @@ interface PollOptions {
   now?: () => number;
 }
 
-const terminalStatuses = new Set<PollableJobStatus>(["PARTIAL", "COMPLETED", "FAILED"]);
+const terminalStatuses = new Set<PollableJobStatus>(["PARTIAL", "COMPLETED", "FAILED", "CANCELLED"]);
 
 export async function pollReviewJob<T extends PollableJobSnapshot>(
   fetchSnapshot: () => Promise<T>,

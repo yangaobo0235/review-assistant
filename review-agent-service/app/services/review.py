@@ -23,6 +23,7 @@ from app.capabilities.page_actions import PageActionHandler
 from app.models.review import (
     FieldObservation,
     FieldStatus,
+    ImageInput,
     PageActionIntent,
     QrCheck,
     ReviewRequest,
@@ -77,6 +78,17 @@ class ReviewService:
     ) -> ReviewResponse:
         """解析业务配置并执行审核；未配置规则时安全降级。"""
 
+        response, _ = await self.assist_with_batch_async(request, on_progress=on_progress)
+        return response
+
+    async def assist_with_batch_async(
+        self,
+        request: ReviewRequest,
+        on_progress: ReviewProgressCallback | None = None,
+        initial_batch: AgentBatchResult | None = None,
+    ) -> tuple[ReviewResponse, AgentBatchResult]:
+        """执行审核并允许复用流式阶段已经完成的图片提取结果。"""
+
         if not request.trace_id:
             request = request.model_copy(update={"trace_id": uuid4().hex})
         profile = self.resolve_profile(request)
@@ -95,24 +107,25 @@ class ReviewService:
                 await callback_result
 
         if not profile.rules_configured:
-            batch = AgentBatchResult(total_count=len(request.images))
+            batch = initial_batch or AgentBatchResult(total_count=len(request.images))
             response = self._build_unconfigured_response(request, profile)
             if on_progress:
                 callback_result = on_progress(response, batch)
                 if inspect.isawaitable(callback_result):
                     await callback_result
-            return response
+            return response, batch
 
         response, batch = await self.workflow.run(
             request,
             profile,
             handle_agent_progress,
+            initial_batch=initial_batch,
         )
         if on_progress:
             callback_result = on_progress(response, batch.model_copy(deep=True))
             if inspect.isawaitable(callback_result):
                 await callback_result
-        return response
+        return response, batch
 
     async def _extract_documents(
         self,
@@ -245,6 +258,17 @@ class ReviewService:
                 ],
             })
         return response
+
+    async def extract_image_async(
+        self,
+        request: ReviewRequest,
+        image: ImageInput,
+    ) -> AgentBatchResult:
+        """识别流式任务中的一张图片，最终规则汇总阶段不会再次识别。"""
+
+        profile = self.resolve_profile(request)
+        image_request = request.model_copy(update={"images": [image]})
+        return await self._extract_documents(image_request, profile=profile)
 
     @staticmethod
     def _build_unconfigured_response(

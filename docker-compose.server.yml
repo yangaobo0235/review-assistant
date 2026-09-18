@@ -10,6 +10,10 @@ services:
       - ./review-agent-service/.env
     environment:
       PYTHONUNBUFFERED: "1"
+      REVIEW_MODEL_GLOBAL_CONCURRENCY: "12"
+      REVIEW_MODEL_JOB_CONCURRENCY: "6"
+      REVIEW_UPLOAD_GLOBAL_CONCURRENCY: "8"
+      REVIEW_FINALIZE_CONCURRENCY: "2"
     ports:
       - "18110:8010"
     healthcheck:

@@ -47,6 +47,17 @@ class JobStatus(StrEnum):
     PARTIAL = "PARTIAL"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class ReviewJobPhase(StrEnum):
+    PREPARING = "PREPARING"
+    UPLOADING = "UPLOADING"
+    RECOGNIZING = "RECOGNIZING"
+    FINALIZING = "FINALIZING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
 
 
 class BusinessType(StrEnum):
@@ -419,6 +430,7 @@ class ReviewResponse(BaseModel):
 
 class ReviewProgress(BaseModel):
     total_count: int = 0
+    uploaded_count: int = 0
     completed_count: int = 0
     failed_count: int = 0
     timed_out_count: int = 0
@@ -444,3 +456,4 @@ class ReviewJobSnapshot(BaseModel):
     message: str | None = None
     material_completeness: MaterialCompletenessReport | None = None
     retry_summary: RetrySummary | None = None
+    phase: ReviewJobPhase = ReviewJobPhase.RECOGNIZING

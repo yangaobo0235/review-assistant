@@ -561,7 +561,7 @@ test("startReview itself never sends APPLY_PAGE_FILL_INTENT for a finished job c
       query: async () => [{ id: 42 }],
       sendMessage: async (tabId, message) => {
         messages.push({ tabId, message });
-        if (message.type === "COLLECT_PAGE_DATA") return collectedPage;
+        if (message.type === "COLLECT_PAGE_MANIFEST") return collectedPage;
         return { ok: true };
       },
     },
@@ -598,7 +598,7 @@ test("startReview itself never sends APPLY_PAGE_FILL_INTENT for a finished job c
 
   await captured.startReview();
 
-  assert.ok(messages.some(({ message }) => message.type === "COLLECT_PAGE_DATA"));
+  assert.ok(messages.some(({ message }) => message.type === "COLLECT_PAGE_MANIFEST"));
   assert.ok(
     !messages.some(({ message }) => message.type === "APPLY_PAGE_FILL_INTENT"),
     "startReview must not auto-fill; the fill belongs to the affiliation gate",

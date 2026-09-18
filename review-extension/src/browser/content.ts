@@ -16,6 +16,7 @@ import type { BusinessSelection, PageFillAction, PageImage, PageWriteGroupAction
 
 // Keep collection orchestration here; field, image, normalization, and focus rules live in dedicated scripts.
 const reviewImageElements = new Map();
+const reviewImageCandidates = new Map<string, { collectionId: string; candidate: ImageSelection }>();
 const reviewFieldElements = new Map();
 const verifiedFieldWrites = new Map();
 const MAX_REVIEW_IMAGES = 16;
@@ -27,6 +28,8 @@ const nextCollectionId = () => `${pageInstanceId}:${++collectionSequence}`;
 const pageFingerprint = buildPageFingerprint;
 const MESSAGE_TYPES = Object.freeze({
   collectPageData: "COLLECT_PAGE_DATA",
+  collectPageManifest: "COLLECT_PAGE_MANIFEST",
+  readReviewImage: "READ_REVIEW_IMAGE",
   focusReviewImage: "FOCUS_REVIEW_IMAGE",
   applyPageFillIntent: "APPLY_PAGE_FILL_INTENT",
   applyPageFieldValue: "APPLY_PAGE_FIELD_VALUE",
@@ -40,6 +43,80 @@ type ReviewMessage = {
 };
 type CollectionSnapshot = { pageFields?: Record<string, string>; fieldTargets?: Array<{ field: string; element: Element }> };
 type ImageSelection = { image: HTMLImageElement; index: number; imageId?: string; businessScope: string; groupOrder?: number; categoryHint?: string; groupTitle?: string };
+
+const classifyImage = (hint: string) => {
+  const text = hint.toLowerCase();
+  if (text.includes("身份证")) return "id_card";
+  if (text.includes("营业执照")) return "business_license";
+  if (text.includes("登记证书") || text.includes("机动车登记证")) return "registration_certificate";
+  if (text.includes("回收证明") || text.includes("报废证明")) return "scrap_certificate";
+  if (text.includes("发票")) return "invoice";
+  if (text.includes("报废车辆资料") || text.includes("报废车辆信息") || text.includes("报废车资料") || text.includes("旧车资料")) return "old_vehicle";
+  if (text.includes("新车资料") || text.includes("新车及发票信息") || text.includes("新车及发票资料")) return "new_vehicle";
+  return "unknown";
+};
+
+const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+  reader.onerror = () => reject(new Error("图片转换失败"));
+  reader.readAsDataURL(blob);
+});
+
+const imageAssetMetadata = (candidate: ImageSelection): PageImage => {
+  const { image, index } = candidate;
+  const src = image.currentSrc || image.src;
+  const hint = image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
+  return {
+    imageId: candidate.imageId,
+    index,
+    src,
+    alt: image.alt || "",
+    group: hint.slice(0, 80) || "未分类",
+    categoryHint: classifyImage(hint),
+    documentTypeHint: ReviewBusinessScope.documentTypeFor?.(
+      candidate.businessScope,
+      candidate.groupOrder ?? 0,
+      candidate.categoryHint || "",
+    ) || candidate.categoryHint,
+    businessScope: candidate.businessScope,
+    groupTitle: candidate.groupTitle,
+    groupOrder: candidate.groupOrder,
+    pagePosition: `${Math.round(image.getBoundingClientRect().left)},${Math.round(image.getBoundingClientRect().top)}`,
+    naturalWidth: image.naturalWidth || 0,
+    naturalHeight: image.naturalHeight || 0,
+    mimeType: image.naturalWidth ? "image/jpeg" : null,
+    sizeBytes: null,
+    dataUrl: null,
+    collectionError: src ? null : "图片地址为空",
+  };
+};
+
+const readImageAsset = async (candidate: ImageSelection): Promise<PageImage> => {
+  const imageAsset = imageAssetMetadata(candidate);
+  const src = imageAsset.src;
+  if (!src) return imageAsset;
+  try {
+    if (src.startsWith("blob:") || src.startsWith("data:")) {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const normalizedBlob = await ReviewImageNormalization.normalizeBlob(blob);
+      imageAsset.mimeType = normalizedBlob.type;
+      imageAsset.sizeBytes = normalizedBlob.size;
+      imageAsset.dataUrl = await blobToDataUrl(normalizedBlob);
+    } else {
+      const result = await chrome.runtime.sendMessage({ type: "FETCH_IMAGE_ASSET", url: src });
+      if (!result?.ok) throw new Error(result?.error || "后台图片读取失败");
+      imageAsset.mimeType = result.mimeType;
+      imageAsset.sizeBytes = result.sizeBytes;
+      imageAsset.dataUrl = result.dataUrl;
+    }
+  } catch (error) {
+    imageAsset.collectionError = error instanceof Error ? error.message : "图片读取失败";
+  }
+  return imageAsset;
+};
 const SCRAP_WRITABLE_FIELDS = new Set([
   "old_vehicle.recycle_date", "scrap_certificate.certificate_no", "old_vehicle.vin", "old_vehicle.plate_no", "old_vehicle.owner", "old_vehicle.engine_model",
   "invoice.code", "invoice.invoice_no", "invoice.amount", "invoice.invoice_date", "new_vehicle.vin", "new_vehicle.plate_no", "new_vehicle.owner",
@@ -113,9 +190,25 @@ const focusReviewImage = (message: ReviewMessage) => {
 };
 
 const isCollectionMessage = (message: ReviewMessage) =>
-  message?.type === MESSAGE_TYPES.collectPageData;
+  message?.type === MESSAGE_TYPES.collectPageData
+  || message?.type === MESSAGE_TYPES.collectPageManifest;
 
 chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendResponse) => {
+  if (message.type === MESSAGE_TYPES.readReviewImage) {
+    const entry = message.imageId ? reviewImageCandidates.get(message.imageId) : null;
+    if (!entry || entry.collectionId !== activeCollectionId || message.expectedCollectionId !== activeCollectionId) {
+      sendResponse({ ok: false, error: "图片采集批次已失效，请重新审核" });
+      return true;
+    }
+    if (!entry.candidate.image.isConnected) {
+      sendResponse({ ok: false, error: "原图已离开页面，请重新审核" });
+      return true;
+    }
+    readImageAsset(entry.candidate)
+      .then((image) => sendResponse({ ok: true, image }))
+      .catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "图片读取失败" }));
+    return true;
+  }
   if (message.type === MESSAGE_TYPES.verifyInvoice) {
     if (!sameReviewIdentity(message)) {
       sendResponse({ ok: false, message: "页面已变化，请重新审核" });
@@ -295,79 +388,6 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
     ambiguousFields: fieldCollection.ambiguousFields
   });
 
-  // 图片分组是启发式信息，最终文档类型仍由 OCR/多模态工具确认。
-  const classifyImage = (hint: string) => {
-    const text = hint.toLowerCase();
-    if (text.includes("身份证")) return "id_card";
-    if (text.includes("营业执照")) return "business_license";
-    if (text.includes("登记证书") || text.includes("机动车登记证")) return "registration_certificate";
-    if (text.includes("回收证明") || text.includes("报废证明")) return "scrap_certificate";
-    if (text.includes("发票")) return "invoice";
-    if (text.includes("报废车辆资料") || text.includes("报废车辆信息") || text.includes("报废车资料") || text.includes("旧车资料")) return "old_vehicle";
-    if (text.includes("新车资料") || text.includes("新车及发票信息") || text.includes("新车及发票资料")) return "new_vehicle";
-    return "unknown";
-  };
-
-  const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(new Error("图片转换失败"));
-    reader.readAsDataURL(blob);
-  });
-
-  const readImageAsset = async (candidate: ImageSelection): Promise<PageImage> => {
-    const { image, index } = candidate;
-    const src = image.currentSrc || image.src;
-    const hint = image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
-    const imageAsset: PageImage = {
-      imageId: candidate.imageId,
-      index,
-      src,
-      alt: image.alt || "",
-      group: hint.slice(0, 80) || "未分类",
-      categoryHint: classifyImage(hint),
-      documentTypeHint: ReviewBusinessScope.documentTypeFor?.(
-        candidate.businessScope,
-        candidate.groupOrder ?? 0,
-        candidate.categoryHint || "",
-      ) || candidate.categoryHint,
-      businessScope: candidate.businessScope,
-      groupTitle: candidate.groupTitle,
-      groupOrder: candidate.groupOrder,
-      pagePosition: `${Math.round(image.getBoundingClientRect().left)},${Math.round(image.getBoundingClientRect().top)}`,
-      naturalWidth: image.naturalWidth || 0,
-      naturalHeight: image.naturalHeight || 0,
-      mimeType: image.naturalWidth ? "image/jpeg" : null,
-      sizeBytes: null,
-      dataUrl: null,
-      collectionError: null
-    };
-    if (!src) {
-      imageAsset.collectionError = "图片地址为空";
-      return imageAsset;
-    }
-    try {
-      if (src.startsWith("blob:") || src.startsWith("data:")) {
-        const response = await fetch(src);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const blob = await response.blob();
-        const normalizedBlob = await ReviewImageNormalization.normalizeBlob(blob);
-        imageAsset.mimeType = normalizedBlob.type;
-        imageAsset.sizeBytes = normalizedBlob.size;
-        imageAsset.dataUrl = await blobToDataUrl(normalizedBlob);
-      } else {
-        const result = await chrome.runtime.sendMessage({ type: "FETCH_IMAGE_ASSET", url: src });
-        if (!result?.ok) throw new Error(result?.error || "后台图片读取失败");
-        imageAsset.mimeType = result.mimeType;
-        imageAsset.sizeBytes = result.sizeBytes;
-        imageAsset.dataUrl = result.dataUrl;
-      }
-    } catch (error) {
-      imageAsset.collectionError = error instanceof Error ? error.message : "图片读取失败";
-    }
-    return imageAsset;
-  };
-
   const pageImages = Array.from(document.images);
   const imageIndexes = new Map(pageImages.map((image, index) => [image, index]));
   const scopeItems: Array<{ kind: "label"; text: string } | { kind: "image"; index: number }> = []
@@ -427,7 +447,10 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
   });
   const selection = ReviewImageCandidates.select(imageCandidates, MAX_REVIEW_IMAGES);
   const images = selection.selected;
-  Promise.all(images.map((candidate) => readImageAsset(candidate)))
+  const imageAssetsPromise = message.type === MESSAGE_TYPES.collectPageManifest
+    ? Promise.resolve(images.map(imageAssetMetadata))
+    : Promise.all(images.map((candidate) => readImageAsset(candidate)));
+  imageAssetsPromise
     .then((imageAssets) => {
       if (latestCollectionId !== collectionId) {
         // 被取代的采集也要带回业务识别结果和真实原因，面板不得退化为“无法识别业务”。
@@ -449,9 +472,11 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
       }
       // The active map changes only with the response that owns this token.
       reviewImageElements.clear();
+      reviewImageCandidates.clear();
       images.forEach((candidate, index) => {
         const imageAsset = imageAssets[index];
         if (imageAsset?.src) reviewImageElements.set(candidate.imageId, { image: candidate.image, src: imageAsset.src });
+        if (candidate.imageId) reviewImageCandidates.set(candidate.imageId, { collectionId, candidate });
       });
       reviewFieldElements.clear();
       verifiedFieldWrites.clear();

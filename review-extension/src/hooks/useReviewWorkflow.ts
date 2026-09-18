@@ -8,9 +8,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  cancelReviewJob,
   completionNotice,
-  createReviewJob,
+  completeStreamReviewJob,
+  createStreamReviewJob,
   fetchReviewJob,
+  uploadStreamReviewImage,
 } from "../reviewClient";
 import { pollReviewJob } from "../reviewJobs";
 import { applyPageFieldGroupValue, applyPageFieldValue, applyPageFillIntent, verifyInvoice, type PageFillResult } from "../pageFillClient";
@@ -28,8 +31,9 @@ import type {
   PageActionIntent,
 } from "../types/review";
 
-const reviewDeadlineMs = 60_000;
+const reviewDeadlineMs = 120_000;
 const reviewPollIntervalMs = 1_000;
+const imageUploadConcurrency = 2;
 
 async function collectPageData(selection: BusinessChoice): Promise<PageData> {
   if (!globalThis.chrome?.tabs) {
@@ -40,11 +44,67 @@ async function collectPageData(selection: BusinessChoice): Promise<PageData> {
     throw new Error("没有找到当前页面");
   }
   const pageData = (await chrome.tabs.sendMessage(tab.id, {
-    type: "COLLECT_PAGE_DATA",
+    type: "COLLECT_PAGE_MANIFEST",
     businessSelection:
       selection === "AUTO" ? null : manualBusinessSelection(selection),
   })) as Omit<PageData, "sourceTabId">;
   return { ...pageData, sourceTabId: tab.id };
+}
+
+async function readPageImage(page: PageData, image: PageData["images"][number]) {
+  try {
+    const result = await chrome.tabs.sendMessage(page.sourceTabId, {
+      type: "READ_REVIEW_IMAGE",
+      imageId: image.imageId,
+      expectedCollectionId: page.collectionId,
+    });
+    if (!result?.ok || !result.image) {
+      return { ...image, dataUrl: null, collectionError: result?.error || "图片读取失败" };
+    }
+    return result.image as PageData["images"][number];
+  } catch (error) {
+    return {
+      ...image,
+      dataUrl: null,
+      collectionError: error instanceof Error ? error.message : "图片读取失败",
+    };
+  }
+}
+
+async function uploadPageImages(
+  page: PageData,
+  jobId: string,
+  onImage: (image: PageData["images"][number], completed: number) => void,
+  onSnapshot: (snapshot: ReviewJobSnapshot) => void,
+) {
+  let cursor = 0;
+  let completed = 0;
+  const worker = async () => {
+    while (cursor < page.images.length) {
+      const index = cursor;
+      cursor += 1;
+      const image = await readPageImage(page, page.images[index]);
+      let snapshot: ReviewJobSnapshot | null = null;
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          snapshot = await uploadStreamReviewImage(jobId, image);
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (!snapshot) throw lastError instanceof Error ? lastError : new Error("图片上传失败");
+      completed += 1;
+      // 保留压缩后的图片供结果页显示缩略图；data: 原地址则清空，避免
+      // 在页面状态中同时保存原图和压缩图两份正文。
+      onImage({ ...image, src: image.src.startsWith("data:") ? "" : image.src }, completed);
+      onSnapshot(snapshot);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(imageUploadConcurrency, Math.max(1, page.images.length)) }, worker),
+  );
 }
 
 export interface ReviewWorkflow {
@@ -55,6 +115,7 @@ export interface ReviewWorkflow {
   error: string;
   notice: string;
   pageFillResult: PageFillResult | null;
+  stageMessage: string;
   reset: () => void;
   startReview: () => Promise<void>;
   applyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
@@ -74,6 +135,7 @@ export function useReviewWorkflow(
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pageFillResult, setPageFillResult] = useState<PageFillResult | null>(null);
+  const [stageMessage, setStageMessage] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +164,7 @@ export function useReviewWorkflow(
     setError("");
     setNotice("");
     setPageFillResult(null);
+    setStageMessage("");
   }, []);
 
   const startReview = useCallback(async () => {
@@ -112,6 +175,8 @@ export function useReviewWorkflow(
     setReview(null);
     setJob(null);
     setPageFillResult(null);
+    setStageMessage("正在读取页面和图片清单……");
+    let activeJobId = "";
     try {
       const data = await collectPageData(businessSelection);
       if (data.staleCollection) {
@@ -130,8 +195,11 @@ export function useReviewWorkflow(
         "[ReviewAgent][panel] page collected",
         data.collectionDiagnostics,
       );
-      const created = await createReviewJob(data);
-      const finalSnapshot = await pollReviewJob<ReviewJobSnapshot>(
+      setStageMessage(`已发现 ${data.images.length} 张图片，正在创建审核任务……`);
+      const created = await createStreamReviewJob(data);
+      activeJobId = created.job_id;
+      setStageMessage(`正在压缩并上传图片 0/${data.images.length}`);
+      const polling = pollReviewJob<ReviewJobSnapshot>(
         () => fetchReviewJob(created.job_id),
         (snapshot) => {
           setJob(snapshot);
@@ -142,20 +210,42 @@ export function useReviewWorkflow(
           intervalMs: reviewPollIntervalMs,
         },
       );
+      // 上传与轮询并行；立即挂载拒绝处理，避免上传阶段较长时轮询错误
+      // 被浏览器提前报告为未处理的 Promise rejection。稍后仍 await 原 Promise。
+      void polling.catch(() => undefined);
+      await uploadPageImages(
+        data,
+        created.job_id,
+        (image, completed) => {
+          setStageMessage(`正在压缩并上传图片 ${completed}/${data.images.length}`);
+          setPageData((current) => current?.collectionId === data.collectionId
+            ? { ...current, images: current.images.map((item) =>
+              (item.imageId || item.index) === (image.imageId || image.index) ? image : item) }
+            : current);
+        },
+        (snapshot) => setJob(snapshot),
+      );
+      setStageMessage("图片上传完成，正在识别并生成审核结论……");
+      setJob(await completeStreamReviewJob(created.job_id));
+      const finalSnapshot = await polling;
       if (finalSnapshot.status === "FAILED") {
         throw new Error(finalSnapshot.message || "审核任务执行失败");
       }
+      if (finalSnapshot.status === "CANCELLED") throw new Error("审核任务已取消");
+      if (finalSnapshot.status !== "RUNNING") activeJobId = "";
       const actionResults = await executePageActions(finalSnapshot.result?.page_actions ?? [], data);
       if (actionResults.length) setNotice(actionResults.join("；"));
       // The client deadline is a presentation boundary: a running snapshot still
       // contains useful partial review results and is not a transport failure.
       setNotice((current) => current || completionNotice(finalSnapshot));
     } catch (reason: unknown) {
+      if (activeJobId) void cancelReviewJob(activeJobId);
       setError(
         reason instanceof Error ? reason.message : "审核辅助服务调用失败",
       );
     } finally {
       setLoading(false);
+      setStageMessage("");
     }
   }, [businessSelection, loading]);
 
@@ -222,6 +312,7 @@ export function useReviewWorkflow(
     error,
     notice,
     pageFillResult,
+    stageMessage,
     reset,
     startReview,
     applyAffiliationFill,

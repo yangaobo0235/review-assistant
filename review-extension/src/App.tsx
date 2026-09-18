@@ -69,6 +69,10 @@ function App() {
         {workflow.loading ? "正在识别并核验……" : "开始审核检查"}
       </button>
 
+      {workflow.loading && workflow.stageMessage ? (
+        <div className="notice-message" role="status">{workflow.stageMessage}</div>
+      ) : null}
+
       {workflow.error ? <div className="error-message">{workflow.error}</div> : null}
       {workflow.notice ? <div className="notice-message">{workflow.notice}</div> : null}
       {workflow.job ? <ReviewProgress job={workflow.job} /> : null}

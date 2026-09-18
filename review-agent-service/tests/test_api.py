@@ -1,3 +1,6 @@
+import json
+import time
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -54,6 +57,52 @@ def test_job_api_creates_and_polls_review() -> None:
     polled = client.get(f"/api/review/jobs/{body['job_id']}")
     assert polled.status_code == 200
     assert polled.json()["status"] in {"RUNNING", "PARTIAL", "COMPLETED"}
+
+
+def test_stream_job_api_accepts_images_idempotently_and_completes() -> None:
+    created = client.post(
+        "/api/review/jobs/stream",
+        json={
+            "page_url": "https://example.test/review/stream",
+            "region": "qingdao",
+            "images": [{"index": 0, "imageId": "image-0", "src": "unavailable"}],
+        },
+    )
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    metadata = json.dumps({
+        "index": 0,
+        "imageId": "image-0",
+        "src": "unavailable",
+        "collectionError": "图片读取失败",
+    })
+
+    first = client.post(f"/api/review/jobs/{job_id}/images", data={"metadata": metadata})
+    duplicate = client.post(f"/api/review/jobs/{job_id}/images", data={"metadata": metadata})
+    assert first.status_code == 202
+    assert duplicate.status_code == 202
+    assert duplicate.json()["progress"]["uploaded_count"] == 1
+    assert client.post(f"/api/review/jobs/{job_id}/complete").status_code == 200
+
+    snapshot = client.get(f"/api/review/jobs/{job_id}").json()
+    deadline = time.monotonic() + 2
+    while snapshot["status"] == "RUNNING" and time.monotonic() < deadline:
+        time.sleep(0.01)
+        snapshot = client.get(f"/api/review/jobs/{job_id}").json()
+    assert snapshot["status"] == "PARTIAL"
+    assert snapshot["phase"] == "COMPLETED"
+
+
+def test_stream_job_api_can_cancel_a_running_job() -> None:
+    created = client.post(
+        "/api/review/jobs/stream",
+        json={"page_url": "https://example.test/review/cancel", "region": "qingdao", "images": []},
+    )
+    cancelled = client.delete(f"/api/review/jobs/{created.json()['job_id']}")
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "CANCELLED"
+    assert cancelled.json()["phase"] == "CANCELLED"
 
 
 def test_assist_marks_page_fields_for_manual_review_until_images_are_recognized() -> None:

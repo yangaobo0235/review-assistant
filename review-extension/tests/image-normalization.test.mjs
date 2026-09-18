@@ -161,7 +161,7 @@ test("rejects non-Blob inputs before decoding", async () => {
   assert.equal(decoded, false);
 });
 
-test("serializes image normalization to bound decoded bitmap memory", async () => {
+test("runs at most two image normalizations at once", async () => {
   const { normalizeBlob } = loadNormalization();
   let active = 0;
   let maxActive = 0;
@@ -186,10 +186,10 @@ test("serializes image normalization to bound decoded bitmap memory", async () =
   const second = normalizeBlob(new SizedBlob(1000), dependencies);
   await new Promise((resolve) => setImmediate(resolve));
 
-  assert.equal(decodedCount, 1);
+  assert.equal(decodedCount, 2);
   releaseFirst();
   await Promise.all([first, second]);
-  assert.equal(maxActive, 1);
+  assert.equal(maxActive, 2);
 });
 
 test("streams HTTP image bodies and cancels once they exceed 20 MB", async () => {

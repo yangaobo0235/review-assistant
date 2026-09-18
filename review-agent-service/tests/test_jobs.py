@@ -1,6 +1,12 @@
+import threading
+
+import pytest
+
 from app.agent.models import AgentBatchResult
 from app.models.review import (
+    ImageInput,
     JobStatus,
+    ReviewJobPhase,
     ReviewRequest,
     ReviewResponse,
 )
@@ -49,6 +55,38 @@ class UnprocessedImageReviewService:
         if on_progress:
             await on_progress(response("当前业务规则尚未配置"), batch)
         return response("当前业务规则尚未配置")
+
+
+class StreamingReviewService:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.extracted_ids: list[str] = []
+        self.final_batches: list[AgentBatchResult] = []
+
+    async def extract_image_async(
+        self,
+        request: ReviewRequest,
+        image: ImageInput,
+    ) -> AgentBatchResult:
+        image_id = str(image.image_id or image.index)
+        with self.lock:
+            self.extracted_ids.append(image_id)
+        return AgentBatchResult(
+            total_count=1,
+            completed_count=1,
+            completed_image_ids=[image_id],
+        )
+
+    async def assist_with_batch_async(
+        self,
+        request: ReviewRequest,
+        on_progress: object = None,
+        initial_batch: AgentBatchResult | None = None,
+    ) -> tuple[ReviewResponse, AgentBatchResult]:
+        assert initial_batch is not None
+        with self.lock:
+            self.final_batches.append(initial_batch.model_copy(deep=True))
+        return response("流式审核完成"), initial_batch
 
 
 def test_job_snapshot_updates_progress_and_business_groups() -> None:
@@ -165,3 +203,76 @@ def test_job_groups_use_business_scope_instead_of_misleading_category_hint() -> 
 
     assert snapshot.groups["old_vehicle"].total_count == 0
     assert snapshot.groups["new_vehicle"].total_count == 1
+
+
+def test_stream_job_recognizes_each_image_once_and_reuses_batch_for_finalization() -> None:
+    service = StreamingReviewService()
+    manager = ReviewJobManager(service)
+    manifest = ReviewRequest(
+        page_url="https://example.test/review/stream",
+        images=[
+            {
+                "index": index,
+                "imageId": f"image-{index}",
+                "src": f"https://example.test/{index}.jpg",
+                "businessScope": "old_vehicle" if index == 0 else "new_vehicle",
+            }
+            for index in range(2)
+        ],
+    )
+    created = manager.create_stream(manifest)
+
+    for image in manifest.images:
+        uploaded = image.model_copy(update={"data_url": "data:image/jpeg;base64,AA=="})
+        manager.add_stream_image(created.job_id, uploaded)
+        # 客户端因响应丢失而重试时，服务端必须幂等，不能重复调用模型。
+        manager.add_stream_image(created.job_id, uploaded)
+    manager.complete_stream(created.job_id)
+
+    assert manager.wait(created.job_id, timeout=2)
+    snapshot = manager.get(created.job_id)
+    assert snapshot.status is JobStatus.COMPLETED
+    assert snapshot.phase is ReviewJobPhase.COMPLETED
+    assert snapshot.progress.uploaded_count == 2
+    assert snapshot.progress.completed_count == 2
+    assert sorted(service.extracted_ids) == ["image-0", "image-1"]
+    assert len(service.final_batches) == 1
+    assert service.final_batches[0].completed_count == 2
+    # 完成后仅保留图片元数据，避免在 10 分钟任务 TTL 内占用大量内存。
+    assert all(image.data_url is None for image in manager._jobs[created.job_id].request.images)
+
+
+def test_stream_job_marks_missing_images_failed_and_can_be_cancelled() -> None:
+    service = StreamingReviewService()
+    manager = ReviewJobManager(service)
+    request = ReviewRequest(
+        page_url="https://example.test/review/stream",
+        images=[{"index": 0, "imageId": "missing", "src": "missing"}],
+    )
+    created = manager.create_stream(request)
+    manager.complete_stream(created.job_id)
+
+    assert manager.wait(created.job_id, timeout=2)
+    snapshot = manager.get(created.job_id)
+    assert snapshot.status is JobStatus.PARTIAL
+    assert snapshot.progress.failed_count == 1
+    assert service.extracted_ids == []
+
+    cancelled = manager.create_stream(request)
+    cancelled_snapshot = manager.cancel(cancelled.job_id)
+    assert cancelled_snapshot.status is JobStatus.CANCELLED
+    assert cancelled_snapshot.phase is ReviewJobPhase.CANCELLED
+
+
+def test_stream_job_rejects_duplicate_manifest_image_ids() -> None:
+    manager = ReviewJobManager(StreamingReviewService())
+    request = ReviewRequest(
+        page_url="https://example.test/review/stream",
+        images=[
+            {"index": 0, "imageId": "same", "src": "one"},
+            {"index": 1, "imageId": "same", "src": "two"},
+        ],
+    )
+
+    with pytest.raises(ValueError, match="重复标识"):
+        manager.create_stream(request)

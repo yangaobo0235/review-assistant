@@ -64,7 +64,7 @@ test("startReview surfaces the stale-collection reason instead of the business-d
     tabs: {
       query: async () => [{ id: 42 }],
       sendMessage: async (tabId, message) =>
-        message.type === "COLLECT_PAGE_DATA" ? stalePage : { ok: true },
+        message.type === "COLLECT_PAGE_MANIFEST" ? stalePage : { ok: true },
     },
   };
   const fetchStub = async (url, init) => {

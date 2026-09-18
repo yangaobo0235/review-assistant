@@ -100,6 +100,8 @@ export function groupStatusLabel(status?: JobStatus): string {
       return "部分完成";
     case "FAILED":
       return "处理失败";
+    case "CANCELLED":
+      return "已取消";
     case "RUNNING":
     case undefined:
       return "识别中";

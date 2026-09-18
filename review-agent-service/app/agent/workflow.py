@@ -304,6 +304,9 @@ class ReviewWorkflow:
 
     async def _extract_documents(self, state: ReviewState) -> dict[str, Any]:
         """调用批处理服务提取材料字段，并透传进度回调。"""
+        existing = state.get("batch")
+        if existing is not None:
+            return {"batch": existing}
         batch = await self.service._extract_documents(
             state["request"],
             state.get("batch_callback"),
@@ -679,6 +682,7 @@ class ReviewWorkflow:
         request: ReviewRequest,
         profile: BusinessProfile | None = None,
         batch_callback: Callable[[AgentBatchResult], Any] | None = None,
+        initial_batch: AgentBatchResult | None = None,
     ) -> tuple[ReviewResponse, AgentBatchResult]:
         """执行完整审核图并返回经过类型校验的最终响应。"""
 
@@ -691,6 +695,8 @@ class ReviewWorkflow:
             "batch_callback": batch_callback,
             "trace_id": request.trace_id or uuid4().hex,
         }
+        if initial_batch is not None:
+            initial_state["batch"] = initial_batch
         logger.info("review workflow started trace_id=%s profile=%s", initial_state["trace_id"], resolved_profile.version)
         state = await self.graph.ainvoke(initial_state)
         response = state.get("response")
