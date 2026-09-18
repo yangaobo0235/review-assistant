@@ -7,9 +7,12 @@
 ```mermaid
 flowchart LR
   Page[审核页面] --> Adapter[PageAdapter]
-  Adapter --> Request[ReviewRequest]
-  Request --> API[Review API]
-  API --> Graph[统一 LangGraph 主图]
+  Adapter --> Manifest[页面字段 + 图片清单]
+  Manifest --> API[流式 Review Job API]
+  Page --> Image[逐张读取与压缩]
+  Image --> API
+  API --> Scheduler[公平识别调度器]
+  Scheduler --> Graph[统一 LangGraph 主图]
   Graph --> Profile[Profile]
   Profile --> Registry[Capability Registry]
   Registry --> Subgraph[能力子图/Handler]
@@ -25,7 +28,7 @@ flowchart LR
 
 ## 数据链路
 
-`PageData → ReviewRequest → ReviewState → EvidenceFact/CheckResult → ReviewTask → Workbench → PageAction`。每一步都使用显式类型和可追踪的 `source`、`status`、`reason` 字段，缺失证据必须产生可解释的 `INSUFFICIENT` 或 `REVIEW_REQUIRED`。
+`PageData 清单 → 流式 Review Job → 单图 AgentBatchResult → ReviewState → EvidenceFact/CheckResult → ReviewTask → Workbench → PageAction`。图片正文通过逐图上传接口进入任务，不作为创建任务 JSON 的一部分。每一步都使用显式类型和可追踪的 `source`、`status`、`reason` 字段，缺失证据必须产生可解释的 `INSUFFICIENT` 或 `REVIEW_REQUIRED`。
 
 字段任务可以同时携带 `page_field`（页面字段展示键）和 `page_target_field`（页面定位字段）。`page_field` 仅表示任务在页面字段区域的展示归属；当任务需要在助手区域展示但仍要回填真实页面控件时，必须使用 `page_target_field`，不能把助手任务伪装成 `PAGE_FIELD`。后端只输出稳定字段键和 `page_fill_intent`（页面填写意图），不输出 CSS 选择器、DOM 节点或浏览器对象；前端适配器根据字段键解析 DOM，并负责定位、高亮、回读和回滚。
 
@@ -58,7 +61,7 @@ flowchart LR
 
 ## 一次请求的完整生命周期
 
-前端打开审核页后，Adapter 先生成页面指纹并采集字段及材料索引。用户点击开始审核时，Hook 创建唯一请求 ID 并提交 `ReviewRequest`。后端解析上下文、校验输入和材料覆盖，规划 Profile 所需能力，执行可用能力并收集降级信息。比较和聚合阶段只消费规范事实，最后生成任务与建议。前端将任务按类型渲染；用户确认后，Action Controller 再次校验页面指纹和目标控件，执行白名单动作并回读。
+前端打开审核页后，Adapter 先生成页面指纹并采集字段及材料索引。用户点击开始审核时，Hook 先用页面字段和图片清单创建流式任务，再用两个 Worker 逐张读取、压缩和上传图片。后端每收到一张图片就将它放入公平识别队列；全部上传关闭且识别结束后，统一 LangGraph 复用单图结果完成材料、二维码、比较、规则和建议汇总。前端轮询任务快照并按任务类型渲染；用户确认后，Action Controller 再次校验页面指纹和目标控件，执行白名单动作并回读。并发、状态和清理细节见[审核流水线、并发与任务生命周期](review-pipeline.md)。
 
 ## 反模式
 

@@ -50,6 +50,18 @@ INFO review_event event=workflow_completed trace_id=abc123 job_id=job-42 recomme
 6. 所有节点完成但建议为人工复核：查看 `node_completed` 的任务数量、`capability_completed` 的限制数量和最终 `workflow_completed` 的 `issue_count`。
 7. 页面展示与后端不一致：使用 `trace_id` 对照 `prepare_review_tasks` 输出的任务数量和前端收到的响应，不要只看浏览器轮询请求日志。
 
+## 流式任务排查
+
+流式审核还应同时查看任务快照中的 `status`、`phase`、`uploaded_count`、`completed_count`、`failed_count` 和 `timed_out_count`：
+
+- `UPLOADING` 且上传数不增长：检查 Content Script、图片读取和上传网络。
+- `RECOGNIZING` 且识别数不增长：检查模型配置、模型服务网络和公平队列是否积压。
+- `FINALIZING` 持续较久：检查二维码网页核验、能力超时和最终汇总队列。
+- `PARTIAL + COMPLETED`：任务生命周期已结束，但部分图片失败或超时；它不是仍在后台运行。
+- `CANCELLED`：客户端错误或显式取消已经终止任务，尚未执行的图片不会再进入模型。
+
+创建、逐图上传、上传关闭和轮询接口的完整关系见[审核流水线文档](review-pipeline.md)。
+
 ## 代码约束
 
 日志通过 `app/services/logging_context.py` 的 `emit`（事件输出器）统一输出。新增日志必须：

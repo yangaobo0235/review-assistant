@@ -40,6 +40,66 @@ review-agent-service-main.tar
 review-extension-public.zip
 ```
 
+## 推荐：日常一键打包和更新
+
+每次修改代码后，在项目根目录执行：
+
+```powershell
+cd D:\fjkj\software\workspace\review-assistant
+.\package-server.cmd
+.\package-extension.cmd
+```
+
+两个脚本会覆盖生成以下文件：
+
+```text
+.tmp/review-agent-service-main.tar
+.tmp/docker-compose.server.yml
+.tmp/review-extension-public.zip
+```
+
+使用 Xftp 把 TAR 和 Compose 文件覆盖上传到：
+
+```text
+/home/ubuntu/review-agent-deploy/
+```
+
+服务器第一次使用脚本时，如果该目录还没有脚本，再把本地下面两个文件上传一次：
+
+```text
+deploy/start-review.sh
+deploy/stop-review.sh
+```
+
+然后在 Xshell 执行一次：
+
+```bash
+cd /home/ubuntu/review-agent-deploy
+chmod +x start-review.sh stop-review.sh
+./start-review.sh
+```
+
+日常更新不要求先运行 `stop-review.sh`。`start-review.sh` 使用 Compose 的
+`--force-recreate` 自动替换旧容器，并按顺序完成：保存当前镜像为
+`rollback`、加载新 TAR、复制 Compose、重建容器和等待健康检查。
+
+同一个发布包只执行一次 `start-review.sh`。连续执行两次通常不会产生两个容器，
+但第二次会用当前 `main` 再生成 `rollback`，可能失去真正的上一版本回滚镜像。
+
+只有需要明确进入维护停机状态时才执行：
+
+```bash
+cd /home/ubuntu/review-agent-deploy
+./stop-review.sh
+```
+
+启动过程中偶尔先出现 `curl: (56) Connection reset by peer`，随后又显示
+`Review Assistant started successfully.`，表示脚本第一次探测时应用尚未就绪，
+后续已经成功，不需要再次运行启动脚本。刚启动时 `docker compose ps` 短暂显示
+`health: starting` 也正常，Docker 自己的健康检查稍后才会更新。
+
+下面“一至八”保留为脚本发生问题时的完整手动备用流程。
+
 ## 一、本地重新打包
 
 打开 PowerShell，进入项目：
@@ -286,6 +346,16 @@ D:\fjkj\software\workspace\review-assistant\.tmp\review-extension-public.zip
 1. 用新 ZIP 内容覆盖之前的插件目录。
 2. 打开浏览器扩展管理页。
 3. 点击插件的“重新加载”。
+4. 回到已经打开的业务审核页，按 `Ctrl+F5` 刷新页面。
+5. 关闭并重新打开侧边栏。
+
+如果只重新加载插件、不刷新已经打开的业务页面，点击审核可能出现：
+
+```text
+Could not establish connection. Receiving end does not exist.
+```
+
+这表示当前业务页还没有注入新版本 Content Script，不表示腾讯云后端故障。
 
 ## 六、部署成功后删除旧发布文件
 
@@ -380,3 +450,21 @@ npm --prefix review-extension run build:public
 ```text
 http://175.178.6.214:18110
 ```
+
+## 九、部署后快速排障
+
+先在服务器确认后端，不要看到插件报错就反复执行启动脚本：
+
+```bash
+curl http://127.0.0.1:18110/health
+docker compose -f /opt/review-assistant/docker-compose.server.yml ps
+docker compose -f /opt/review-assistant/docker-compose.server.yml logs --tail=200 review-agent
+```
+
+判断顺序：
+
+1. `curl` 返回 `{"status":"ok"}`：后端已可用，继续检查插件和业务页刷新。
+2. 容器为 `Up (health: starting)`：等待 Docker 健康状态更新；只要 `curl` 已成功即可使用。
+3. 容器反复重启或 `curl` 一直失败：查看日志，不要再次覆盖 `rollback`。
+4. 插件显示 `Receiving end does not exist`：重新加载插件并刷新业务页面。
+5. 插件显示 HTTP、上传或任务失败：确认公网健康接口，再按任务阶段排查。任务阶段说明见[审核流水线文档](review-pipeline.md)。

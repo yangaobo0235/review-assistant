@@ -15,8 +15,11 @@ cd ..
 npm --prefix review-extension test
 npm --prefix review-extension run lint
 npm --prefix review-extension run build
+npm --prefix review-extension run build:public
 git diff --check
 ```
+
+修改图片采集、任务接口或并发调度时，还必须覆盖：清单创建不携带图片正文、逐张 multipart 上传、重复图片幂等、上传完成后不重复识别、公平调度的全局/单任务上限、最终汇总上限、取消和旧整批接口兼容。前端至少验证压缩并发 2、流式客户端请求和 120 秒等待文案；后端至少验证流式任务状态、缺图归档和图片正文清理。
 
 历史协议或已停用过户场景若保留测试，只能在 `tests/conftest.py` 明确标记 skip，并注明迁移原因；不得把旧协议重新当作生产契约。
 

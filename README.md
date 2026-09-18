@@ -8,6 +8,7 @@ Review Assistant 是一个面向车辆审核页面的浏览器扩展与审核服
 
 - [文档总索引](docs/README.md)
 - [系统架构与模块边界](docs/architecture.md)
+- [审核流水线、并发与任务生命周期](docs/review-pipeline.md)
 - [审核工作台前端展示规范](docs/frontend-presentation.md)
 - [LangGraph 主图与节点说明](docs/langgraph.md)
 - [注册表、能力和子图](docs/registries-and-subgraphs.md)
