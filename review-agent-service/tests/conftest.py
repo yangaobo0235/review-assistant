@@ -8,6 +8,7 @@ migration references, but must not fail the current product gate.
 import pytest
 
 
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     legacy_names = (
         "contaminated_registration_owner",
