@@ -1,5 +1,6 @@
 import { defineConfig, build, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 export default defineConfig(({ mode }) => {
@@ -21,6 +22,14 @@ export default defineConfig(({ mode }) => {
             lib: { entry: resolve(import.meta.dirname, `src/browser/${entry}.ts`), formats: ['iife'], name: entry, fileName: () => `${entry}.js` },
           } })
         }
+
+        const manifestPath = resolve(import.meta.dirname, 'dist/manifest.json')
+        const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+        const localBuild = mode !== 'public'
+        const extensionName = localBuild ? '赋界审核助手(本地)' : '赋界审核助手'
+        manifest.name = extensionName
+        manifest.action.default_title = `打开${extensionName}`
+        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
       },
     }],
   }

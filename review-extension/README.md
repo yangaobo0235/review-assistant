@@ -30,7 +30,7 @@ npm run lint
 npm run build
 ```
 
-普通 `npm run build` 生成连接本地 `127.0.0.1:8010` 的开发版；`npm run build:public` 生成连接腾讯云审核服务的朋友试用版。需要临时连接其他环境时，可在构建进程中设置 `VITE_AGENT_BASE_URL`。
+普通 `npm run build` 生成连接本地 `127.0.0.1:8010` 的开发版，扩展名称会显示为“赋界审核助手(本地)”；`npm run build:public` 生成连接腾讯云审核服务的朋友试用版，扩展名称保持为“赋界审核助手”。需要临时连接其他环境时，可在构建进程中设置 `VITE_AGENT_BASE_URL`。
 
 ## 前端运行链路
 
