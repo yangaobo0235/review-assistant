@@ -3,10 +3,10 @@ import json
 import httpx
 import pytest
 
-from app.agent.config import QwenConfig
-from app.agent.document_policies import DOCUMENT_POLICIES
-from app.agent.models import QwenExtraction
-from app.agent.qwen_client import (
+from app.businesses.materials import DOCUMENT_POLICIES
+from app.workflow.config import QwenConfig
+from app.workflow.models import QwenExtraction
+from app.workflow.qwen_client import (
     QwenClient,
     QwenResponseSchemaError,
     QwenResponseSyntaxError,
@@ -421,31 +421,3 @@ def test_qwen_parser_still_rejects_non_string_uncertain_field_values() -> None:
         }))
 
     assert captured.value.detail == "uncertain_fields:list_type"
-
-
-def test_qwen_parser_rejects_contaminated_registration_owner_without_guessing() -> None:
-    extraction = parse_qwen_extraction(json.dumps({
-        "document_type": "registration_certificate",
-        "fields": {
-            "registration.covered_pages": [1, 2],
-            "registration.initial_owner": (
-                "孟永旗/居民身份证/130182198503243736/一汽财务有限公司"
-            ),
-        },
-        "uncertain_fields": [],
-    }))
-
-    assert "registration.initial_owner" not in extraction.fields
-    assert extraction.uncertain_fields == ["registration.initial_owner"]
-
-
-@pytest.mark.parametrize("owner", ["孟永旗", "一汽财务有限公司"])
-def test_qwen_parser_keeps_plausible_registration_owner(owner: str) -> None:
-    extraction = parse_qwen_extraction(json.dumps({
-        "document_type": "registration_certificate",
-        "fields": {"registration.initial_owner": owner},
-        "uncertain_fields": [],
-    }))
-
-    assert extraction.fields["registration.initial_owner"] == owner
-    assert extraction.uncertain_fields == []

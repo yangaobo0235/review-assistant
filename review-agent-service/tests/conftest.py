@@ -1,37 +1,7 @@
-"""Test collection policy for retired protocol fixtures.
+"""测试收集策略。
 
-The transfer profile and the pre-v2 private step builder are intentionally no
-longer registered in production. Their old fixtures stay in the repository as
-migration references, but must not fail the current product gate.
+历史上这里用一个子串名单把「过户业务」的旧夹具整体跳过。那些测试在扩展包
+收口后已经完全失效（断言的是已改名的方法、已清空的策略和已停用的业务），
+留着只会掩盖真实失败，因此已随本次重构删除。**不要再引入按名字静默跳过的
+机制**——需要停用的测试直接删掉，或写成显式的 `pytest.mark.skip`。
 """
-
-import pytest
-
-
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    legacy_names = (
-        "contaminated_registration_owner",
-        "review_service_compares_recognized",
-        "review_service_continues_when_one_image",
-        "external_mode_controls_missing_material",
-        "invalid_profile_configuration",
-        "profiles_without_capabilities",
-        "plain_external_review_check",
-        "external_modes_run_for_recognized_certificate",
-        "graph_cannot_bypass_known_route",
-        "registry_resolves_scrap_profile",
-        "registry_resolves_changchun_profiles",
-        "injected_single_field_rule",
-        "injection_does_not_silently_skip",
-        "configured_profile_plans_declared",
-        "existing_material_businesses_keep_missing",
-        "missing_pages_explain_model",
-        "missing_invoice_date_explains",
-        "missing_image_field_without",
-        "collected_material_explains_image",
-        "scrap_missing_auxiliary_values",
-    )
-    for item in items:
-        node_id = item.nodeid.lower()
-        if "transfer" in node_id or "prepare_review_steps" in node_id or any(name in node_id for name in legacy_names):
-            item.add_marker(pytest.mark.skip(reason="retired transfer/v1 migration fixture"))

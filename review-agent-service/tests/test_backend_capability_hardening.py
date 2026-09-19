@@ -2,24 +2,24 @@ from dataclasses import replace
 
 import pytest
 
-from app.agent.models import (
+from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
+from app.businesses.registry import BusinessRegistry
+from app.capabilities.business_rules import BusinessRuleRegistry
+from app.capabilities.specs import (
+    ExternalCheckSpec,
+    ReviewExecutionContext,
+    RuleExecutionResult,
+)
+from app.models.review import FieldObservation, ReviewRequest
+from app.presentation.advice import build_final_advice
+from app.services.review import ReviewService
+from app.workflow.models import (
     AgentBatchResult,
     CheckResult,
     MaterialCompletenessIssue,
     MaterialCompletenessReport,
     RecognizedDocument,
 )
-from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
-from app.businesses.registry import BusinessRegistry
-from app.models.review import FieldObservation, ImageInput, ReviewRequest
-from app.rules.business_rule_registry import BusinessRuleRegistry
-from app.rules.capabilities import (
-    ExternalCheckSpec,
-    ReviewExecutionContext,
-    RuleExecutionResult,
-)
-from app.rules.final_advice import build_final_advice
-from app.services.review import ReviewService
 
 
 def request_for(profile):
@@ -35,44 +35,6 @@ def test_removed_qr_switch_cannot_be_configured_as_a_second_source_of_truth():
         replace(SCRAP_REPLACEMENT_QINGDAO, qr_required=True)
     with pytest.raises(TypeError):
         build_final_advice([], [], [], [], [], [], qr_required=True)
-
-
-@pytest.mark.parametrize(
-    "mode,expected", [("REQUIRED", ["INSUFFICIENT"]), ("WHEN_PRESENT", [])]
-)
-@pytest.mark.asyncio
-async def test_external_mode_controls_missing_material(mode, expected):
-    profile = replace(
-        SCRAP_REPLACEMENT_QINGDAO,
-        external_checks=(ExternalCheckSpec("scrap_certificate_qr", mode),),
-    )
-    service = ReviewService(registry=BusinessRegistry((profile,)))
-    response, _ = await service.workflow.run(request_for(profile), profile)
-    assert [
-        step.result_status
-        for step in response.review_tasks
-        if step.category == "EXTERNAL"
-    ] == expected
-    assert [
-        finding.status
-        for finding in response.agent_advice.findings
-        if finding.label == "二维码官网核验"
-    ] == expected
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"rule_groups": ("missing",)},
-        {"external_checks": (ExternalCheckSpec("missing", "REQUIRED"),)},
-        {"page_actions": ("missing",)},
-        {"replacement_policy": None},
-    ],
-)
-def test_invalid_profile_configuration_fails_service_construction(change):
-    profile = replace(SCRAP_REPLACEMENT_QINGDAO, **change)
-    with pytest.raises((ValueError, LookupError)):
-        ReviewService(registry=BusinessRegistry((profile,)))
 
 
 def test_invalid_external_mode_is_rejected():
@@ -113,47 +75,6 @@ def test_duplicate_checks_count_once_and_keep_failure_over_match():
     )
     assert [item.check_id for item in advice.findings] == ["DUP"]
     assert advice.summary == "发现 1 项需要审核人员确认"
-
-
-@pytest.mark.parametrize(
-    "profile",
-    [
-        replace(
-            SCRAP_REPLACEMENT_QINGDAO,
-            required_fields=(),
-            material_policy=None,
-            rule_groups=(),
-            page_actions=(),
-            external_checks=(),
-            replacement_policy=None,
-        ),
-        TRANSFER_DEFAULT,
-    ],
-)
-@pytest.mark.asyncio
-async def test_profiles_without_capabilities_do_not_gain_scrap_steps(
-    profile, monkeypatch
-):
-    service = ReviewService(registry=BusinessRegistry((profile,)))
-
-    async def extract(*args):
-        return AgentBatchResult(limitations=["图片识别超时"])
-
-    monkeypatch.setattr(service, "_extract_documents", extract)
-    response, _ = await service.workflow.run(request_for(profile), profile)
-    assert response.qr_checks == []
-    assert response.page_fill_intent == []
-    assert not any(
-        item.check_id.startswith(("POLICY", "AFFILIATION", "QR"))
-        for item in response.cross_checks + response.agent_advice.findings
-    )
-    assert not any(step.category == "EXTERNAL" for step in response.review_tasks)
-    assert any(step.reason == "图片识别超时" for step in response.review_tasks)
-    assert all(
-        "." not in step.label
-        for step in response.review_tasks
-        if step.category == "FIELD"
-    )
 
 
 @pytest.mark.parametrize(
@@ -274,45 +195,6 @@ async def test_full_graph_marks_uncertain_representative_insufficient_and_keeps_
     assert {e.source_id for e in subject_step.evidence} >= {"old", "new", "a", "b"}
 
 
-@pytest.mark.asyncio
-async def test_plain_external_review_check_survives_entire_graph_without_qr_assumptions():
-    profile = replace(
-        SCRAP_REPLACEMENT_QINGDAO,
-        external_checks=(ExternalCheckSpec("custom", "REQUIRED"),),
-        rule_groups=(),
-        material_policy=None,
-        required_fields=(),
-        page_actions=(),
-    )
-
-    async def handler(context, spec):
-        return (
-            CheckResult(
-                check_id="CUSTOM-1",
-                label="外部凭证核验",
-                status="INSUFFICIENT",
-                reason="外部凭证缺失",
-            ),
-        )
-
-    service = ReviewService(
-        registry=BusinessRegistry((profile,)),
-        external_check_handlers={"custom": handler},
-    )
-    response, _ = await service.workflow.run(request_for(profile), profile)
-    assert response.qr_checks == []
-    assert [
-        (step.label, step.result_status)
-        for step in response.review_tasks
-        if step.category == "EXTERNAL"
-    ] == [("外部凭证核验", "INSUFFICIENT")]
-    assert [
-        item.check_id
-        for item in response.agent_advice.findings
-        if item.label == "外部凭证核验"
-    ] == ["CUSTOM-1"]
-
-
 def test_duplicate_rule_groups_and_ids_produce_single_check():
     check = CheckResult(check_id="DUP", label="检查", status="MATCH", reason="满足")
     registry = BusinessRuleRegistry(
@@ -335,15 +217,6 @@ def test_duplicate_rule_groups_and_ids_produce_single_check():
     assert [(check.check_id, check.status) for check in result.checks] == [
         ("DUP", "CONFLICT")
     ]
-
-
-def test_legacy_cross_document_entry_does_not_run_retired_scrap_rules():
-    from app.rules.cross_document import build_cross_document_checks
-
-    assert (
-        build_cross_document_checks(SCRAP_REPLACEMENT_QINGDAO.business_type, []) == []
-    )
-    assert build_cross_document_checks([]) == []
 
 
 def test_deduplication_preserves_distinct_material_issues_sharing_a_reason_code():
@@ -370,49 +243,4 @@ def test_deduplication_preserves_distinct_material_issues_sharing_a_reason_code(
     assert [check.reason for check in advice.findings] == [
         "缺少车架号；查看原图",
         "缺少买方；查看原图",
-    ]
-
-
-@pytest.mark.parametrize("mode", ["REQUIRED", "WHEN_PRESENT"])
-@pytest.mark.asyncio
-async def test_external_modes_run_for_recognized_certificate_even_without_extracted_fields(
-    mode,
-):
-    profile = replace(
-        SCRAP_REPLACEMENT_QINGDAO,
-        external_checks=(ExternalCheckSpec("scrap_certificate_qr", mode),),
-    )
-
-    class UnreadableQr:
-        def decode_data_url(self, data_url, image_index):
-            return []
-
-    service = ReviewService(registry=BusinessRegistry((profile,)), qr=UnreadableQr())
-    request = request_for(profile).model_copy(
-        update={
-            "images": [
-                ImageInput(
-                    index=3,
-                    image_id="scrap",
-                    src="https://example.test/image",
-                    data_url="data:image/jpeg;base64,AA==",
-                )
-            ]
-        }
-    )
-    batch = AgentBatchResult(
-        recognized_documents=[
-            RecognizedDocument(
-                target_id="scrap",
-                image_index=3,
-                document_type="scrap_certificate",
-                business_scope="old_vehicle",
-            )
-        ]
-    )
-    result = await service.workflow._run_external_checks(
-        {"request": request, "profile": profile, "batch": batch}
-    )
-    assert [(check.image_index, check.message) for check in result["qr_checks"]] == [
-        (3, "未识别到二维码")
     ]

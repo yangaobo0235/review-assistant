@@ -1,6 +1,6 @@
 """部分与最终响应共用的唯一建议、风险和检查组装入口。"""
 
-from app.agent.models import AgentBatchResult, CheckResult
+from app.compare.check_results import unique_checks
 from app.models.review import (
     FieldStatus,
     PageFillAction,
@@ -8,8 +8,8 @@ from app.models.review import (
     ReviewResponse,
     ReviewTask,
 )
-from app.rules.check_results import unique_checks
-from app.rules.final_advice import build_final_advice
+from app.presentation.advice import build_final_advice
+from app.workflow.models import AgentBatchResult, CheckResult
 
 
 def _legacy_risk_and_summary(

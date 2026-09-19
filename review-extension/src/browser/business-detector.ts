@@ -1,85 +1,55 @@
-import type { BusinessSelection, BusinessType, Region } from "../types/review.ts";
+import { buildPageAdapterRegistry } from "../adapters/index.ts";
+import type { BusinessSelection } from "../types/review";
 
 /**
- * 功能：根据路由和唯一页面指纹识别审核业务。
- * 职责边界：识别不可靠时返回未知，不静默选择业务。
- * 修改日期：2026-08-26
- * 修改人：wuyi
+ * 功能：识别当前页面属于哪个审核业务，并处理人工选择与自动识别的冲突。
+ * 职责边界：识别规则在各页面适配器里（`src/adapters/`）；本模块只提供
+ * 识别入口和冲突判定，不自行维护路径表。
  */
 
+const registry = buildPageAdapterRegistry();
 
-  const profile = (businessType: BusinessType, region: Region) => ({
-    businessType,
-    region,
-    profileVersion: "1.0",
-    workflowStage: businessType,
-    selectionMode: "AUTO" as const,
-    detectionStatus: "CONFIRMED",
-  });
+/** 按页面适配器识别业务；识别不出来返回 null，不静默选择。 */
+function detect(url: string, pageText = ""): BusinessSelection | null {
+  return registry.selection(url, pageText);
+}
 
-  const routeMatchers = [
-    {
-      prefix: "/scrap-replace-qingdao",
-      result: profile("scrap_replacement", "qingdao"),
-    },
-    {
-      prefix: "/scrap-replace-changchun",
-      result: profile("scrap_replacement", "changchun"),
-    },
-    {
-      prefix: "/vehicle-source",
-      result: profile("vehicle_source", "default"),
-    },
-    {
-      prefix: "/consistency-qingdao",
-      result: profile("consistency", "qingdao"),
-    },
-    {
-      prefix: "/consistency-changchun",
-      result: profile("consistency", "changchun"),
-    },
-  ];
+/**
+ * 解析本次审核的业务。
+ *
+ * 人工选择与自动识别矛盾时返回错误而不是以人工为准——页面说了算，
+ * 否则会出现用长春的规则审青岛的单子。
+ */
+function resolve(
+  url: string,
+  pageText = "",
+  manualSelection: BusinessSelection | null = null,
+): { business: BusinessSelection | null; error: string | null } {
+  const automatic = detect(url, pageText);
 
-  const fingerprintMatchers = [
-    {
-      matches: (text: string) => text.includes("车源审核") && text.includes("车辆来源信息"),
-      result: profile("vehicle_source", "default"),
-    },
-  ];
-
-  function detect(url: string, pageText = "") {
-    let path = "";
-    try {
-      path = new URL(url).pathname;
-    } catch {
-      return null;
-    }
-    const route = routeMatchers.find((candidate) =>
-      path === candidate.prefix || path.startsWith(`${candidate.prefix}/`),
-    );
-    if (route) return { ...route.result };
-
-    const fingerprint = fingerprintMatchers.find((candidate) => candidate.matches(pageText));
-    return fingerprint ? { ...fingerprint.result } : null;
-  }
-
-  function resolve(url: string, pageText = "", manualSelection: BusinessSelection | null = null) {
-    const automatic = detect(url, pageText);
-    if (!manualSelection) return { business: automatic, error: automatic ? null : "无法识别当前审核业务，请人工选择" };
-    if (
-      automatic &&
-      (automatic.businessType !== manualSelection.businessType || automatic.region !== manualSelection.region)
-    ) {
-      return { business: null, error: "人工选择的审核地区与当前页面不一致，请重新确认" };
-    }
+  if (!manualSelection) {
     return {
-      business: {
-        ...manualSelection,
-        selectionMode: "MANUAL" as const,
-        detectionStatus: "CONFIRMED",
-      },
-      error: null,
+      business: automatic,
+      error: automatic ? null : "无法识别当前审核业务，请人工选择",
     };
   }
 
-  export const ReviewBusinessDetector = { detect, resolve };
+  if (
+    automatic
+    && (automatic.businessType !== manualSelection.businessType
+      || automatic.region !== manualSelection.region)
+  ) {
+    return { business: null, error: "人工选择的审核地区与当前页面不一致，请重新确认" };
+  }
+
+  return {
+    business: {
+      ...manualSelection,
+      selectionMode: "MANUAL" as const,
+      detectionStatus: "CONFIRMED",
+    },
+    error: null,
+  };
+}
+
+export const ReviewBusinessDetector = { detect, resolve };

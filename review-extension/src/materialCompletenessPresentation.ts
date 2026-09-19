@@ -1,3 +1,4 @@
+import { manifestFieldLabels, manifestMaterialLabels } from "./browser/collect-manifest.ts";
 import type { MaterialCompletenessIssue, RetrySummary } from "./types/review";
 
 const FIELD_LABELS: Record<string, string> = {
@@ -22,8 +23,14 @@ const MATERIAL_LABELS: Record<string, string> = {
   invoice: "机动车销售发票",
 };
 
+/** 材料类型 → 中文名。优先用后端清单，清单不可用时退回内置表。 */
+const materialLabels = () => manifestMaterialLabels() ?? MATERIAL_LABELS;
+
+/** 字段键 → 中文名。同上。 */
+const fieldLabels = () => manifestFieldLabels() ?? FIELD_LABELS;
+
 function translateMaterialNames(text: string): string {
-  return Object.entries(MATERIAL_LABELS).reduce(
+  return Object.entries(materialLabels()).reduce(
     (result, [technicalName, displayName]) => result.split(technicalName).join(displayName),
     text,
   );
@@ -32,7 +39,7 @@ function translateMaterialNames(text: string): string {
 export function materialIssuePresentation(issue: MaterialCompletenessIssue) {
   const pages = issue.missing_pages?.join("、");
   const sources = issue.missing_sources?.map((source) => SOURCE_LABELS[source] ?? source).join("、");
-  const field = issue.field ? FIELD_LABELS[issue.field] ?? issue.field : null;
+  const field = issue.field ? fieldLabels()[issue.field] ?? issue.field : null;
   const title = issue.code === "MISSING_REGISTRATION_PAGES" && pages
     ? `登记证第 ${pages} 页未能确认`
     : issue.code === "MISSING_FIELD_SOURCE" && field

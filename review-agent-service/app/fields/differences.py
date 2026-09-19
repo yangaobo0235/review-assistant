@@ -2,8 +2,8 @@
 
 from difflib import SequenceMatcher
 
+from app.fields.normalize import normalize_value
 from app.models.evidence import DifferenceRange
-from app.rules.normalize import normalize_value
 
 
 def value_differences(field: str, page: object, value: object) -> list[DifferenceRange]:

@@ -1,7 +1,7 @@
 import httpx
 
-from app.agent.errors import classify_qwen_error, describe_qwen_error
-from app.agent.qwen_client import (
+from app.workflow.errors import classify_qwen_error, describe_qwen_error
+from app.workflow.qwen_client import (
     QwenResponseSchemaError,
     QwenResponseStructureError,
     QwenResponseSyntaxError,

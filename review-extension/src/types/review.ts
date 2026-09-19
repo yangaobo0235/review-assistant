@@ -10,6 +10,11 @@ export interface BusinessSelection {
   profileVersion: string;
   workflowStage: BusinessType;
   selectionMode: SelectionMode;
+  /**
+   * 识别置信状态。当前适配器只会给出 `CONFIRMED`（识别不到就返回 null）；
+   * 保留这个字段用于将来表达"识别到了但不确定"。
+   */
+  detectionStatus?: "CONFIRMED";
 }
 
 /** Content Script 从审核页提取的图片元数据；不包含图片二进制。 */
@@ -160,7 +165,7 @@ export interface RetrySummary {
 }
 
 export type FieldStatus = "MATCH" | "CONFLICT" | "REVIEW_REQUIRED";
-export type Recommendation = "PASS" | "REJECT_SUGGESTED" | "REVIEW_REQUIRED";
+export type Recommendation = "PASS" | "REVIEW_REQUIRED";
 export type CheckResultStatus = "MATCH" | "CONFLICT" | "INSUFFICIENT";
 
 export interface CheckResultValue {
@@ -229,12 +234,6 @@ export interface EvidenceFact {
   conflicting?: boolean;
 }
 
-declare global {
-  var ReviewEvidenceLabel: {
-    label(evidence: EvidenceFact): string;
-    documentNames: Record<string, string>;
-  };
-}
 
 export interface FieldComparison {
   field: string;

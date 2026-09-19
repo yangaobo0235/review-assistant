@@ -1,17 +1,6 @@
 import pytest
 from pydantic import ValidationError
 
-from app.agent.config import load_qwen_config
-from app.agent.models import (
-    AgentAdvice,
-    AgentBatchResult,
-    CheckResult,
-    MaterialCompletenessIssue,
-    MaterialCompletenessReport,
-    RecognizedDocument,
-    RetryAttempt,
-    RetrySummary,
-)
 from app.models.checks import CheckResultValue
 from app.models.review import (
     BusinessType,
@@ -24,6 +13,17 @@ from app.models.review import (
     ReviewStep,
     ReviewTask,
     SelectionMode,
+)
+from app.workflow.config import load_qwen_config
+from app.workflow.models import (
+    AgentAdvice,
+    AgentBatchResult,
+    CheckResult,
+    MaterialCompletenessIssue,
+    MaterialCompletenessReport,
+    RecognizedDocument,
+    RetryAttempt,
+    RetrySummary,
 )
 
 

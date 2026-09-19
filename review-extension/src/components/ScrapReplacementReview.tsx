@@ -7,15 +7,12 @@ import { isQrTask, isScrapReplacementTaskVisible } from "../reviewSteps";
 import type { EvidenceFact, PageData, QrCheck, ReviewResponse, ReviewTask } from "../types/review";
 
 interface Props {
-  review?: ReviewResponse;
+  review: ReviewResponse;
   pageData?: PageData | null;
   onFocusImage?: (imageId: string) => Promise<void>;
   onApplyPageFieldValue?: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   onApplyPageFieldGroupValue?: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   onRerun?: () => Promise<void>;
-  assistantStep?: ReviewTask | null;
-  blockingIssue?: string | null;
-  onDecide?: (stepId: string, decision: "CONFIRMED" | "MARKED_EXCEPTION") => void;
 }
 
 type View = "PENDING" | "ALL" | "EXTERNAL";
@@ -28,14 +25,7 @@ const DATE_POLICY_FIELD_BY_STEP: Record<string, string> = {
 
 
 export function ScrapReplacementReview(props: Props) {
-  if (!props.review) return <LegacyAssistantFallback {...props} />;
-  return <Workbench key={props.pageData?.collectionId} {...props} review={props.review} />;
-}
-
-function LegacyAssistantFallback({ assistantStep, blockingIssue, onDecide, onFocusImage = async () => {} }: Props) {
-  if (blockingIssue) return <section className="assistant-review"><p className="assistant-review-reason">{blockingIssue}</p></section>;
-  if (!assistantStep) return null;
-  return <section className="assistant-review" aria-label="审核助手"><h2>{assistantStep.label}</h2><p className="assistant-review-reason">{assistantStep.reason}</p>{assistantStep.values.map((item, index) => <p key={`${item.source}-${index}`}><b>{item.source}</b> {String(item.value ?? "")}</p>)}<EvidenceActions evidence={assistantStep.evidence} onFocusImage={onFocusImage} />{assistantStep.requires_reviewer_action ? <div className="assistant-review-actions"><button type="button" onClick={() => onDecide?.(assistantStep.step_id, "CONFIRMED")}>确认无误</button><button type="button" onClick={() => onDecide?.(assistantStep.step_id, "MARKED_EXCEPTION")}>标记异常</button></div> : null}</section>;
+  return <Workbench key={props.pageData?.collectionId} {...props} />;
 }
 
 function Workbench({ review, pageData, onFocusImage = async () => {}, onApplyPageFieldValue = async () => ({ ok: false, message: "页面写回未配置" }), onApplyPageFieldGroupValue = async () => ({ ok: false, message: "页面组合字段写回未配置" }), onRerun }: Props & { review: ReviewResponse }) {
@@ -145,5 +135,3 @@ function QrUrl({ check }: { check: QrCheck }) {
 
 function StructuredEvidence({ evidence }: { evidence: EvidenceFact[] }) { const rows = evidence.flatMap((item) => item.value && typeof item.value === "object" && !Array.isArray(item.value) ? Object.entries(item.value as Record<string, unknown>).filter(([, value]) => value != null && value !== "").map(([key, value]) => ({ source: item.source, key, value: String(value) })) : item.field?.startsWith("business_license.") && item.value != null && item.value !== "" ? [{ source: item.source, key: item.field, value: String(item.value) }] : []); return rows.length ? <dl className="structured-evidence">{rows.map((row, index) => <div key={`${row.source}-${row.key}-${index}`}><dt>{row.source} · {structuredFieldLabel(row.key)}</dt><dd>{row.value}</dd></div>)}</dl> : null; }
 function structuredFieldLabel(field: string) { return ({ company_name: "企业名称", "business_license.company_name": "企业名称", legal_representative: "法定代表人", "business_license.legal_representative": "法定代表人", unified_social_credit_code: "统一社会信用代码", "business_license.unified_social_credit_code": "统一社会信用代码", vin: "车架号", certificate_no: "证明编号" } as Record<string, string>)[field] ?? field; }
-
-function EvidenceActions({ evidence, pageData, onFocusImage }: { evidence: EvidenceFact[]; pageData?: PageData | null; onFocusImage: (id: string) => Promise<void> }) { const ids = [...new Set(evidence.map((item) => item.image_id).filter((item): item is string => Boolean(item)))]; const images = new Map((pageData?.images ?? []).filter((image) => image.imageId).map((image) => [image.imageId as string, image])); return ids.length ? <div className="evidence-actions">{ids.map((id) => <div className="evidence-image" key={id}>{images.get(id)?.src ? <img src={images.get(id)?.dataUrl || images.get(id)?.src} alt={images.get(id)?.alt || "审核资料证据"} /> : null}<button type="button" onClick={() => void onFocusImage(id)}>查看原图</button></div>)}</div> : null; }

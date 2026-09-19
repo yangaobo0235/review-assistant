@@ -5,8 +5,15 @@
 修改人：wuyi
 """
 
-from app.agent.models import AgentBatchResult
+from app.businesses.field_policies import (
+    MATERIAL_FIELD_BY_PAGE_FIELD,
+    field_policy,
+    filter_allowed_observations,
+)
 from app.businesses.profiles import BusinessProfile
+from app.compare.aggregate import aggregate_by_authority, aggregate_field
+from app.compare.check_results import unique_checks
+from app.fields.normalize import normalize_value
 from app.models.review import (
     FieldComparison,
     FieldObservation,
@@ -17,16 +24,9 @@ from app.models.review import (
     ReviewRequest,
     ReviewResponse,
 )
-from app.rules.aggregate import aggregate_field, aggregate_old_vehicle_vin
-from app.rules.check_results import unique_checks
-from app.rules.field_evidence_policies import (
-    MATERIAL_FIELD_BY_PAGE_FIELD,
-    field_policy,
-    filter_allowed_observations,
-)
-from app.rules.normalize import normalize_value
-from app.rules.review_step_routing import profile_uses_page_interaction
+from app.presentation.routing import profile_uses_page_interaction
 from app.services.review_assembly import assemble_review_response
+from app.workflow.models import AgentBatchResult
 
 
 def _append_qr_observations(
@@ -113,10 +113,18 @@ def _build_comparisons(
         observations_for_field = filter_allowed_observations(
             field_name, field_observations(field_name)
         )
-        if field_name == "old_vehicle.vin" and uncertain_requires_review:
-            comparisons.append(aggregate_old_vehicle_vin(observations_for_field))
-            continue
         policy = field_policy(field_name)
+        # 声明了权威链的字段走声明式裁决：比较基准由业务指定，不靠票数推断。
+        # 新增需要权威关系的字段只需在 field_evidence_policies 里声明，
+        # 不必再写专用裁决函数。
+        if policy is not None and policy.authority:
+            comparisons.append(aggregate_by_authority(
+                field_name,
+                observations_for_field,
+                policy.authority,
+                uncertain_requires_review=uncertain_requires_review,
+            ))
+            continue
         if policy and policy.mode == "SYSTEM":
             comparison = aggregate_field(
                 field_name,

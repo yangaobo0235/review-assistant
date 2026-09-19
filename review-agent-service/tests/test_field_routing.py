@@ -1,45 +1,4 @@
-from app.agent.field_routing import normalize_document_type, route_fields
-
-
-def test_routes_transfer_documents_without_reusing_new_vehicle_fields() -> None:
-    invoice, invoice_limitation = route_fields(
-        "transfer",
-        "invoice",
-        {
-            "vehicle.plate_no": "冀A34870",
-            "vehicle.vin": "VIN-1",
-            "invoice.buyer_name": "买方公司",
-            "invoice.seller_name": "卖方公司",
-            "invoice.invoice_date": "2026-08-15",
-            "invoice.code": "DROP",
-        },
-    )
-    registration, registration_limitation = route_fields(
-        "transfer",
-        "registration_certificate",
-        {
-            "vehicle.vin": "VIN-1",
-            "registration.covered_pages": [1, 2],
-            "registration.initial_owner": "原始所有人",
-            "registration.transfer_records": [{"owner": "买方公司", "page": 2, "order": 1}],
-        },
-    )
-
-    assert invoice == {
-        "transfer.plate_no": "冀A34870",
-        "transfer.vin": "VIN-1",
-        "transfer.buyer_name": "买方公司",
-        "transfer.seller_name": "卖方公司",
-        "transfer.invoice_date": "2026-08-15",
-    }
-    assert registration == {
-        "transfer.vin": "VIN-1",
-        "transfer.registration.covered_pages": [1, 2],
-        "transfer.registration.initial_owner": "原始所有人",
-        "transfer.registration.transfer_records": [{"owner": "买方公司", "page": 2, "order": 1}],
-    }
-    assert invoice_limitation is None
-    assert registration_limitation is None
+from app.businesses.routing import normalize_document_type, route_fields
 
 
 def test_vehicle_fields_are_mapped_by_business_scope() -> None:

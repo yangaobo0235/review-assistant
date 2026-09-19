@@ -1,4 +1,5 @@
 import type { DomElement, DomRoot, FieldDefinition, FieldCandidate } from "./dom.ts";
+import { manifestFieldDefinitions } from "./collect-manifest.ts";
 import type { ReviewFieldSnapshot } from "../types/review.ts";
 
 const isDomElement = (value: unknown): value is DomElement => {
@@ -123,6 +124,13 @@ const isDomElement = (value: unknown): value is DomElement => {
     },
   };
 
+  /**
+   * 字段定义表：后端下发了采集清单就用清单，否则用内置表兜底。
+   * 清单是后端声明的唯一来源，内置表只保证清单不可用时仍能采集。
+   */
+  const fieldDefinitions = () => manifestFieldDefinitions() || FIELD_DEFINITIONS;
+
+
   const SOURCE_SCORES: Record<string, number> = {
     control: 400,
     table: 350,
@@ -180,7 +188,7 @@ const isDomElement = (value: unknown): value is DomElement => {
 
   const definitionForLabel = (label: string) => {
     const normalized = normalizeText(label);
-    const matches = Object.entries(FIELD_DEFINITIONS).filter(([, definition]) =>
+    const matches = Object.entries(fieldDefinitions()).filter(([, definition]) =>
       definition.aliases.some((alias) => normalizeText(alias) === normalized),
     );
     if (matches.length !== 1) return null;
@@ -190,7 +198,7 @@ const isDomElement = (value: unknown): value is DomElement => {
 
   const isKnownLabel = (label: string) => {
     const normalized = normalizeText(label);
-    return Object.values(FIELD_DEFINITIONS).some((definition) =>
+    return Object.values(fieldDefinitions()).some((definition) =>
       definition.aliases.some((alias) => normalizeText(alias) === normalized),
     );
   };
@@ -226,7 +234,7 @@ const isDomElement = (value: unknown): value is DomElement => {
     return field === "invoice.amount" && /^[￥¥\s]*$/.test(raw) ? "" : raw;
   };
 
-  const isSectionRequired = (field: string) => Boolean(FIELD_DEFINITIONS[field]?.sectionRequired);
+  const isSectionRequired = (field: string) => Boolean(fieldDefinitions()[field]?.sectionRequired);
 
   const queryAll = (root: DomRoot | null | undefined, selector: string) => {
     try {
@@ -493,7 +501,7 @@ const isDomElement = (value: unknown): value is DomElement => {
       candidate.section !== definition.section
     ) return null;
     const matchedAlias = normalizeText(definition.aliases[aliasIndex]);
-    const aliasFieldCount = Object.values(FIELD_DEFINITIONS).filter((item) =>
+    const aliasFieldCount = Object.values(fieldDefinitions()).filter((item) =>
       item.aliases.some((alias) => normalizeText(alias) === matchedAlias),
     ).length;
     if (
@@ -511,7 +519,7 @@ const isDomElement = (value: unknown): value is DomElement => {
 
   const resolveInventoryField = (candidate: FieldCandidate, businessType: string | null) => {
     void businessType;
-    const ranked = Object.entries(FIELD_DEFINITIONS)
+    const ranked = Object.entries(fieldDefinitions())
       .map(([field, definition]) => ({
         field,
         definition,
@@ -623,7 +631,7 @@ const isDomElement = (value: unknown): value is DomElement => {
       }
     }
 
-    for (const [field, definition] of Object.entries(FIELD_DEFINITIONS)) {
+    for (const [field, definition] of Object.entries(fieldDefinitions())) {
       const ranked = candidates
         .map((candidate) => ({
           candidate,

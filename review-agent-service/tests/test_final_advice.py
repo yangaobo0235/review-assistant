@@ -1,6 +1,6 @@
-from app.agent.models import CheckResult
 from app.models.review import EvidenceFact, FieldComparison, FieldStatus, QrCheck
-from app.rules.final_advice import build_final_advice
+from app.presentation.advice import build_final_advice
+from app.workflow.models import CheckResult
 
 
 def matched(field: str) -> FieldComparison:

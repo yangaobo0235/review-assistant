@@ -1,13 +1,15 @@
-from app.agent.planner import plan_capabilities
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, VEHICLE_SOURCE_DEFAULT
+from app.workflow.planner import plan_capabilities
 
 
 def test_configured_profile_plans_declared_capabilities_only():
     ids = {item.capability_id for item in plan_capabilities(SCRAP_REPLACEMENT_QINGDAO)}
     assert ids == {
+        "material_completeness",
         "scrap_certificate_qr",
         "qingdao_replacement_policy",
         "affiliation_subject",
+        "verify_invoice",
     }
 
 

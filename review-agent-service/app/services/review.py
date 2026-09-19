@@ -11,32 +11,31 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from uuid import uuid4
 
-from app.agent.config import load_qwen_config
-from app.agent.models import AgentBatchResult, MaterialCompletenessReport
-from app.agent.qwen_client import QwenClient
-from app.agent.service import AgentService
-from app.agent.workflow import ReviewWorkflow
 from app.businesses.context_validation import validate_request_route
 from app.businesses.profiles import BusinessProfile
 from app.businesses.registry import BusinessRegistry, build_business_registry
 from app.capabilities.page_actions import PageActionHandler
+from app.capabilities.specs import BusinessRuleHandler, ExternalCheckHandler
+from app.compare.evidence_values import batch_observations
 from app.models.review import (
     FieldObservation,
     FieldStatus,
     ImageInput,
-    PageActionIntent,
     QrCheck,
     ReviewRequest,
     ReviewResponse,
 )
-from app.rules.capabilities import BusinessRuleHandler, ExternalCheckHandler
-from app.rules.evidence_values import batch_observations
 from app.services.qr import QrCodeService, QrWebVerifier
 from app.services.review_response import (
     build_review_response,
     build_unconfigured_response,
 )
 from app.services.tools import MockOcrTool, MockVisionTool
+from app.workflow.config import load_qwen_config
+from app.workflow.graph import ReviewWorkflow
+from app.workflow.models import AgentBatchResult, MaterialCompletenessReport
+from app.workflow.qwen_client import QwenClient
+from app.workflow.service import AgentService
 
 ReviewProgressCallback = Callable[[ReviewResponse, AgentBatchResult], Any]
 
@@ -245,18 +244,8 @@ class ReviewService:
             page_fill_intent,
             defer_advice,
         )
-        # Page side effects are proposed by the backend protocol. The browser
-        # adapter decides whether and how to execute them.
-        if any(
-            item.field == "invoice.invoice_no" and item.status is FieldStatus.MATCH
-            for item in response.comparisons
-        ):
-            response = response.model_copy(update={
-                "page_actions": [
-                    *response.page_actions,
-                    PageActionIntent(action_id="verify_invoice", payload={"field": "invoice.invoice_no"}),
-                ],
-            })
+        # 页面动作由注册能力（如 verify_invoice）产出并经主图汇入
+        # response.page_actions；本函数不再注入任何字段级动作。
         return response
 
     async def extract_image_async(

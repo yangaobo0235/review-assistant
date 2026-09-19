@@ -1,14 +1,24 @@
+import asyncio
 import json
+import logging
 
 import httpx
 import pytest
 
-from app.agent.config import QwenConfig
-from app.agent.models import QwenExtraction
-from app.agent.qwen_client import QwenClient
-from app.agent.service import AgentService
 from app.businesses.material_policies import DEFAULT_RETRY_POLICY
 from app.models.review import ImageInput
+from app.workflow.config import QwenConfig
+from app.workflow.models import QwenExtraction
+from app.workflow.qwen_client import QwenClient
+from app.workflow.retry import retry_reason_for_extraction
+from app.workflow.service import AgentService
+
+
+@pytest.fixture
+def invoice_policy():
+    from app.businesses.materials import DOCUMENT_POLICIES
+
+    return DOCUMENT_POLICIES["invoice"]
 
 
 def invoice_image() -> ImageInput:
@@ -93,56 +103,130 @@ async def test_invalid_schema_retry_adds_targeted_correction_to_prompt() -> None
     assert result.retry_summary.attempts[0].reason_code == "invalid_schema"
 
 
+def test_uncertain_field_triggers_a_targeted_retry_reason(invoice_policy) -> None:
+    """模型自报看不清的字段要触发定向重读，并把字段名带进原因。"""
+    extraction = QwenExtraction(
+        document_type="invoice",
+        fields={"invoice.invoice_no": "26320000000801433801"},
+        confidence=0.95,
+        uncertain_fields=["invoice.amount", "invoice.code"],
+    )
+
+    reason = retry_reason_for_extraction(extraction, invoice_policy)
+
+    assert reason == "uncertain_field:invoice.amount,invoice.code"
+
+
+def test_extraction_without_uncertain_fields_keeps_the_old_triggers(invoice_policy) -> None:
+    confident = QwenExtraction(
+        document_type="invoice",
+        fields={"invoice.invoice_no": "26320000000801433801"},
+        confidence=0.95,
+    )
+    assert retry_reason_for_extraction(confident, invoice_policy) is None
+
+    low_confidence = QwenExtraction(
+        document_type="invoice",
+        fields={"invoice.invoice_no": "26320000000801433801"},
+        confidence=0.5,
+    )
+    assert retry_reason_for_extraction(low_confidence, invoice_policy) == "low_confidence"
+
+
 @pytest.mark.asyncio
-async def test_contaminated_registration_owner_retries_with_targeted_prompt() -> None:
+async def test_uncertain_field_retry_asks_the_model_to_reread_that_region() -> None:
+    """定向重读指令要指名字段、要求回看原图区域，且不泄露上一次的响应。"""
     prompts: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         prompts.append(payload["messages"][0]["content"][0]["text"])
-        owner = (
-            "孟永旗/居民身份证/130182198503243736/一汽财务有限公司"
-            if len(prompts) == 1
-            else "孟永旗"
-        )
         result = {
-            "document_type": "registration_certificate",
-            "fields": {
-                "registration.covered_pages": [1, 2],
-                "registration.initial_owner": owner,
-            },
-            "confidence": 0.9,
+            "document_type": "invoice",
+            "fields": {"invoice.invoice_no": "26320000000801433801", "invoice.amount": "152000"},
+            "confidence": 0.95,
             "evidence_regions": [],
-            "uncertain_fields": [],
+            "uncertain_fields": ["invoice.amount"] if len(prompts) == 1 else [],
         }
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(result)}}]},
-        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(result)}}]})
 
     client = QwenClient(
         QwenConfig("key", "https://dashscope.test/v1", "qwen3.7-plus"),
         transport=httpx.MockTransport(handler),
     )
-    registration_image = ImageInput(
-        index=0,
-        src="image",
-        data_url="data:image/jpeg;base64,AA==",
-        category_hint="registration_certificate",
-        business_scope="transfer",
-    )
     result = await AgentService(client).extract_async(
-        [registration_image],
+        [invoice_image()],
         retry_policy=DEFAULT_RETRY_POLICY,
     )
 
     assert len(prompts) == 2
-    assert "初始所有人识别内容混入" not in prompts[0]
-    assert "初始所有人识别内容混入" in prompts[1]
-    assert result.retry_summary.attempts[0].reason_code == "invalid_registration_owner"
-    owner = next(
-        item.value
-        for item in result.observations
-        if item.field == "transfer.registration.initial_owner"
-    )
-    assert owner == "孟永旗"
+    assert "上一次识别把以下字段标记为不确定" not in prompts[0]
+    assert "上一次识别把以下字段标记为不确定：invoice.amount" in prompts[1]
+    assert "evidence_regions" in prompts[1]
+    # 只说明哪些字段不确定，不回传模型上一次的输出内容。
+    assert "26320000000801433801" not in prompts[1].split("上一次识别")[1]
+    assert result.retry_summary.attempts[0].reason_code == "uncertain_field:invoice.amount"
+
+
+class SteadyClient:
+    """每次都返回同一个结果，用于观察重读有没有发生。"""
+
+    def __init__(self, uncertain: list[str] | None = None) -> None:
+        self.calls = 0
+        self.uncertain = list(uncertain or [])
+
+    async def extract_fields(self, image, policy, **_) -> QwenExtraction:
+        self.calls += 1
+        return QwenExtraction(
+            document_type="invoice",
+            fields={"invoice.invoice_no": "A"},
+            confidence=0.95,
+            uncertain_fields=list(self.uncertain),
+        )
+
+
+@pytest.mark.asyncio
+async def test_image_without_a_retry_reason_reports_no_retry(caplog) -> None:
+    client = SteadyClient()
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        await AgentService(client).extract_async(
+            [invoice_image()], retry_policy=DEFAULT_RETRY_POLICY
+        )
+
+    assert client.calls == 1
+    assert "retry_attempts=0 retry_result=-" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_uncertain_fields_surviving_the_reread_are_reported_as_retried(caplog) -> None:
+    """重读跑过但仍不确定 —— 与"第一次就不确定"必须能在日志里区分。"""
+    client = SteadyClient(uncertain=["invoice.amount"])
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        result = await AgentService(client).extract_async(
+            [invoice_image()], retry_policy=DEFAULT_RETRY_POLICY
+        )
+
+    assert client.calls == 2
+    assert result.retry_summary.qwen_retries == 1
+    assert "uncertain_field_count=1" in caplog.text
+    assert "retry_attempts=1 retry_result=succeeded" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_retry_skipped_for_lack_of_time_is_not_counted_as_an_attempt(caplog) -> None:
+    client = SteadyClient(uncertain=["invoice.amount"])
+    service = AgentService(client)
+
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        result = await service.extract_async(
+            [invoice_image()],
+            retry_policy=DEFAULT_RETRY_POLICY,
+            # 剩余时间小于 minimum_retry_window_seconds，重读会被跳过。
+            absolute_deadline=asyncio.get_running_loop().time() + 0.5,
+        )
+
+    assert client.calls == 1
+    assert result.retry_summary.attempts[0].result == "skipped"
+    assert "retry_attempts=0 retry_result=skipped" in caplog.text

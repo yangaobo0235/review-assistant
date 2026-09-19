@@ -1,45 +1,8 @@
-from app.agent.document_policies import (
+from app.businesses.materials import (
     DOCUMENT_POLICIES,
     build_classification_prompt,
     build_unknown_extraction_prompt,
 )
-
-
-def test_transfer_registration_prompt_requests_structured_history() -> None:
-    prompt = DOCUMENT_POLICIES["registration_certificate"].build_extraction_prompt(
-        2, "transfer"
-    )
-
-    assert "registration.covered_pages" in prompt
-    assert "registration.initial_owner" in prompt
-    assert "registration.transfer_records" in prompt
-    assert "vehicle.engine_model" not in prompt
-    assert "版面不存在的字段不要写入 uncertain_fields" in prompt
-    assert "图片内印刷" in prompt
-    assert "第3页" in prompt
-    assert "第4页" in prompt
-    assert "covered_pages=[3,4]" in prompt
-    assert "抵押登记" in prompt
-    assert "解除抵押" in prompt
-    assert "全部明确可见" in prompt
-    assert "最新一条" in prompt
-    assert "最新所有人" in prompt
-    assert "最新转让登记日期" in prompt
-    assert "owner、date、page、order" in prompt
-    assert "YYYY-MM-DD" in prompt
-    assert "registration.initial_owner 只读取" in prompt
-    assert "居民身份证" in prompt
-    assert "抵押权人" in prompt
-
-
-def test_transfer_invoice_prompt_requests_only_transfer_fields() -> None:
-    prompt = DOCUMENT_POLICIES["invoice"].build_extraction_prompt(4, "transfer")
-
-    assert "invoice.buyer_name" in prompt
-    assert "invoice.seller_name" in prompt
-    assert "invoice.invoice_date" in prompt
-    assert "invoice.code" not in prompt
-    assert "invoice.amount" not in prompt
 
 
 def test_each_supported_document_has_a_specific_allowlist() -> None:
@@ -142,7 +105,7 @@ def test_registration_certificate_prompt_fields_follow_business_scope() -> None:
 
 
 def test_new_owner_allowlist_excludes_registration_certificate() -> None:
-    from app.rules.field_evidence_policies import field_policy
+    from app.businesses.field_policies import field_policy
 
     policy = field_policy("new_vehicle.owner")
     assert policy is not None
@@ -183,3 +146,19 @@ def test_combined_prompt_uses_physical_vehicle_type_and_neutral_fields() -> None
     assert "vehicle.owner" in prompt
     assert '"old_vehicle"' not in prompt
     assert '"new_vehicle"' not in prompt
+
+
+def test_retired_transfer_fields_are_not_in_any_material_whitelist() -> None:
+    """过户业务已停用，其专有字段不得重新出现在任何材料白名单中。
+
+    如果本测试失败，说明有停用业务的字段被重新引入。引入前必须先在
+    ``docs/business-rules/`` 建立对应业务文档并明确其生产状态。
+    """
+    retired = {"registration.initial_owner", "registration.transfer_records"}
+
+    for document_type, policy in DOCUMENT_POLICIES.items():
+        for scope in ("old_vehicle", "new_vehicle", "transfer", "unknown"):
+            leaked = retired & set(policy.fields_for_scope(scope))
+            assert not leaked, (
+                f"{document_type} 的 {scope} 白名单仍包含停用过户字段：{sorted(leaked)}"
+            )

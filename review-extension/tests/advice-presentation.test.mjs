@@ -17,10 +17,6 @@ test("maps recommendations to accessible visual cues", () => {
     symbol: "!",
     label: "审核建议：需要人工复核",
   });
-  assert.deepEqual(recommendationVisual("REJECT_SUGGESTED"), {
-    symbol: "×",
-    label: "审核建议：建议拒绝",
-  });
 });
 
 test("maps check statuses to reviewer-facing labels", () => {

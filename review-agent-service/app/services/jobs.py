@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from app.agent.models import AgentBatchResult
 from app.models.review import (
     ImageInput,
     JobStatus,
@@ -29,6 +28,7 @@ from app.models.review import (
     ReviewResponse,
 )
 from app.services.fair_scheduler import FairAsyncScheduler
+from app.workflow.models import AgentBatchResult
 
 JOB_TTL_SECONDS = 600.0
 MAX_STREAM_IMAGES = 16

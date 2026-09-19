@@ -30,7 +30,6 @@ interface ReviewResultsProps {
   exceptionFilter: ExceptionFilter;
   onExceptionFilterChange: (filter: ExceptionFilter) => void;
   onFocusImage: (imageId: string) => Promise<void>;
-  pageFillResult: PageFillResult | null;
   onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   onApplyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   onRerun: () => Promise<void>;
@@ -43,7 +42,7 @@ export function ReviewResults(props: ReviewResultsProps) {
   return <LegacyReviewResults {...props} />;
 }
 
-function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExceptionFilterChange, onFocusImage, pageFillResult }: ReviewResultsProps) {
+function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExceptionFilterChange, onFocusImage }: ReviewResultsProps) {
   const imagesById = new Map(
     (pageData?.images || []).filter((image) => image.imageId).map((image) => [image.imageId as string, image]),
   );
@@ -58,7 +57,6 @@ function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExcepti
   return (
     <section className="review-result">
       <ReviewTaskList tasks={review.review_tasks || []} />
-      {pageFillResult ? <PageFillStatus result={pageFillResult} /> : null}
       <ReviewAdvice review={review} />
       <MaterialCompleteness
         report={review.material_completeness || job?.material_completeness}
@@ -110,10 +108,6 @@ function LegacyReviewResults({ review, job, pageData, exceptionFilter, onExcepti
       ) : null}
     </section>
   );
-}
-
-function PageFillStatus({ result }: { result: PageFillResult }) {
-  return <section className={`result-card page-fill-status ${result.ok ? "page-fill-success" : "page-fill-failure"}`}><h2>挂靠字段填写</h2><p>{result.message}</p></section>;
 }
 
 function QrResults({ review }: { review: ReviewResponse }) {

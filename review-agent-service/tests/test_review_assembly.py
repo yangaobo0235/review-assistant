@@ -5,7 +5,6 @@
 同字段比较冲突和二维码官网冲突，业务规则检查结果不抬升风险级别。
 """
 
-from app.agent.models import AgentBatchResult, CheckResult
 from app.models.review import (
     BusinessType,
     FieldComparison,
@@ -15,6 +14,7 @@ from app.models.review import (
     ReviewResponse,
 )
 from app.services.review_assembly import assemble_review_response
+from app.workflow.models import AgentBatchResult, CheckResult
 
 
 def response_for(

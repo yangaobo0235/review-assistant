@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 import app.services.qr as qr_module
-from app.agent.models import AgentBatchResult
 from app.models.review import FieldObservation, FieldStatus, ImageInput, ReviewRequest
 from app.services.qr import (
     QrCodeResult,
@@ -15,6 +14,7 @@ from app.services.qr import (
     validate_qr_url,
 )
 from app.services.review import ReviewService
+from app.workflow.models import AgentBatchResult
 
 
 def test_qr_url_requires_exact_official_https_host():

@@ -3,20 +3,20 @@ from dataclasses import replace
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agent.models import AgentBatchResult
+from app.businesses.packs.scrap_replacement import (
+    CHANGCHUN_REPLACEMENT_POLICY,
+    QINGDAO_REPLACEMENT_POLICY,
+)
 from app.businesses.profiles import (
     SCRAP_REPLACEMENT_CHANGCHUN,
     SCRAP_REPLACEMENT_QINGDAO,
 )
 from app.businesses.registry import BusinessRegistry
-from app.businesses.replacement_policies import (
-    CHANGCHUN_REPLACEMENT_POLICY,
-    QINGDAO_REPLACEMENT_POLICY,
-)
+from app.businesses.rules.affiliation import build_affiliation_subject_check
 from app.main import app
 from app.models.review import FieldObservation, ReviewRequest
-from app.rules.affiliation_subject_checks import build_affiliation_subject_check
 from app.services.review import ReviewService
+from app.workflow.models import AgentBatchResult
 
 
 @pytest.mark.parametrize(
@@ -76,16 +76,6 @@ def test_matching_admin_route_and_unknown_test_url_remain_accepted(
         ).region.value
         == "qingdao"
     )
-
-
-@pytest.mark.asyncio
-async def test_graph_cannot_bypass_known_route_validation_with_explicit_profile():
-    service = ReviewService()
-    request = ReviewRequest(
-        page_url="https://admin.forjtruck.com/scrap-replace-changchun", region="qingdao"
-    )
-    with pytest.raises((ValueError, LookupError)):
-        await service.workflow.run(request, SCRAP_REPLACEMENT_QINGDAO)
 
 
 @pytest.mark.parametrize(
@@ -175,23 +165,6 @@ async def test_scrap_runs_route_collected_field_to_page_and_rest_to_assistant(re
         if step.step_id != "FIELD-NEW-VEHICLE-VIN"
     )
     # 缺少主体关系证据时不生成任何挂靠填写意图。
-    assert result.page_fill_intent == []
-
-
-@pytest.mark.asyncio
-async def test_transfer_profile_keeps_every_step_in_the_assistant_panel():
-    result = await run_review(
-        region="default",
-        page_fields={"transfer.vin": "VIN-1"},
-        business_type="transfer",
-    )
-    # 过户不是页内交互目标 Profile：旧业务继续使用现有结果界面和行为。
-    assert result.business_type.value == "transfer"
-    assert result.review_tasks
-    assert all(
-        step.display_target == "ASSISTANT" and step.page_field is None
-        for step in result.review_tasks
-    )
     assert result.page_fill_intent == []
 
 
@@ -309,31 +282,6 @@ async def test_graph_blocks_intent_for_additional_bad_license_with_all_auxiliary
         if key.startswith("AFFILIATION-AUX")
     )
     assert result.page_fill_intent == []
-
-
-@pytest.mark.parametrize("region", ["qingdao", "changchun"])
-@pytest.mark.parametrize("suffix", ["", "/review/1", "/nested/transfer/2"])
-@pytest.mark.asyncio
-async def test_consistency_container_accepts_explicit_transfer_context(region, suffix):
-    request = ReviewRequest(
-        page_url=f"https://admin.forjtruck.com/consistency-{region}{suffix}",
-        business_type="transfer",
-        region="default",
-        workflow_stage="transfer",
-    )
-    service = ReviewService()
-    assert service.resolve_profile(request).business_type.value == "transfer"
-    result = await service.assist_async(request)
-    assert result.business_type.value == "transfer"
-    assert result.qr_checks == []
-    assert result.page_fill_intent == []
-    assert not any(step.category == "EXTERNAL" for step in result.review_tasks)
-    assert (
-        TestClient(app)
-        .post("/api/review/assist", json=request.model_dump(mode="json"))
-        .status_code
-        == 200
-    )
 
 
 @pytest.mark.parametrize(

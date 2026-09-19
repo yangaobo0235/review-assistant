@@ -5,8 +5,8 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from app.capabilities.specs import CapabilitySpec, ReviewExecutionContext
 from app.models.review import CapabilityResult
-from app.rules.capabilities import CapabilitySpec, ReviewExecutionContext
 
 
 class CapabilitySubgraphState(TypedDict, total=False):

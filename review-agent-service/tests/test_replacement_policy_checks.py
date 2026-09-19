@@ -1,14 +1,14 @@
 import pytest
 
-from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
-from app.businesses.replacement_policies import (
+from app.businesses.packs.scrap_replacement import (
     CHANGCHUN_REPLACEMENT_POLICY,
     QINGDAO_REPLACEMENT_POLICY,
 )
+from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
+from app.businesses.rules.replacement_policy import build_replacement_policy_checks
 from app.models.review import FieldObservation, ReviewRequest
-from app.rules.final_advice import build_final_advice
-from app.rules.replacement_policy_checks import build_replacement_policy_checks
-from app.rules.review_step_routing import build_review_tasks
+from app.presentation.advice import build_final_advice
+from app.presentation.routing import build_review_tasks
 
 
 def observation(field: str, value: str, document_type: str) -> FieldObservation:

@@ -10,7 +10,7 @@ from app.models.review import (
     ReviewFieldSnapshot,
     ReviewRequest,
 )
-from app.rules.review_step_routing import build_review_tasks
+from app.presentation.routing import build_review_tasks
 from app.services.review_response import _build_comparisons
 
 

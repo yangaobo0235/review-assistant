@@ -1,11 +1,6 @@
 import pytest
 from pydantic import ValidationError
 
-from app.agent.models import (
-    CheckResult,
-    MaterialCompletenessIssue,
-    MaterialCompletenessReport,
-)
 from app.businesses.profiles import (
     SCRAP_REPLACEMENT_CHANGCHUN,
     SCRAP_REPLACEMENT_QINGDAO,
@@ -20,7 +15,12 @@ from app.models.review import (
     ReviewRequest,
     ReviewTask,
 )
-from app.rules.review_step_routing import build_review_tasks
+from app.presentation.routing import build_review_tasks
+from app.workflow.models import (
+    CheckResult,
+    MaterialCompletenessIssue,
+    MaterialCompletenessReport,
+)
 
 
 def make_step(**changes) -> ReviewTask:

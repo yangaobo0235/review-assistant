@@ -1,3 +1,5 @@
+import { applyCollectManifest } from "./collect-manifest.ts";
+import type { CollectManifest } from "./collect-manifest.ts";
 import { ReviewBusinessDetector } from "./business-detector.ts";
 import { ReviewBusinessScope } from "./business-scope.ts";
 import { ReviewImageCandidates } from "./image-candidates.ts";
@@ -363,6 +365,11 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
     message.businessSelection as BusinessSelection | null | undefined,
   );
   const business = businessResolution.business;
+  // 采集清单按业务类型选择；没有可用清单时清空并退回内置表。
+  applyCollectManifest(
+    (message.collectManifests as CollectManifest[] | undefined)
+      ?.find((item) => item.business_type === business?.businessType),
+  );
   const fieldCollection = ReviewPageFieldCollector.collect(
     document,
     business?.businessType ?? null,

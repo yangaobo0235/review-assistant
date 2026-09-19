@@ -46,22 +46,6 @@ function withoutImagePayload(image: PageData["images"][number]) {
   };
 }
 
-/** 创建异步审核任务，并把非成功 HTTP 状态转换为可读错误。 */
-export async function createReviewJob(
-  data: PageData,
-  fetcher: Fetcher = fetch,
-): Promise<ReviewJobCreated> {
-  const response = await fetcher(`${agentBaseUrl}/api/review/jobs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    throw new Error(`Agent 服务返回 ${response.status}`);
-  }
-  return (await response.json()) as ReviewJobCreated;
-}
-
 /** 创建流式审核任务；请求只携带页面字段和图片清单，不上传图片内容。 */
 export async function createStreamReviewJob(
   data: PageData,

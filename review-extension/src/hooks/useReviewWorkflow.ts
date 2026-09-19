@@ -7,7 +7,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { applyCollectManifest, fetchCollectManifest } from "../browser/collect-manifest.ts";
+import type { CollectManifest } from "../browser/collect-manifest.ts";
 import {
+  agentBaseUrl,
   cancelReviewJob,
   completionNotice,
   completeStreamReviewJob,
@@ -20,6 +23,7 @@ import { applyPageFieldGroupValue, applyPageFieldValue, applyPageFillIntent, ver
 import { focusReviewImage } from "../imageFocusClient";
 import { PageActionRegistry } from "../session/pageActionRegistry";
 import {
+  manifestBusinessTypes,
   manualBusinessSelection,
   type BusinessChoice,
 } from "../reviewPanelConfig";
@@ -35,6 +39,17 @@ const reviewDeadlineMs = 120_000;
 const reviewPollIntervalMs = 1_000;
 const imageUploadConcurrency = 2;
 
+/**
+ * 拉取各业务的采集清单。某个业务拉不到就跳过——Content Script 会退回内置表，
+ * 采集不会因为清单不可用而中断。
+ */
+async function loadCollectManifests(): Promise<CollectManifest[]> {
+  const results = await Promise.all(
+    manifestBusinessTypes.map((business) => fetchCollectManifest(agentBaseUrl, business)),
+  );
+  return results.filter((item): item is CollectManifest => item !== null);
+}
+
 async function collectPageData(selection: BusinessChoice): Promise<PageData> {
   if (!globalThis.chrome?.tabs) {
     throw new Error("请在浏览器扩展侧边栏中使用审核助手");
@@ -43,11 +58,21 @@ async function collectPageData(selection: BusinessChoice): Promise<PageData> {
   if (!tab.id) {
     throw new Error("没有找到当前页面");
   }
+  const manifests = await loadCollectManifests();
   const pageData = (await chrome.tabs.sendMessage(tab.id, {
     type: "COLLECT_PAGE_MANIFEST",
     businessSelection:
       selection === "AUTO" ? null : manualBusinessSelection(selection),
+    // 后端是字段别名和页面分组标题的唯一来源。拉取失败时下发空数组，
+    // Content Script 会退回内置表，采集照常进行。
+    collectManifests: manifests,
   })) as Omit<PageData, "sourceTabId">;
+  // 侧边栏和 Content Script 是两个独立的 JS 运行时，Content Script 里应用的
+  // 清单不会传到这里。面板重新应用同一份，用于把字段键和材料类型显示成中文；
+  // 采集判定仍然只发生在 Content Script。
+  applyCollectManifest(
+    manifests.find((item) => item.business_type === pageData.businessType),
+  );
   return { ...pageData, sourceTabId: tab.id };
 }
 
@@ -114,7 +139,6 @@ export interface ReviewWorkflow {
   pageData: PageData | null;
   error: string;
   notice: string;
-  pageFillResult: PageFillResult | null;
   stageMessage: string;
   reset: () => void;
   startReview: () => Promise<void>;
@@ -134,7 +158,6 @@ export function useReviewWorkflow(
   const [pageData, setPageData] = useState<PageData | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [pageFillResult, setPageFillResult] = useState<PageFillResult | null>(null);
   const [stageMessage, setStageMessage] = useState("");
 
   useEffect(() => {
@@ -163,7 +186,6 @@ export function useReviewWorkflow(
     setPageData(null);
     setError("");
     setNotice("");
-    setPageFillResult(null);
     setStageMessage("");
   }, []);
 
@@ -174,7 +196,6 @@ export function useReviewWorkflow(
     setNotice("");
     setReview(null);
     setJob(null);
-    setPageFillResult(null);
     setStageMessage("正在读取页面和图片清单……");
     let activeJobId = "";
     try {
@@ -311,7 +332,6 @@ export function useReviewWorkflow(
     pageData,
     error,
     notice,
-    pageFillResult,
     stageMessage,
     reset,
     startReview,

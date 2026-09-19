@@ -87,7 +87,6 @@ function App() {
           onApplyPageFieldValue={workflow.applyPageFieldValue}
           onApplyPageFieldGroupValue={workflow.applyPageFieldGroupValue}
           onRerun={workflow.startReview}
-          pageFillResult={workflow.pageFillResult}
         />
       ) : null}
 

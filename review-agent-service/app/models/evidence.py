@@ -54,6 +54,8 @@ class FieldObservation(BaseModel):
     derived_from: str | None = None
     evidence_region: list[float] | None = None
     uncertain: bool = False
+    # 该证据所属的图片已经过至少一次定向重读，结果仍然不确定。
+    retried: bool = False
     document_type: str | None = None
     image_index: int | None = None
     image_id: str | None = None

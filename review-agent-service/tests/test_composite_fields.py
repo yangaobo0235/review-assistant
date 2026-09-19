@@ -1,10 +1,10 @@
+from app.compare.composite_fields import build_page_composite_checks
 from app.models.review import (
     FieldComparison,
     FieldStatus,
     ReviewFieldSnapshot,
     ReviewRequest,
 )
-from app.rules.composite_fields import build_page_composite_checks
 
 
 def request(**page_fields: str) -> ReviewRequest:
@@ -50,7 +50,7 @@ def test_invoice_composite_checks_page_pair_before_material() -> None:
 def test_composite_task_uses_reviewer_facing_page_labels_and_keeps_differences() -> None:
     from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
     from app.models.evidence import DifferenceRange, EvidenceFact
-    from app.rules.review_step_routing import build_review_tasks
+    from app.presentation.routing import build_review_tasks
 
     difference = DifferenceRange(
         kind="REPLACE", start=4, end=5, page_start=4, page_end=5, page_text="A"

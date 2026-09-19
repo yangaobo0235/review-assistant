@@ -1,13 +1,13 @@
 import pytest
 
-from app.agent.models import AgentBatchResult
 from app.businesses.profiles import TRANSFER_DEFAULT
-from app.models.review import ReviewRequest
-from app.rules.capabilities import ExternalCheckSpec, ReviewExecutionContext
-from app.rules.external_check_registry import (
+from app.capabilities.external_checks import (
     ExternalCheckRegistry,
     UnknownExternalCheck,
 )
+from app.capabilities.specs import ExternalCheckSpec, ReviewExecutionContext
+from app.models.review import ReviewRequest
+from app.workflow.models import AgentBatchResult
 
 
 def context():

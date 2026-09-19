@@ -1,7 +1,7 @@
 import pytest
 
+from app.businesses.rules.affiliation import build_affiliation_subject_check
 from app.models.review import FieldObservation
-from app.rules.affiliation_subject_checks import build_affiliation_subject_check
 
 
 def item(field: str, value: str, source_id: str = "source") -> FieldObservation:

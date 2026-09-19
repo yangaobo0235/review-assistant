@@ -5,6 +5,7 @@
  * 修改人：wuyi
  */
 
+import { manifestFieldLabels } from "./browser/collect-manifest.ts";
 import type {
   BusinessSelection,
   BusinessType,
@@ -28,6 +29,18 @@ export const businessLabels: Record<BusinessChoice, string> = {
   consistency_qingdao: "青岛一致性审核（未配置）",
   consistency_changchun: "长春一致性审核（未配置）",
 };
+
+/** 区域后缀：业务列表里的键是「业务_区域」，查采集清单时要去掉。 */
+const REGION_SUFFIXES = ["_qingdao", "_changchun", "_default"];
+
+/** 需要向后端查询采集清单的业务类型，由业务列表推导，不另外维护。 */
+export const manifestBusinessTypes: string[] = [
+  ...new Set(
+    Object.keys(businessLabels)
+      .filter((key) => key !== "AUTO")
+      .map((key) => REGION_SUFFIXES.reduce((acc, suffix) => acc.replace(suffix, ""), key)),
+  ),
+];
 
 const fieldLabels: Record<string, string> = {
   "application.submitted_at": "申请时间",
@@ -77,8 +90,12 @@ export function manualBusinessSelection(
   };
 }
 
+/**
+ * 字段键 → 中文标签。优先用后端清单里的声明（新增业务时只改后端声明，
+ * 面板自动跟上），清单不可用时退回下面的内置表。
+ */
 export function fieldLabel(field: string): string {
-  return fieldLabels[field] ?? field;
+  return manifestFieldLabels()?.[field] ?? fieldLabels[field] ?? field;
 }
 
 export function statusLabel(status: FieldComparison["status"]): string {

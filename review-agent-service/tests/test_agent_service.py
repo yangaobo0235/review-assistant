@@ -4,11 +4,11 @@ import logging
 import httpx
 import pytest
 
-from app.agent.config import QwenConfig
-from app.agent.models import QwenClassification, QwenExtraction
-from app.agent.qwen_client import QwenClient
-from app.agent.service import AgentService
 from app.models.review import ImageInput
+from app.workflow.config import QwenConfig
+from app.workflow.models import QwenClassification, QwenExtraction
+from app.workflow.qwen_client import QwenClient
+from app.workflow.service import AgentService
 
 
 class FakeQwenClient:
@@ -247,6 +247,47 @@ def test_one_image_failure_does_not_stop_the_next_image() -> None:
     assert fake.extraction_calls == [(0, "invoice"), (1, "invoice")]
 
 
+def test_image_completion_log_names_the_uncertain_fields(caplog: object) -> None:
+    """不确定字段是一票否决的直接原因，控制台必须能直接看到是哪几个。"""
+    fake = FakeQwenClient(
+        extraction=QwenExtraction(
+            document_type="invoice",
+            fields={"invoice.invoice_no": "123"},
+            confidence=0.9,
+            uncertain_fields=["invoice.invoice_date", "invoice.amount"],
+        )
+    )
+
+    # 单图完成事件走 uvicorn 的 logger（服务日志直接打到 Uvicorn 控制台）。
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        AgentService(fake).extract([image(category_hint="invoice")])
+
+    assert "image=0" in caplog.text
+    assert "uncertain_field_count=2" in caplog.text
+    assert "uncertain_fields=invoice.amount,invoice.invoice_date" in caplog.text
+    # 重读的结果同样要能看出来，否则分不清"第一次就不确定"和"重读后仍不确定"。
+    assert "retry_attempts=" in caplog.text
+    assert "retry_result=" in caplog.text
+
+
+def test_image_completion_log_marks_an_uncertainty_free_image(caplog: object) -> None:
+    """没有不确定字段时用 `-` 占位，字段数仍固定，便于 grep。"""
+    fake = FakeQwenClient(
+        extraction=QwenExtraction(
+            document_type="invoice",
+            fields={"invoice.invoice_no": "123"},
+            confidence=0.95,
+            uncertain_fields=[],
+        )
+    )
+
+    # 单图完成事件走 uvicorn 的 logger（服务日志直接打到 Uvicorn 控制台）。
+    with caplog.at_level(logging.INFO, logger="uvicorn.error"):
+        AgentService(fake).extract([image(category_hint="invoice")])
+
+    assert "uncertain_field_count=0 uncertain_fields=-" in caplog.text
+
+
 def test_qwen_failure_is_sanitized_and_logged(caplog: object) -> None:
     class SensitiveFailureClient(FakeQwenClient):
         async def extract_fields(
@@ -254,7 +295,7 @@ def test_qwen_failure_is_sanitized_and_logged(caplog: object) -> None:
         ) -> QwenExtraction:
             raise RuntimeError("HTTP 400 raw model response VIN=SHOULD-NOT-LEAK")
 
-    with caplog.at_level(logging.WARNING, logger="app.agent.service"):
+    with caplog.at_level(logging.WARNING, logger="app.workflow.service"):
         _, limitations, _ = AgentService(SensitiveFailureClient()).extract(
             [image(category_hint="invoice")]
         )

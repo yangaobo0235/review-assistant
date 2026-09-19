@@ -21,7 +21,7 @@ import httpx
 import numpy as np
 import zxingcpp
 
-from app.agent.models import RetryAttempt
+from app.workflow.models import RetryAttempt
 
 
 @dataclass

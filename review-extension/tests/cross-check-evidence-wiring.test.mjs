@@ -22,11 +22,3 @@ test("review check evidence uses the shared evidence contract", () => {
   assert.match(source, /field\?: string/);
   assert.match(source, /source_id\?: string/);
 });
-
-test("affiliation evidence retains source and image identifiers", () => {
-  const source = readFileSync(new URL("../src/components/AffiliationReview.tsx", import.meta.url), "utf8");
-
-  assert.match(source, /evidence\.field/);
-  assert.match(source, /evidence\.source_id/);
-  assert.match(source, /evidence\.image_id/);
-});

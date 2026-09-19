@@ -18,7 +18,6 @@ export function recommendationVisual(recommendation: Recommendation): {
   return {
     PASS: { symbol: "✓", label: "审核建议：通过" },
     REVIEW_REQUIRED: { symbol: "!", label: "审核建议：需要人工复核" },
-    REJECT_SUGGESTED: { symbol: "×", label: "审核建议：建议拒绝" },
   }[recommendation];
 }
 

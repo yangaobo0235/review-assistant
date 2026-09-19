@@ -1,4 +1,9 @@
 
+import {
+  manifestGroupLabelEntries,
+  manifestSlotEntries,
+} from "./collect-manifest.ts";
+
 /**
  * 功能：根据页面结构判定材料的业务归属。
  * 职责边界：不把身份或无关区域归入审核材料。
@@ -45,11 +50,28 @@
     ["new_vehicle:3", "invoice"],
   ]);
 
-  const scopeForLabel = (text: string) => labels.get(normalize(text)) || null;
+  /**
+   * 页面分组标题表：后端下发了采集清单就用清单，否则用内置表兜底。
+   * 清单里的标题同样按去空白归一化，保证与页面实际文案的匹配方式一致。
+   */
+  const groupLabels = () => {
+    const entries = manifestGroupLabelEntries();
+    return entries
+      ? new Map(entries.map(([label, value]) => [normalize(label), value]))
+      : labels;
+  };
+
+  const scopeForLabel = (text: string) => groupLabels().get(normalize(text)) || null;
+
+  /** 上传槽位表：后端下发了清单就用清单，否则用内置表兜底。 */
+  const slotsFor = () => {
+    const entries = manifestSlotEntries();
+    return entries ? new Map(entries) : slotDocumentTypes;
+  };
 
   const documentTypeFor = (businessScope: string, groupOrder: number, categoryHint: string) =>
     physicalDocumentTypes.get(String(categoryHint || ""))
-    || slotDocumentTypes.get(`${businessScope || "unknown"}:${groupOrder || 0}`)
+    || slotsFor().get(`${businessScope || "unknown"}:${groupOrder || 0}`)
     || "unknown";
 
   const assign = (items: ({ kind: "label"; text: string } | { kind: "image"; index: number })[]) => {

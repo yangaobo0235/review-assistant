@@ -1,5 +1,15 @@
+import pytest
+
+from app.businesses.field_policies import field_policy
+from app.compare.aggregate import aggregate_by_authority, aggregate_field
+from app.compare.evidence_values import batch_observations
 from app.models.review import FieldObservation, FieldStatus
-from app.rules.aggregate import aggregate_field, aggregate_old_vehicle_vin
+from app.workflow.models import (
+    AgentBatchResult,
+    RecognizedDocument,
+    RetryAttempt,
+    RetrySummary,
+)
 
 
 def observation(
@@ -268,7 +278,7 @@ def vehicle_vin_observation(value: str, source_id: str, source_type: str, docume
 
 
 def test_old_vehicle_vin_uses_qr_as_authority_and_only_document_suffixes() -> None:
-    comparison = aggregate_old_vehicle_vin([
+    comparison = vin_by_authority([
         vehicle_vin_observation("VIN-0000ABCDEF12", "page", "page"),
         vehicle_vin_observation("VIN-0000ABCDEF12", "qr", "qr_page"),
         vehicle_vin_observation("OTHER-9999ABCDEF12", "license", "image", "vehicle_license"),
@@ -283,11 +293,11 @@ def test_old_vehicle_vin_uses_qr_as_authority_and_only_document_suffixes() -> No
 
 
 def test_old_vehicle_vin_rejects_page_or_document_suffix_conflicts() -> None:
-    page_conflict = aggregate_old_vehicle_vin([
+    page_conflict = vin_by_authority([
         vehicle_vin_observation("PAGE-WRONG-ABCDEF", "page", "page"),
         vehicle_vin_observation("VIN-000000ABCDEF", "qr", "qr_page"),
     ])
-    suffix_conflict = aggregate_old_vehicle_vin([
+    suffix_conflict = vin_by_authority([
         vehicle_vin_observation("VIN-000000ABCDEF", "page", "page"),
         vehicle_vin_observation("VIN-000000ABCDEF", "qr", "qr_page"),
         vehicle_vin_observation("DOC-000000999999", "license", "image", "vehicle_license"),
@@ -307,7 +317,7 @@ def test_old_vehicle_vin_rejects_page_or_document_suffix_conflicts() -> None:
 
 
 def test_old_vehicle_vin_suffix_differences_preserve_matching_document_prefixes() -> None:
-    comparison = aggregate_old_vehicle_vin([
+    comparison = vin_by_authority([
         vehicle_vin_observation("LFWSRXSJ7G1E22467", "page", "page"),
         vehicle_vin_observation("LFWSRXSJ7G1E22467", "qr", "qr_page"),
         vehicle_vin_observation("CA4250P66K24T1A1E4", "registration", "image", "registration_certificate"),
@@ -325,7 +335,7 @@ def test_old_vehicle_vin_suffix_differences_preserve_matching_document_prefixes(
 
 
 def test_old_vehicle_vin_marks_material_values_that_differ_from_the_page() -> None:
-    comparison = aggregate_old_vehicle_vin([
+    comparison = vin_by_authority([
         vehicle_vin_observation("LFNAFRJM6BAK00025", "page", "page"),
         vehicle_vin_observation("LFNAFRJM6BAK00024", "qr", "qr_page"),
         vehicle_vin_observation("LFNAFRJM6BAK00024", "license", "image", "vehicle_license"),
@@ -350,13 +360,252 @@ def test_old_vehicle_vin_marks_material_values_that_differ_from_the_page() -> No
 
 
 def test_old_vehicle_vin_requires_one_unique_qr_value() -> None:
-    missing = aggregate_old_vehicle_vin([
+    missing = vin_by_authority([
         vehicle_vin_observation("VIN-000000ABCDEF", "page", "page"),
     ])
-    multiple = aggregate_old_vehicle_vin([
+    multiple = vin_by_authority([
         vehicle_vin_observation("VIN-000000ABCDEF", "qr-1", "qr_page"),
         vehicle_vin_observation("VIN-000000999999", "qr-2", "qr_page"),
     ])
 
     assert missing.status is FieldStatus.REVIEW_REQUIRED
     assert multiple.status is FieldStatus.CONFLICT
+
+
+# 以下断言原先针对已删除的 compare.compare_values（二元比对）。
+# 生产者入口是 aggregate_field（多源聚合），断言随之迁移到这里。
+
+
+def test_aggregate_exposes_character_difference_positions() -> None:
+    """字符级差异位置由后端计算，供工作台标红使用。"""
+    comparison = aggregate_field(
+        "new_vehicle.vin",
+        [
+            observation("new_vehicle.vin", "ABC123", "img-1"),
+            observation("new_vehicle.vin", "ABC223", "review_page", "page"),
+        ],
+    )
+
+    assert comparison.status is FieldStatus.CONFLICT
+    assert comparison.differences == [3]
+
+
+def test_aggregate_marks_missing_tail_as_different() -> None:
+    comparison = aggregate_field(
+        "scrap_certificate.certificate_no",
+        [
+            observation("scrap_certificate.certificate_no", "AB-123", "img-1"),
+            observation("scrap_certificate.certificate_no", "AB-12", "review_page", "page"),
+        ],
+    )
+
+    assert comparison.differences
+
+
+def test_aggregate_requires_review_when_only_image_evidence_exists() -> None:
+    """页面字段缺失但材料有值：单证据默认需要人工确认。"""
+    comparison = aggregate_field(
+        "old_vehicle.owner",
+        [observation("old_vehicle.owner", "李四", "img-1")],
+    )
+
+    assert comparison.status is FieldStatus.REVIEW_REQUIRED
+    assert comparison.message == "仅有一个有效来源，证据不足"
+
+
+def test_aggregate_accepts_single_image_evidence_when_policy_allows() -> None:
+    comparison = aggregate_field(
+        "old_vehicle.owner",
+        [observation("old_vehicle.owner", "李四", "img-1")],
+        single_evidence_requires_review=False,
+    )
+
+    assert comparison.status is FieldStatus.MATCH
+    assert comparison.message == "已发现 1 份有效证据，按实际证据核验"
+
+
+# --- 声明式权威链 -------------------------------------------------------
+#
+# `old_vehicle.vin` 原先由一个约 130 行的专用函数裁决，现已改为在
+# `field_evidence_policies` 中声明权威链。下面这组用例锁定声明式实现的行为。
+
+VIN_AUTHORITY = field_policy("old_vehicle.vin").authority
+
+
+def vin_by_authority(observations: list[FieldObservation]):
+    return aggregate_by_authority(
+        "old_vehicle.vin",
+        observations,
+        VIN_AUTHORITY,
+        uncertain_requires_review=True,
+    )
+
+
+def _vin_cases() -> list[list[FieldObservation]]:
+    page = "LFWSRXSJ7G1E22467"
+    return [
+        # 全部一致（页面全串 + 两证后 8 位）
+        [
+            vehicle_vin_observation(page, "page", "page"),
+            vehicle_vin_observation(page, "qr", "qr_page"),
+            vehicle_vin_observation("OTHER-999" + page[-8:], "license", "image", "vehicle_license"),
+            vehicle_vin_observation("REG-888" + page[-8:], "registration", "image", "registration_certificate"),
+        ],
+        # 报废证明的 OCR 车架号不在权威链上，必须被排除
+        [
+            vehicle_vin_observation(page, "page", "page"),
+            vehicle_vin_observation(page, "qr", "qr_page"),
+            vehicle_vin_observation("WRONG-000000999999", "scrap", "image", "scrap_certificate"),
+        ],
+        # 页面与官网不一致
+        [
+            vehicle_vin_observation("PAGE-WRONG-ABCDEF", "page", "page"),
+            vehicle_vin_observation("VIN-000000ABCDEF", "qr", "qr_page"),
+        ],
+        # 证件后 8 位与官网不一致
+        [
+            vehicle_vin_observation(page, "page", "page"),
+            vehicle_vin_observation(page, "qr", "qr_page"),
+            vehicle_vin_observation("DOC-000000999999", "license", "image", "vehicle_license"),
+        ],
+        # 证件前缀不同但后 8 位一致 → 不算冲突
+        [
+            vehicle_vin_observation(page, "page", "page"),
+            vehicle_vin_observation(page, "qr", "qr_page"),
+            vehicle_vin_observation("CA4250P66K24T1A1E4", "registration", "image", "registration_certificate"),
+        ],
+        # 缺二维码官网值
+        [vehicle_vin_observation(page, "page", "page")],
+        # 官网返回多个不同值
+        [
+            vehicle_vin_observation(page, "page", "page"),
+            vehicle_vin_observation("VIN-000000ABCDEF", "qr-1", "qr_page"),
+            vehicle_vin_observation("VIN-000000999999", "qr-2", "qr_page"),
+        ],
+        # 只有官网，缺页面值
+        [vehicle_vin_observation(page, "qr", "qr_page")],
+        # 官网与证件都不覆盖该字段的未知材料
+        [
+            vehicle_vin_observation(page, "page", "page"),
+            vehicle_vin_observation(page, "qr", "qr_page"),
+            vehicle_vin_observation(page, "other", "image", "business_license"),
+        ],
+    ]
+
+
+# 每个场景的期望状态与逐条证据的冲突标记。这些值取自专用函数被删除前的
+# 实际输出，因此这条用例是切换前后的行为等价快照。
+VIN_BEHAVIOUR = [
+    ("MATCH", [("page", False), ("qr", False), ("license", False), ("registration", False)]),
+    ("MATCH", [("page", False), ("qr", False)]),
+    ("CONFLICT", [("page", True), ("qr", False)]),
+    ("CONFLICT", [("page", False), ("qr", False), ("license", True)]),
+    ("CONFLICT", [("page", False), ("qr", False), ("registration", True)]),
+    ("REVIEW_REQUIRED", [("page", False)]),
+    ("CONFLICT", [("page", False), ("qr-1", True), ("qr-2", True)]),
+    ("REVIEW_REQUIRED", [("qr", False)]),
+    ("MATCH", [("page", False), ("qr", False)]),
+]
+
+
+def test_declared_vin_authority_behaviour_snapshot() -> None:
+    for index, (observations, expected) in enumerate(
+        zip(_vin_cases(), VIN_BEHAVIOUR, strict=True)
+    ):
+        comparison = vin_by_authority(list(observations))
+        status, flags = expected
+
+        assert comparison.status.value == status, f"case {index}: 状态不一致"
+        assert [
+            (item.source_id, item.conflicting) for item in comparison.evidence
+        ] == flags, f"case {index}: 证据冲突标记不一致"
+
+
+def test_authority_aggregator_requires_a_declared_chain() -> None:
+    with pytest.raises(ValueError, match="未声明权威链"):
+        aggregate_by_authority("old_vehicle.vin", [], ())
+
+
+# --- 重读状态：区分"从未重读"和"已重读仍不确定" --------------------------
+
+
+def test_uncertain_message_distinguishes_retried_evidence() -> None:
+    uncertain_item = FieldObservation(
+        field="old_vehicle.vin",
+        source_type="image",
+        source_id="img-1",
+        value="VIN-1",
+        uncertain=True,
+    )
+    page = observation("old_vehicle.vin", "VIN-1", "review_page", "page")
+
+    fresh = aggregate_field(
+        "old_vehicle.vin", [uncertain_item, page], uncertain_requires_review=True
+    )
+    retried = aggregate_field(
+        "old_vehicle.vin",
+        [uncertain_item.model_copy(update={"retried": True}), page],
+        uncertain_requires_review=True,
+    )
+
+    assert fresh.message == "图片识别结果不确定，请核对原图"
+    assert retried.message == "图片识别不确定，已重读仍无法确认，请核对原图"
+
+
+def test_batch_observations_marks_evidence_from_a_retried_image() -> None:
+    batch = AgentBatchResult(
+        observations=[
+            FieldObservation(
+                field="old_vehicle.vin",
+                source_type="image",
+                source_id="old_vehicle-01",
+                image_id="old_vehicle-01",
+                value="VIN-1",
+                uncertain=True,
+            )
+        ],
+        recognized_documents=[
+            RecognizedDocument(
+                target_id="old_vehicle-01",
+                document_type="vehicle_license",
+                business_scope="old_vehicle",
+            )
+        ],
+        retry_summary=RetrySummary(
+            attempts=[
+                RetryAttempt(
+                    target_id="old_vehicle-01",
+                    stage="qwen",
+                    attempt_number=2,
+                    reason_code="uncertain_field:vehicle.vin",
+                    strategy="focused_extraction",
+                    result="succeeded",
+                    duration_ms=12,
+                )
+            ]
+        ),
+    )
+
+    resolved = batch_observations(batch)[0]
+
+    assert resolved.uncertain is True
+    assert resolved.retried is True
+
+
+def test_batch_observations_does_not_mark_untouched_images_as_retried() -> None:
+    batch = AgentBatchResult(
+        observations=[
+            FieldObservation(
+                field="old_vehicle.vin",
+                source_type="image",
+                source_id="old_vehicle-01",
+                value="VIN-1",
+                uncertain=True,
+            )
+        ],
+        recognized_documents=[
+            RecognizedDocument(target_id="old_vehicle-01", document_type="vehicle_license")
+        ],
+    )
+
+    assert batch_observations(batch)[0].retried is False

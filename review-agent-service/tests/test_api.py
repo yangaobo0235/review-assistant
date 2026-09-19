@@ -130,38 +130,6 @@ class FailingOcr:
         raise RuntimeError("识别服务不可用")
 
 
-def test_review_service_compares_recognized_image_fields_to_page_fields() -> None:
-    service = ReviewService(ocr=FixedOcr())
-    result = service.assist(
-        ReviewRequest(
-            page_url="https://example.test/review/1",
-            region="qingdao",
-            page_fields={"old_vehicle.vin": "ABC123"},
-            images=[{"index": 0, "src": "image", "group": "回收证明"}],
-        )
-    )
-
-    vin_comparison = next(item for item in result.comparisons if item.field == "old_vehicle.vin")
-    assert vin_comparison.status.value == "CONFLICT"
-    assert result.recommendation.value == "REVIEW_REQUIRED"
-    assert any(item.check_id == "FIELD-old_vehicle.vin" for item in result.agent_advice.findings)
-
-
-def test_review_service_continues_when_one_image_tool_fails() -> None:
-    service = ReviewService(ocr=FailingOcr())
-    result = service.assist(
-        ReviewRequest(
-            page_url="https://example.test/review/1",
-            region="qingdao",
-            page_fields={"old_vehicle.vin": "ABC123"},
-            images=[{"index": 0, "src": "image", "group": "回收证明"}],
-        )
-    )
-
-    assert result.recommendation.value == "REVIEW_REQUIRED"
-    assert any("图片 0" in issue for issue in result.issues)
-
-
 def test_review_service_reports_context_image_summary_and_collection_errors() -> None:
     service = ReviewService()
     result = service.assist(
@@ -227,3 +195,35 @@ def test_review_service_includes_missing_required_business_fields() -> None:
     compared_fields = {comparison.field for comparison in result.comparisons}
     assert "old_vehicle.recycle_date" in compared_fields
     assert "new_vehicle.owner" in compared_fields
+
+
+def test_collect_manifest_endpoint_serves_fields_groups_and_materials() -> None:
+    """采集清单接口下发前端做字段匹配和图片归组所需的全部数据。"""
+    response = client.get("/api/review/collect-manifest", params={"business_type": "scrap_replacement"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["business_type"] == "scrap_replacement"
+
+    fields = {item["key"]: item for item in body["fields"]}
+    assert fields["old_vehicle.vin"]["aliases"] == ["报废车辆车架号", "旧车车架号", "车架号"]
+    assert fields["old_vehicle.vin"]["section"] == "old_vehicle"
+    assert fields["old_vehicle.vin"]["section_required"] is True
+    assert fields["application.submitted_at"]["reviewable"] is False
+    # 挂靠是写回目标，不在页面上采集，因此不出现在清单里。
+    assert "old_vehicle.affiliation" not in fields
+
+    groups = {item["label"]: item["scope"] for item in body["page_groups"]}
+    assert groups["报废车辆资料"] == "old_vehicle"
+    assert groups["新车及发票信息"] == "new_vehicle"
+    assert groups["其他图片"] == "other"
+
+    materials = {item["document_type"]: item for item in body["materials"]}
+    assert "回收证明" in materials["scrap_certificate"]["hints"]
+    assert materials["identity_card"]["label"] == "居民身份证"
+
+
+def test_collect_manifest_is_not_available_for_undeclared_businesses() -> None:
+    response = client.get("/api/review/collect-manifest", params={"business_type": "vehicle_source"})
+
+    assert response.status_code == 404

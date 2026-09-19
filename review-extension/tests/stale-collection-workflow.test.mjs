@@ -11,6 +11,15 @@ import ts from "typescript";
 
 const require = createRequire(import.meta.url);
 const cache = new Map();
+
+/**
+ * 清空已加载的模块图。`loadModule` 会把第一次传入的全局桩缓存下来，同一个
+ * 用例文件里的后续用例会复用它们，因此每个用例开头都要重新加载一遍。
+ */
+function freshModules() {
+  cache.clear();
+}
+
 function loadModule(file, extraGlobals = {}) {
   if (cache.has(file)) return cache.get(file).exports;
   const module = { exports: {} };
@@ -37,6 +46,7 @@ function loadModule(file, extraGlobals = {}) {
 }
 
 test("startReview surfaces the stale-collection reason instead of the business-detection fallback", async () => {
+  freshModules();
   const jobPosts = [];
   const thrownMessages = [];
   class RecordingError extends Error {
@@ -97,4 +107,85 @@ test("startReview surfaces the stale-collection reason instead of the business-d
   assert.deepEqual(jobPosts, []);
   // ……并且面板透出真实原因，而不是“无法识别当前审核业务，请人工选择”。
   assert.deepEqual(thrownMessages, ["页面采集已过期，请重新采集"]);
+});
+
+test("侧边栏自己应用采集清单，字段和材料的中文名来自后端", async () => {
+  // 侧边栏和 Content Script 是两个独立的运行时，Content Script 里应用的清单
+  // 传不到面板。面板必须自己应用同一份，否则中文名会静默退回内置表。
+  freshModules();
+  const manifest = {
+    business_type: "scrap_replacement",
+    scopes: ["old_vehicle"],
+    page_groups: [],
+    fields: [
+      {
+        key: "old_vehicle.vin",
+        label: "报废车辆车架号",
+        aliases: ["报废车辆车架号"],
+        section: "old_vehicle",
+        section_required: true,
+        reviewable: true,
+      },
+    ],
+    materials: [
+      { document_type: "invoice", label: "机动车销售发票", hints: ["发票"], slots: [] },
+    ],
+  };
+  const stalePage = {
+    pageUrl: "https://admin.forjtruck.com/scrap-replace-qingdao?showPageModel=1",
+    pageInstanceId: "page-instance",
+    pageFingerprint: '[["application.id","case-a"]]',
+    collectionId: "stale-collection",
+    pageTitle: "报废置换审核",
+    pageFields: {},
+    pageText: "",
+    images: [],
+    businessType: "scrap_replacement",
+    region: "qingdao",
+    profileVersion: "1.0",
+    staleCollection: true,
+    collectionIssues: ["页面采集已过期，请重新采集"],
+  };
+  const fetchStub = async (url) => ({
+    ok: true,
+    status: 200,
+    json: async () =>
+      String(url).includes("/api/review/collect-manifest") ? manifest : {},
+  });
+
+  const { useReviewWorkflow } = loadModule(
+    fileURLToPath(new URL("../src/hooks/useReviewWorkflow.ts", import.meta.url)),
+    {
+      chrome: {
+        tabs: {
+          query: async () => [{ id: 42 }],
+          sendMessage: async (tabId, message) =>
+            message.type === "COLLECT_PAGE_MANIFEST" ? stalePage : { ok: true },
+        },
+      },
+      fetch: fetchStub,
+      window: { setTimeout, clearTimeout },
+    },
+  );
+  const collectManifest = loadModule(
+    fileURLToPath(new URL("../src/browser/collect-manifest.ts", import.meta.url)),
+  );
+  const { fieldLabel } = loadModule(
+    fileURLToPath(new URL("../src/reviewPanelConfig.ts", import.meta.url)),
+  );
+
+  // 采集还没发生：面板只能退回内置表。
+  assert.equal(collectManifest.manifestFieldLabels(), null);
+
+  let captured = null;
+  function Harness() {
+    captured = useReviewWorkflow("AUTO");
+    return null;
+  }
+  renderToStaticMarkup(React.createElement(Harness));
+  await captured.startReview().catch(() => {});
+
+  assert.equal(collectManifest.manifestFieldLabels()["old_vehicle.vin"], "报废车辆车架号");
+  assert.equal(collectManifest.manifestMaterialLabels().invoice, "机动车销售发票");
+  assert.equal(fieldLabel("old_vehicle.vin"), "报废车辆车架号");
 });

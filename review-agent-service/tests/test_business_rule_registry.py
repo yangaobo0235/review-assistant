@@ -1,10 +1,10 @@
 import pytest
 
-from app.agent.models import AgentBatchResult, CheckResult
 from app.businesses.profiles import TRANSFER_DEFAULT
+from app.capabilities.business_rules import BusinessRuleRegistry, UnknownBusinessRule
+from app.capabilities.specs import ReviewExecutionContext, RuleExecutionResult
 from app.models.review import ReviewRequest
-from app.rules.business_rule_registry import BusinessRuleRegistry, UnknownBusinessRule
-from app.rules.capabilities import ReviewExecutionContext, RuleExecutionResult
+from app.workflow.models import AgentBatchResult, CheckResult
 
 
 def context():

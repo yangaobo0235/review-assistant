@@ -14,9 +14,11 @@ from typing import Annotated
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 
 from app.businesses.context_validation import BusinessContextMismatch
+from app.businesses.packs import build_collect_manifest, pack_for_business
 from app.businesses.registry import BusinessProfileNotFound
 from app.contracts.review_schema import review_contract_schema
 from app.models.review import (
+    BusinessType,
     ImageInput,
     ReviewJobCreated,
     ReviewJobSnapshot,
@@ -60,6 +62,19 @@ def review_schema() -> dict[str, object]:
     return review_contract_schema()
 
 
+@app.get("/api/review/collect-manifest")
+def collect_manifest(business_type: BusinessType) -> dict[str, object]:
+    """下发页面采集清单：字段别名、图片分组标题和材料分组关键词。
+
+    采集清单只随业务类型变化（同一业务的各地区共用），因此不需要地区参数。
+    前端据此完成字段匹配和图片归组；尚未声明清单的业务返回 404，前端退回内置表。
+    """
+    pack = pack_for_business(business_type)
+    if pack is None:
+        raise HTTPException(status_code=404, detail="该业务尚未声明采集清单")
+    return build_collect_manifest(pack)
+
+
 @app.post("/api/review/assist", response_model=ReviewResponse)
 def assist(request: ReviewRequest) -> ReviewResponse:
     """执行一次只读审核辅助，不会修改原审核系统。"""
@@ -95,7 +110,11 @@ def create_review_job(request: ReviewRequest) -> ReviewJobCreated:
         request.application_id or "unknown",
         len(request.images),
     )
-    created = review_jobs.create(request)
+    try:
+        created = review_jobs.create(request)
+    except ValueError as exc:
+        # 与 /jobs/stream 保持一致：请求本身不合法返回 422，不要冒成 500。
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     logger.info("Review job created: job_id=%s", created.job_id)
     return created
 

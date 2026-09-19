@@ -1,48 +1,36 @@
-import type { BusinessSelection, PageData, ReviewFieldSnapshot } from "../types/review";
-import type { PageAdapter, PageLocator } from "./pageAdapter";
+import type { BusinessSelection, ReviewFieldSnapshot } from "../types/review";
+import type { PageAdapter } from "./pageAdapter.ts";
+import { pagePath, pageSelection, pathMatches } from "./selection.ts";
 
-/** 报废置换适配器只描述页面边界；识别和 DOM 细节由 content script 注入。 */
+const ROUTES: readonly [string, "qingdao" | "changchun"][] = [
+  ["/scrap-replace-qingdao", "qingdao"],
+  ["/scrap-replace-changchun", "changchun"],
+];
+
+/**
+ * 报废置换审核页面的适配器（青岛与长春共用）。
+ *
+ * 采集由通用采集器完成（字段别名和页面分区来自后端采集清单）；
+ * 这里只负责识别页面、暴露可写控件，以及受控写回。
+ */
 export class ScrapReplacementPageAdapter implements PageAdapter {
   public readonly id = "scrap-replacement";
-  private readonly collector: () => Promise<PageData>;
-  private readonly fields: () => readonly ReviewFieldSnapshot[];
-  private readonly locator?: PageLocator;
 
-  public constructor(
-    collector: () => Promise<PageData>,
-    fields: () => readonly ReviewFieldSnapshot[],
-    locator?: PageLocator,
-  ) {
-    this.collector = collector;
+  private readonly fields: () => readonly ReviewFieldSnapshot[];
+
+  public constructor(fields: () => readonly ReviewFieldSnapshot[] = () => []) {
     this.fields = fields;
-    this.locator = locator;
   }
 
   public detect(url: string): BusinessSelection | null {
-    if (url.includes("scrap-replace-qingdao")) return this.selection("qingdao");
-    if (url.includes("scrap-replace-changchun")) return this.selection("changchun");
+    const path = pagePath(url);
+    for (const [route, region] of ROUTES) {
+      if (pathMatches(path, route)) return pageSelection("scrap_replacement", region);
+    }
     return null;
-  }
-
-  public collect(): Promise<PageData> {
-    return this.collector();
   }
 
   public listWritableFields(): readonly ReviewFieldSnapshot[] {
     return this.fields();
-  }
-
-  public locate(field: string): Promise<{ found: boolean; highlighted: boolean }> {
-    return this.locator?.locate(field) ?? Promise.resolve({ found: false, highlighted: false });
-  }
-
-  private selection(region: "qingdao" | "changchun"): BusinessSelection {
-    return {
-      businessType: "scrap_replacement",
-      region,
-      profileVersion: "1.0",
-      workflowStage: "scrap_replacement",
-      selectionMode: "AUTO",
-    };
   }
 }

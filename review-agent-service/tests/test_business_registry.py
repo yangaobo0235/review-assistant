@@ -14,12 +14,16 @@ def test_registry_resolves_scrap_profile_by_identity() -> None:
     assert profile.business_type is BusinessType.SCRAP_REPLACEMENT
     assert "old_vehicle.vin" in profile.required_fields
     assert profile.rules_configured is True
-    assert [item.check_id for item in profile.external_checks] == ["scrap_certificate_qr"]
-    assert profile.rule_groups == (
+    # 扩展包收口后，Profile 的能力用规范字段声明；external_checks / rule_groups
+    # 是迁移期的旧选择器，从这里构造出来的 Profile 不再使用它们。
+    assert {spec.capability_id for spec in profile.capabilities} == {
+        "material_completeness",
+        "scrap_certificate_qr",
         "qingdao_replacement_policy",
         "affiliation_subject",
-    )
-    assert profile.page_actions == ("fill_affiliation_fields",)
+        "verify_invoice",
+    }
+    assert profile.page_action_ids == ("fill_affiliation_fields",)
 
 
 def test_registry_resolves_changchun_profiles_without_fallback() -> None:
@@ -37,7 +41,7 @@ def test_registry_resolves_changchun_profiles_without_fallback() -> None:
     )
 
     assert replacement.region is Region.CHANGCHUN
-    assert replacement.rule_groups[0] == "changchun_replacement_policy"
+    assert "changchun_replacement_policy" in {spec.capability_id for spec in replacement.capabilities}
     assert consistency.region is Region.CHANGCHUN
     assert consistency.rules_configured is False
 
@@ -89,24 +93,3 @@ def test_registry_rejects_unknown_profile_version() -> None:
             Region.QINGDAO,
             "9.9",
         )
-
-
-def test_registry_enables_isolated_transfer_profile_without_qr() -> None:
-    profile = build_business_registry().resolve(
-        BusinessType.TRANSFER,
-        Region.DEFAULT,
-        "1.0",
-    )
-
-    assert profile.rules_configured is True
-    assert profile.required_fields == (
-        "transfer.plate_no",
-        "transfer.vin",
-        "transfer.buyer_name",
-        "transfer.seller_name",
-        "transfer.invoice_date",
-    )
-    assert profile.external_checks == ()
-    assert profile.rule_groups == ("transfer_registration",)
-    assert profile.page_actions == ()
-    assert [section.id for section in profile.sections] == ["transfer"]

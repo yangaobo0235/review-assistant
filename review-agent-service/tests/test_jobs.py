@@ -2,7 +2,6 @@ import threading
 
 import pytest
 
-from app.agent.models import AgentBatchResult
 from app.models.review import (
     ImageInput,
     JobStatus,
@@ -11,6 +10,7 @@ from app.models.review import (
     ReviewResponse,
 )
 from app.services.jobs import ReviewJobManager
+from app.workflow.models import AgentBatchResult
 
 
 def response(summary: str) -> ReviewResponse:

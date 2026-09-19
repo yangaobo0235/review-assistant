@@ -2,12 +2,12 @@ from dataclasses import replace
 
 import pytest
 
-from app.agent.models import AgentBatchResult
-from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
+from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
 from app.businesses.registry import BusinessRegistry
+from app.compare.check_results import qr_review_checks
 from app.models.review import FieldStatus, ImageInput, QrCheck, ReviewRequest
-from app.rules.check_results import qr_review_checks
 from app.services.review import ReviewService
+from app.workflow.models import AgentBatchResult
 
 
 @pytest.mark.asyncio
@@ -40,14 +40,3 @@ def test_qr_evidence_does_not_guess_an_image_when_index_mapping_is_missing_or_am
     images = [ImageInput(index=index, image_id=f"image-{order}", src="https://example.test/image") for order, index in enumerate(indexes)]
     check = qr_review_checks([QrCheck(image_index=4)], images)[0]
     assert check.evidence[0].image_id is None
-
-
-@pytest.mark.parametrize("profile", [SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT])
-def test_existing_material_businesses_keep_missing_images_and_page_fields_issues(profile):
-    service = ReviewService()
-    response = service._build_response(
-        ReviewRequest(page_url="https://example.test/review", business_type=profile.business_type, region=profile.region),
-        AgentBatchResult(), profile, include_tools=False,
-    )
-    assert "未采集到审核图片" in response.issues
-    assert "未采集到右侧申请字段" in response.issues

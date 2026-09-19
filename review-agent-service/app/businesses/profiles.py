@@ -9,22 +9,13 @@ from dataclasses import dataclass, replace
 
 from app.businesses.material_policies import (
     DEFAULT_RETRY_POLICY,
-    SCRAP_REPLACEMENT_MATERIAL_POLICY,
     MaterialPolicy,
     RetryPolicy,
 )
-from app.businesses.replacement_policies import (
-    CHANGCHUN_REPLACEMENT_POLICY,
-    QINGDAO_REPLACEMENT_POLICY,
-    ReplacementPolicy,
-)
+from app.businesses.packs import SCRAP_REPLACEMENT_PACK
+from app.businesses.replacement_policies import ReplacementPolicy
+from app.capabilities.specs import CapabilityBinding, CapabilitySpec, ExternalCheckSpec
 from app.models.review import BusinessType, Region
-from app.rules.capabilities import CapabilityBinding, CapabilitySpec, ExternalCheckSpec
-from app.rules.review_fields import (
-    NEW_VEHICLE_AND_INVOICE_FIELDS,
-    OLD_VEHICLE_FIELDS,
-    PRIMARY_REVIEW_FIELDS,
-)
 
 
 @dataclass(frozen=True)
@@ -155,51 +146,36 @@ class BusinessProfile:
 
 
 
-SCRAP_REPLACEMENT_QINGDAO = BusinessProfile(
-    business_type=BusinessType.SCRAP_REPLACEMENT,
-    region=Region.QINGDAO,
-    version="1.0",
-    required_fields=PRIMARY_REVIEW_FIELDS,
-    sections=(
-        SectionDefinition("old_vehicle", "报废车辆信息", OLD_VEHICLE_FIELDS),
-        SectionDefinition(
-            "new_vehicle",
-            "新车及发票信息",
-            NEW_VEHICLE_AND_INVOICE_FIELDS,
+def build_scrap_profile(region: Region) -> BusinessProfile:
+    """从业务声明生成某个地区的报废置换 Profile。
+
+    字段、材料、能力和页面动作在青岛与长春之间共用，只有地区政策不同。
+    """
+    declaration = SCRAP_REPLACEMENT_PACK.region(region)
+    if declaration is None:
+        raise ValueError(f"报废置换声明中缺少地区：{region.value}")
+    titles = {section.key: section.title for section in SCRAP_REPLACEMENT_PACK.sections}
+    return BusinessProfile(
+        business_type=BusinessType(SCRAP_REPLACEMENT_PACK.business_type),
+        region=declaration.region,
+        version=declaration.version,
+        required_fields=SCRAP_REPLACEMENT_PACK.required_keys(),
+        sections=tuple(
+            SectionDefinition(key, titles.get(key, key), fields)
+            for key, fields in SCRAP_REPLACEMENT_PACK.section_field_keys().items()
         ),
-    ),
-    rules_configured=True,
-    material_policy=SCRAP_REPLACEMENT_MATERIAL_POLICY,
-    page_action_ids=("fill_affiliation_fields",),
-    replacement_policy=QINGDAO_REPLACEMENT_POLICY,
-    binding_declarations=(
-        CapabilityBinding("material_completeness"),
-        CapabilityBinding("scrap_certificate_qr", required=True),
-        CapabilityBinding("qingdao_replacement_policy"),
-        CapabilityBinding("affiliation_subject"),
-    ),
-    page_interaction=True,
-    capability_specs=(
-        CapabilitySpec(
-            "material_completeness", kind="MATERIAL", stage="INPUT_COVERAGE",
-            output_facts=("material.coverage",), failure_policy="MANUAL_REVIEW",
-        ),
-        CapabilitySpec(
-            "scrap_certificate_qr", kind="EXTERNAL", stage="EVIDENCE",
-            required=True, dependencies=("old_vehicle",), timeout_seconds=60,
-            output_facts=("qr.valid", "scrap_certificate.verified"),
-            failure_policy="MANUAL_REVIEW",
-        ),
-        CapabilitySpec(
-            "qingdao_replacement_policy", kind="RULE", stage="POST_COMPARE",
-            output_facts=("replacement.eligible",), failure_policy="MANUAL_REVIEW",
-        ),
-        CapabilitySpec(
-            "affiliation_subject", kind="RULE", stage="FINAL_REVIEW",
-            output_facts=("subject.relation",), failure_policy="MANUAL_REVIEW",
-        ),
-    ),
-)
+        rules_configured=True,
+        material_policy=SCRAP_REPLACEMENT_PACK.material_policy,
+        retry_policy=SCRAP_REPLACEMENT_PACK.retry_policy,
+        page_action_ids=SCRAP_REPLACEMENT_PACK.page_action_ids,
+        replacement_policy=declaration.replacement_policy,
+        capability_specs=SCRAP_REPLACEMENT_PACK.capabilities_for(declaration),
+        binding_declarations=SCRAP_REPLACEMENT_PACK.bindings_for(declaration),
+        page_interaction=SCRAP_REPLACEMENT_PACK.page_interaction,
+    )
+
+
+SCRAP_REPLACEMENT_QINGDAO = build_scrap_profile(Region.QINGDAO)
 
 VEHICLE_SOURCE_DEFAULT = BusinessProfile(
     business_type=BusinessType.VEHICLE_SOURCE,
@@ -227,49 +203,8 @@ CONSISTENCY_QINGDAO = BusinessProfile(
     page_actions=(),
 )
 
-SCRAP_REPLACEMENT_CHANGCHUN = BusinessProfile(
-    business_type=BusinessType.SCRAP_REPLACEMENT,
-    region=Region.CHANGCHUN,
-    version="1.0",
-    required_fields=PRIMARY_REVIEW_FIELDS,
-    sections=(
-        SectionDefinition("old_vehicle", "报废车辆信息", OLD_VEHICLE_FIELDS),
-        SectionDefinition(
-            "new_vehicle", "新车及发票信息", NEW_VEHICLE_AND_INVOICE_FIELDS
-        ),
-    ),
-    rules_configured=True,
-    material_policy=SCRAP_REPLACEMENT_MATERIAL_POLICY,
-    page_action_ids=("fill_affiliation_fields",),
-    replacement_policy=CHANGCHUN_REPLACEMENT_POLICY,
-    binding_declarations=(
-        CapabilityBinding("material_completeness"),
-        CapabilityBinding("scrap_certificate_qr", required=True),
-        CapabilityBinding("changchun_replacement_policy"),
-        CapabilityBinding("affiliation_subject"),
-    ),
-    page_interaction=True,
-    capability_specs=(
-        CapabilitySpec(
-            "material_completeness", kind="MATERIAL", stage="INPUT_COVERAGE",
-            output_facts=("material.coverage",), failure_policy="MANUAL_REVIEW",
-        ),
-        CapabilitySpec(
-            "scrap_certificate_qr", kind="EXTERNAL", stage="EVIDENCE",
-            required=True, dependencies=("old_vehicle",), timeout_seconds=60,
-            output_facts=("qr.valid", "scrap_certificate.verified"),
-            failure_policy="MANUAL_REVIEW",
-        ),
-        CapabilitySpec(
-            "changchun_replacement_policy", kind="RULE", stage="POST_COMPARE",
-            output_facts=("replacement.eligible",), failure_policy="MANUAL_REVIEW",
-        ),
-        CapabilitySpec(
-            "affiliation_subject", kind="RULE", stage="FINAL_REVIEW",
-            output_facts=("subject.relation",), failure_policy="MANUAL_REVIEW",
-        ),
-    ),
-)
+SCRAP_REPLACEMENT_CHANGCHUN = build_scrap_profile(Region.CHANGCHUN)
+
 
 # 仅用于旧数据/测试迁移，永不加入 BUSINESS_PROFILES。
 TRANSFER_DEFAULT = BusinessProfile(

@@ -5,7 +5,6 @@ import {
   agentBaseUrl,
   completionNotice,
   completeStreamReviewJob,
-  createReviewJob,
   createStreamReviewJob,
   fetchReviewJob,
   localAgentBaseUrl,
@@ -80,7 +79,7 @@ test("uploads one stream image as multipart binary and completes the upload", as
 test("includes the HTTP status when job creation fails", async () => {
   const fetcher = async () => new Response(null, { status: 503 });
 
-  await assert.rejects(() => createReviewJob({}, fetcher), /503/);
+  await assert.rejects(() => createStreamReviewJob({ images: [] }, fetcher), /503/);
 });
 
 test("reports a missing job separately from other polling failures", async () => {

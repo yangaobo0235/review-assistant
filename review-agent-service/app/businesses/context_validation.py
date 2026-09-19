@@ -3,20 +3,23 @@
 from types import MappingProxyType
 from urllib.parse import unquote, urlsplit
 
+from app.businesses.packs import BUSINESS_PACKS
 from app.businesses.registry import BusinessProfileNotFound
 from app.models.review import BusinessType, Region, ReviewRequest
 
+# 已声明扩展包的业务，其页面地址来自声明；尚未声明的业务保留显式路由。
 ADMIN_REVIEW_ROUTES = MappingProxyType(
     {
-        "/scrap-replace-qingdao": (BusinessType.SCRAP_REPLACEMENT, Region.QINGDAO),
-        "/scrap-replace-changchun": (BusinessType.SCRAP_REPLACEMENT, Region.CHANGCHUN),
+        **{
+            path: (BusinessType(pack.business_type), declaration.region)
+            for pack in BUSINESS_PACKS.values()
+            for declaration in pack.regions
+            for path in declaration.admin_paths
+        },
         "/consistency-qingdao": (BusinessType.CONSISTENCY, Region.QINGDAO),
         "/consistency-changchun": (BusinessType.CONSISTENCY, Region.CHANGCHUN),
     }
 )
-
-ADMIN_ROUTE_COMPATIBLE_CONTEXTS = MappingProxyType({})
-
 
 class BusinessContextMismatch(BusinessProfileNotFound):
     """请求业务/地区与已知页面路由矛盾，禁止执行审核。"""
@@ -29,12 +32,6 @@ def validate_request_route(request: ReviewRequest) -> None:
     path = unquote(url.path)
     for route, expected in ADMIN_REVIEW_ROUTES.items():
         if path == route or path.startswith(f"{route}/"):
-            if (
-                request.business_type,
-                request.region,
-                request.workflow_stage,
-            ) in ADMIN_ROUTE_COMPATIBLE_CONTEXTS.get(route, frozenset()):
-                return
             if (request.business_type, request.region) != expected:
                 raise BusinessContextMismatch(
                     f"页面路由要求 {expected[0].value}/{expected[1].value}，与请求业务或地区不一致"

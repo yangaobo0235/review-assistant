@@ -1,6 +1,6 @@
 # GitHub 协作与提交规范
 
-本文使用的 `PR`（Pull Request，拉取请求/合并请求）、`Issue`（问题单）、`CI`（持续集成）和 `Conventional Commits`（约定式提交）含义见[英文术语对照表](docs/glossary.md)。
+本文使用的 `PR`（Pull Request，拉取请求/合并请求）、`Issue`（问题单）、`CI`（持续集成）和 `Conventional Commits`（约定式提交）含义见[英文术语对照表](docs/参考/术语表.md)。
 
 ## 分支
 

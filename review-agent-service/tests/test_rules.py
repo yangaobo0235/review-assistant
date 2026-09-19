@@ -1,6 +1,4 @@
-from app.models.review import EvidenceFact, FieldStatus
-from app.rules.compare import compare_values
-from app.rules.normalize import normalize_value
+from app.fields.normalize import normalize_value
 
 
 def test_normalize_identifiers_removes_spaces_and_uppercases() -> None:
@@ -41,36 +39,43 @@ def test_normalize_business_dates_accepts_page_and_chinese_formats() -> None:
     assert normalize_value("invoice.invoice_date", "2026年07月29日") == "2026-07-29"
 
 
-def test_compare_values_returns_match_for_equivalent_values() -> None:
-    result = compare_values("old_vehicle.vin", "ab c", "ABC", [EvidenceFact(source="test")])
-    assert result.status is FieldStatus.MATCH
-
-
 def test_compare_equivalent_amount_displays_image_value_like_page() -> None:
-    result = compare_values("invoice.amount", "152000.00", "￥ 152,000", [])
+    """金额等价值显示页面写法。
 
-    assert result.status is FieldStatus.MATCH
-    assert result.left_value == "￥ 152,000"
-    assert result.right_value == "￥ 152,000"
-
-
-def test_compare_values_returns_conflict_for_different_values() -> None:
-    result = compare_values("old_vehicle.owner", "张三", "李四", [])
-    assert result.status is FieldStatus.CONFLICT
+    比对行为断言在 ``tests/test_aggregate.py``；本文件只保留归一化契约。
+    """
+    assert normalize_value("invoice.amount", "152000.00") == normalize_value(
+        "invoice.amount", "￥ 152,000"
+    )
 
 
-def test_compare_values_requires_review_when_value_is_missing() -> None:
-    result = compare_values("old_vehicle.owner", None, "李四", [])
-    assert result.status is FieldStatus.REVIEW_REQUIRED
-    assert result.message == "图片识别值缺失，页面字段已采集"
+def test_declared_normalizer_governs_over_the_field_name(monkeypatch) -> None:
+    """字段声明里的归一化器优先；按字段名分派只是没声明时的兼容兜底。
+
+    这条断言是"声明式配置真的生效"的证据：`old_vehicle.owner` 这个名字
+    走不到金额归一化，只有声明 `normalizer="amount"` 才会。
+    """
+    from app.businesses import field_policies
+
+    class DeclaredPolicy:
+        normalizer = "amount"
+
+    monkeypatch.setattr(
+        field_policies, "field_policy", lambda _field: DeclaredPolicy()
+    )
+
+    assert normalize_value("old_vehicle.owner", "￥1,000") == "1000"
 
 
-def test_compare_values_explains_when_page_value_is_missing() -> None:
-    result = compare_values("old_vehicle.owner", "李四", None, [])
-    assert result.status is FieldStatus.REVIEW_REQUIRED
-    assert result.message == "页面字段缺失，图片识别值已采集"
+def test_unknown_declared_normalizer_falls_back_to_the_field_name(monkeypatch) -> None:
+    from app.businesses import field_policies
 
+    class UnknownPolicy:
+        normalizer = "no_such_normalizer"
 
-def test_compare_values_explains_when_both_values_are_missing() -> None:
-    result = compare_values("old_vehicle.owner", None, None, [])
-    assert result.message == "页面字段和图片识别值均缺失"
+    monkeypatch.setattr(
+        field_policies, "field_policy", lambda _field: UnknownPolicy()
+    )
+
+    # 回落按字段名分派：.vin 仍然走 VIN 归一化。
+    assert normalize_value("old_vehicle.vin", "ab c") == "ABC"

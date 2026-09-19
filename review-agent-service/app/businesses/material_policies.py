@@ -45,26 +45,4 @@ class MaterialPolicy:
 
 
 DEFAULT_RETRY_POLICY = RetryPolicy()
-SCRAP_REPLACEMENT_MATERIAL_POLICY = MaterialPolicy(
-    mode="enforce",
-    materials=(
-        MaterialRequirement("vehicle_license", "old_vehicle", display_name="旧车行驶证"),
-        MaterialRequirement(
-            "registration_certificate",
-            "old_vehicle",
-            required_pages=(1, 2),
-            display_name="旧车登记证第 1、2 页",
-        ),
-        MaterialRequirement("scrap_certificate", "old_vehicle", display_name="报废证明"),
-        MaterialRequirement("vehicle_license", "new_vehicle", display_name="新车行驶证"),
-        MaterialRequirement(
-            "registration_certificate",
-            "new_vehicle",
-            required_pages=(1, 2),
-            display_name="新车登记证第 1、2 页",
-        ),
-        MaterialRequirement("invoice", "new_vehicle", display_name="新车发票"),
-    ),
-)
-
 TRANSFER_MATERIAL_POLICY = MaterialPolicy(mode="disabled")

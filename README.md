@@ -6,17 +6,28 @@ Review Assistant 是一个面向车辆审核页面的浏览器扩展与审核服
 
 ## 文档入口
 
-- [文档总索引](docs/README.md)
-- [系统架构与模块边界](docs/architecture.md)
-- [审核流水线、并发与任务生命周期](docs/review-pipeline.md)
-- [审核工作台前端展示规范](docs/frontend-presentation.md)
-- [LangGraph 主图与节点说明](docs/langgraph.md)
-- [注册表、能力和子图](docs/registries-and-subgraphs.md)
-- [当前业务规则](docs/business-rules.md)
-- [新增审核页面扩展手册](docs/extension-guide.md)
-- [AI 与开发者改动准则](docs/ai-change-policy.md)
-- [测试、提交与发布](docs/testing-and-release.md)
-- [腾讯云部署](docs/server-deployment.md)
+- [文档总索引](docs/索引.md)
+
+**想理解系统**
+
+- [一次审核的完整链路](docs/概念/一次审核的链路.md) ★ 从这里开始
+- [系统架构与模块边界](docs/概念/系统定位.md)
+- [审核流水线、并发与任务生命周期](docs/概念/审核流水线.md)
+- [规则主图、能力与子图](docs/概念/规则主图与能力.md)
+- [字段与判定规则](docs/概念/字段与判定规则.md)
+
+**想动手**
+
+- [新增审核业务与页面](docs/指南/新增业务与页面.md) ★ 加业务照着做
+- [改动与发布准则](docs/指南/改动与发布准则.md)
+- [腾讯云部署](docs/指南/部署.md)
+
+**想查事实**
+
+- [术语表](docs/参考/术语表.md)
+- [审核工作台展示规范](docs/参考/工作台展示.md)
+- [日志与排查](docs/参考/日志与排查.md)
+- [各地区业务规则](docs/业务/)
 - [GitHub 协作规范](CONTRIBUTING.md)
 - [安全边界](SECURITY.md)
 
@@ -48,7 +59,9 @@ npm --prefix review-extension run build
 
 ## 开发入口
 
-后端入口通常从 `app/main.py` 和 API 路由进入，审核流程从 `app/agent/workflow.py` 进入；业务 Profile 位于 `app/businesses`，能力和规则位于 `app/capabilities` 与 `app/rules`。前端入口从 `src/main.tsx` 开始，页面采集查看 `src/browser` 和 `src/adapters`，工作台查看 `src/components`，页面写回查看 `src/session`。遇到不确定的代码归属，先阅读 [系统架构与边界](docs/architecture.md) 和模块 README。
+后端入口通常从 `app/main.py` 和 API 路由进入，审核流程从 `app/workflow/graph.py` 进入；业务 Profile 位于 `app/businesses`，能力和规则位于 `app/capabilities`、`app/compare` 与 `app/presentation`。前端入口从 `src/main.tsx` 开始，页面采集查看 `src/browser`，工作台查看 `src/components`，页面写回查看 `src/session`。遇到不确定的代码归属，先阅读 [系统架构与边界](docs/概念/系统定位.md) 和模块 README。
+
+`src/adapters`（页面适配器）目前尚未接入主流程：页面识别、采集和写回全部在 `src/browser` 内实现，`src/adapters` 是为多页面拆分预留的边界。新增页面时请以 `src/browser` 为准。
 
 ## 交付标准
 

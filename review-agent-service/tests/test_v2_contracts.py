@@ -1,18 +1,21 @@
 from dataclasses import replace
 
-from app.agent.planner import plan_capabilities
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
 from app.contracts.review_schema import review_contract_schema
 from app.models.review import ReviewRequest
 from app.services.review import ReviewService
+from app.workflow.planner import plan_capabilities
 
 
 def test_profile_bindings_are_planned_in_stage_order() -> None:
     plan = plan_capabilities(SCRAP_REPLACEMENT_QINGDAO, {"old_vehicle"})
+    # 同阶段按能力 ID 排序：qingdao_replacement_policy 与 verify_invoice
+    # 同为 POST_COMPARE。
     assert [item.capability_id for item in plan] == [
         "material_completeness",
         "scrap_certificate_qr",
         "qingdao_replacement_policy",
+        "verify_invoice",
         "affiliation_subject",
     ]
 

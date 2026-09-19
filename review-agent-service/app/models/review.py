@@ -17,16 +17,16 @@ from pydantic import (
     model_validator,
 )
 
-from app.agent.models import (
-    AgentAdvice,
-    CheckResult,
-    MaterialCompletenessReport,
-    RetrySummary,
-)
 from app.models.checks import CheckResultValue
 from app.models.evidence import (  # noqa: F401 - public export
     EvidenceFact,
     FieldObservation,
+)
+from app.workflow.models import (
+    AgentAdvice,
+    CheckResult,
+    MaterialCompletenessReport,
+    RetrySummary,
 )
 
 
@@ -38,7 +38,6 @@ class FieldStatus(StrEnum):
 
 class Recommendation(StrEnum):
     PASS = "PASS"
-    REJECT_SUGGESTED = "REJECT_SUGGESTED"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
 
 
@@ -185,6 +184,14 @@ class PageFillAction(BaseModel):
     owner_type: str
 
 
+class PageActionIntent(BaseModel):
+    """Backend-proposed reversible page action; execution stays in the adapter."""
+
+    action_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    requires_authorization: bool = True
+
+
 class CapabilityResult(BaseModel):
     capability_id: str
     status: Literal["READY", "SKIPPED", "BLOCKED", "NOT_CONFIGURED", "SUCCEEDED", "FAILED"]
@@ -192,6 +199,7 @@ class CapabilityResult(BaseModel):
     evidence: list[EvidenceFact] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     page_actions: list[PageFillAction] = Field(default_factory=list)
+    page_action_intents: list[PageActionIntent] = Field(default_factory=list)
     qr_checks: list[QrCheck] = Field(default_factory=list)
     display_items: list[str] = Field(default_factory=list)
     error_code: str | None = None
@@ -391,14 +399,6 @@ class ResultSection(BaseModel):
     id: str
     title: str
     fields: list[str] = Field(default_factory=list)
-
-
-class PageActionIntent(BaseModel):
-    """Backend-proposed reversible page action; execution stays in the adapter."""
-
-    action_id: str
-    payload: dict[str, Any] = Field(default_factory=dict)
-    requires_authorization: bool = True
 
 
 class ReviewResponse(BaseModel):

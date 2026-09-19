@@ -1,21 +1,19 @@
-"""Stable public capability APIs.
+"""能力契约、注册表、子图和页面动作的公共入口。"""
 
-The implementation currently lives in ``app.rules`` while the architecture is
-being migrated. This package is the future extension boundary for capability
-specifications, handlers and subgraphs; callers should import from here.
-"""
-
-from app.rules.capabilities import (
+from app.capabilities.page_actions import (
+    PageActionHandler,
+    PageActionRegistry,
+    PageActionSpec,
+)
+from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.specs import (
     CapabilityBinding,
     CapabilityHandler,
     CapabilitySpec,
     ExternalCheckSpec,
     ReviewExecutionContext,
 )
-from app.rules.capability_registry import CapabilityRegistry
-
-from .models import CapabilityPlanEntry, CapabilityResult
-from .page_actions import PageActionHandler, PageActionRegistry, PageActionSpec
+from app.models.review import CapabilityPlanEntry, CapabilityResult
 
 __all__ = [
     "CapabilityBinding",
