@@ -790,6 +790,44 @@ test("写回策略由后端下发的白名单决定：字段与控件类型两�
   assert.equal(writer.controlKind(valueInput("", "INPUT", "date")), "date");
 });
 
+test("组合字段回填用同一份业务白名单，不退回内置的报废置换表", async () => {
+  // 组合字段以前只认内置的 `ALLOWED_VALUE_FIELDS`（报废置换那张表），别的业务
+  // 一来就被判成"不在报废置换允许回填范围内"——过户的发票代码/号码正是如此。
+  // 报错信息里还写着报废置换，排查的人会以为是业务选错了。
+  const writer = loadWriter({ setTimeout });
+  const root = { defaultView: { Event: class Event {} } };
+  const policy = {
+    fields: new Set(["transfer.invoice_code", "transfer.invoice_no"]),
+    controlKinds: new Set(["text", "textarea", "number"]),
+  };
+  const entries = [
+    { field: "transfer.invoice_code", element: valueInput("旧代码"), expectedValue: null },
+    { field: "transfer.invoice_no", element: valueInput("旧号码"), expectedValue: null },
+  ];
+  const action = {
+    fields: ["transfer.invoice_code", "transfer.invoice_no"],
+    value: "26372000003211765066",
+    expectedValues: { "transfer.invoice_code": null, "transfer.invoice_no": null },
+  };
+
+  // 没有业务清单时退回内置表，过户的字段本来就不在里面——这正是修复前的表现。
+  const denied = await writer.executeValueGroup(root, entries, action, undefined);
+  assert.equal(denied.ok, false);
+  assert.match(denied.message, /不在本业务允许回填范围内/);
+
+  const allowed = await writer.executeValueGroup(root, entries, action, undefined, policy);
+  assert.equal(allowed.ok, true);
+
+  // 控件类型闸同样适用于组合字段。
+  const selectEntries = [
+    { field: "transfer.invoice_code", element: valueInput("", "SELECT"), expectedValue: null },
+    { field: "transfer.invoice_no", element: valueInput("旧号码"), expectedValue: null },
+  ];
+  const rejected = await writer.executeValueGroup(root, selectEntries, action, undefined, policy);
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /控件类型暂不支持/);
+});
+
 test("single-field writer restores the original value after failed readback", async () => {
   const input = valueInput("VIN-OLD");
   let events = 0;

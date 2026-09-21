@@ -121,6 +121,14 @@ class MaterialDeclaration:
     # 上传槽位：(业务分区, 组内序号)。页面上同一分区的材料按固定顺序排列，
     # 类型识别不确定时用槽位兜底；前后端共用这一份，不要各写一遍。
     slots: tuple[tuple[str, int], ...] = ()
+    # 票面只有一个号码的材料（数电发票）：`(号码字段, 派生字段)`。
+    #
+    # 数电机动车销售发票和二手车销售统一发票票面都只有一个「数电号码」，
+    # 没有单独的「发票代码」；但审核页面上有两个控件。这里声明"代码由号码
+    # 派生"，模型只提取一次号码，另一个字段由确定性兼容层补齐——让模型分别
+    # 生成两个值，它会给出两个互相冲突的答案，而且冲突是它自己造出来的。
+    # None 表示该材料没有这种关系。
+    derived_field: tuple[str, str] | None = None
 
     def fields_for_scope(self, scope: str) -> tuple[str, ...]:
         for key, fields in self.scoped_fields:
@@ -165,6 +173,27 @@ class SectionDeclaration:
 
 
 @dataclass(frozen=True)
+class CompositeFieldDeclaration:
+    """页面上的组合字段：两个控件先互相校验，再一起与材料比较。
+
+    例：发票代码与发票号码、新车车架号与 OCR 新车车架号。这两个控件描述的是
+    同一件事，页面自己填岔了就没有可比对的对象，所以必须先查页面内部一致性。
+
+    **字段键是业务知识**，声明在扩展包里。两个业务各有一对发票代码/号码，
+    键并不相同，写死在引擎里的表就得跟着业务长。
+    """
+
+    check_id: str
+    label: str
+    primary_field: str
+    secondary_field: str
+    # 与材料比较时使用哪一个字段的策略（归一化方式和证据来源都取它的）。
+    material_field: str
+    primary_label: str
+    secondary_label: str
+
+
+@dataclass(frozen=True)
 class PageGroupDeclaration:
     """页面上的图片分组标题 → 业务分区。
 
@@ -190,6 +219,15 @@ class RegionDeclaration:
     replacement_policy: ReplacementPolicy | None = None
     # 该地区审核页面的 URL 路径。
     admin_paths: tuple[str, ...] = ()
+    # 页面特征文案：该审核页上**全部**出现的区块标题或字段标签，用于地址
+    # 认不出来时（改版、或一个地址挂多个业务）判定这是哪个页面。
+    #
+    # 只能取详情区的文字。侧边栏菜单、页签标题、底部版权在同一个后台的每张
+    # 页面上都有；`document.body.innerText` 把列表页和侧边栏一起收进来，用
+    # 这些当特征必然误判。要求全部命中而不是命中任一：只命中的一个词会因为
+    # 某次改版从页面上消失，届时不是识别失败，而是**静默认成另一个业务**，
+    # 然后拿错的规则去审单子。
+    page_anchors: tuple[str, ...] = ()
 
     def policy_capability_id(self) -> str | None:
         return f"{self.region.value}_replacement_policy" if self.replacement_policy else None
@@ -232,6 +270,12 @@ class BusinessExtensionPack:
     # 核验条目，审核员在字段视图里就能看到结论，不必到页面外核验里找。
     # 一个字段可以绑定多条检查，投影时按最坏状态合并。
     field_check_bindings: tuple[tuple[str, str], ...] = ()
+    # 页面上的组合字段（两个控件描述同一件事，先互校再比材料）。
+    page_field_composites: tuple[CompositeFieldDeclaration, ...] = ()
+    # 「一键验真」的触发字段：该字段的页面值与材料一致时，才值得去点页面上
+    # 的验真按钮。None 表示本业务不做验真（那就不该绑定 `verify_invoice`）。
+    # 触发字段由业务声明——各业务的发票号码字段键并不相同。
+    invoice_verification_field: str | None = None
     # 本业务的审核字段就是声明的字段：页面上其他控件不进审核目录。
     # False（默认）表示未配置核验来源的页面控件仍保留一条“请人工核对”条目，
     # 避免页面控件被静默忽略。
@@ -239,7 +283,6 @@ class BusinessExtensionPack:
     # 该业务的材料要求和受控执行预算。
     material_policy: MaterialPolicy | None = None
     retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY
-
     def region(self, region: Region) -> RegionDeclaration | None:
         return next((item for item in self.regions if item.region == region), None)
 

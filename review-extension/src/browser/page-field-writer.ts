@@ -672,15 +672,23 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     entries: Array<{ field: string; element: DomElement; expectedValue?: string | null }>,
     action: PageWriteGroupAction,
     guard: Guard,
+    policy?: WritePolicy,
   ) {
     if (!action.fields.length || action.fields.length !== entries.length || !String(action.value || "").trim()) {
       return { ok: false, message: "组合字段回填参数不完整", actions: [] };
     }
     const prepared: Array<GroupPrepared | GroupPreparationFailure> = entries.map((entry) => {
-      if (!ALLOWED_VALUE_FIELDS.has(entry.field)) return { error: `${entry.field}不在报废置换允许回填范围内` };
+      // 组合字段和单字段走同一份白名单。这里以前只认内置的报废置换表，
+      // 别的业务（过户的发票代码/号码）一来就被判成"不在允许范围内"——
+      // 而且报错信息里写着报废置换，排查的人会以为是业务选错了。
+      if (!fieldAllowed(entry.field, policy)) return { error: `${entry.field}不在本业务允许回填范围内` };
       const control = writableValueControl(entry.element);
       const custom = control?.getAttribute?.("role") === "combobox";
       if (!control || !writable(control, custom)) return { error: `${entry.field}目标控件不可写` };
+      const kinds = policy?.controlKinds;
+      if (kinds && kinds.size && !kinds.has(controlKind(control))) {
+        return { error: `${entry.field}的控件类型暂不支持自动回填，请手工填写` };
+      }
       const current = readValueControl(control);
       const expected = entry.expectedValue ?? action.expectedValues[entry.field];
       if (expected != null && normalizeFieldValue(entry.field, current) !== normalizeFieldValue(entry.field, expected)) {

@@ -1,5 +1,7 @@
 import { applyCollectManifest, manifestIdentityAnchors, manifestWritableControlKinds, manifestWritableFields } from "./collect-manifest.ts";
 import type { CollectManifest } from "./collect-manifest.ts";
+import { appliedPageCatalog, applyPageCatalog, explainPageIdentity } from "./page-catalog.ts";
+import type { PageCatalog } from "./page-catalog.ts";
 import { ReviewBusinessDetector } from "./business-detector.ts";
 import { ReviewBusinessScope } from "./business-scope.ts";
 import { ReviewImageCandidates } from "./image-candidates.ts";
@@ -331,8 +333,26 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
       expectedValue: action.expectedValues?.[field] ?? entry?.collectedValue,
       entry,
     }));
-    if (entries.some((item) => !item.element || item.entry?.collectionId !== activeCollectionId || !writableFields().has(item.field))) {
-      sendResponse({ ok: false, message: "未找到组合字段的当前页面控件或字段不在允许范围内", actions: [] });
+    // 组合回填要同时满足「两个控件都找得到、都属于本次采集、都在业务白名单里」，
+    // 任一不满足以前都只回一句笼统的话，四种原因在界面上长得一模一样。把原因
+    // 逐条写进**面板提示行**——审核员看的就是那里，不该为了排查再去开 Console。
+    const problems = entries
+      .map((item) => ({
+        field: item.field,
+        reasons: [
+          !item.element && "页面上没找到这个控件",
+          item.entry?.collectionId !== activeCollectionId && "不属于本次采集",
+          !writableFields().has(item.field) && "不在允许回填的字段清单里",
+        ].filter((reason): reason is string => Boolean(reason)),
+      }))
+      .filter((item) => item.reasons.length);
+    console.info("[ReviewAgent][write] group", { fields, problems });
+    if (problems.length) {
+      sendResponse({
+        ok: false,
+        message: `组合字段无法回填：${problems.map((item) => `${item.field}（${item.reasons.join("、")}）`).join("；")}。请重新采集后重试`,
+        actions: [],
+      });
       return true;
     }
     if (entries.some((item) => item.entry.controlSnapshot && ReviewPageFieldWriter.captureValue(item.element)?.control !== item.entry.controlSnapshot.control)) {
@@ -344,6 +364,8 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
       entries.map((item) => ({ field: item.field, element: item.element, expectedValue: item.expectedValue })),
       action,
       () => sameReviewIdentityExceptFields(message, fields),
+      // 与单字段回填同一份白名单，不再退回内置的报废置换表。
+      { fields: writableFields(), controlKinds: writableControlKinds() },
     ).then((result) => {
       if (result.ok) {
         for (const item of entries) {
@@ -358,8 +380,12 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
           }
         }
       }
+      console.info("[ReviewAgent][write] group result", { ok: result.ok, message: result.message, code: result.code, actions: result.actions });
       sendResponse(result);
-    }).catch((error) => sendResponse({ ok: false, message: error instanceof Error ? error.message : "组合字段回填失败", actions: [] }));
+    }).catch((error) => {
+      console.info("[ReviewAgent][write] group threw", error);
+      sendResponse({ ok: false, message: error instanceof Error ? error.message : "组合字段回填失败", actions: [] });
+    });
     return true;
   }
   if (message.type === MESSAGE_TYPES.applyPageFillIntent) {
@@ -393,12 +419,31 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
   log("start", { url: window.location.href, title: document.title });
 
   const allText = document.body.innerText || "";
+  // 页面识别清单要先应用：识别发生在按业务类型取采集清单之前，识别不出来
+  // 就不知道该取哪份清单。清单不可用时识别退回内置表，对共享地址只报
+  // 「认不出来」，不猜。
+  applyPageCatalog(message.pageCatalog as PageCatalog | null | undefined);
   const businessResolution = ReviewBusinessDetector.resolve(
     window.location.href,
     allText,
     message.businessSelection as BusinessSelection | null | undefined,
   );
   const business = businessResolution.business;
+  // 识别错和识别不出来都不报错，只会静静地把审核交给另一个业务的规则。
+  // 这行日志是排查的唯一入口：列出地址命中的候选、特征命中的候选，以及每条
+  // 候选各缺哪个词。没有这行就说明页面里的内容脚本还是旧的（刷新页面即可）。
+  const diagnostics = explainPageIdentity(appliedPageCatalog(), window.location.href, allText);
+  log("business", {
+    business: business?.businessType ?? null,
+    region: business?.region ?? null,
+    mode: business?.selectionMode ?? null,
+    error: businessResolution.error,
+    catalogApplied: Boolean(appliedPageCatalog()?.identities.length),
+    path: diagnostics.path,
+    candidates: diagnostics.byPath,
+    matchedAnchors: diagnostics.matched,
+    missingAnchors: diagnostics.missingAnchors,
+  });
   // 采集清单按业务类型选择；没有可用清单时清空并退回内置表。
   applyCollectManifest(
     (message.collectManifests as CollectManifest[] | undefined)

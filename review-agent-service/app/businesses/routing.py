@@ -102,8 +102,11 @@ def route_fields(
         if suffix is not None:
             routed[f"{business_scope}.{suffix}"] = value
 
-    if normalized_type == "invoice" and "invoice.invoice_no" in routed:
-        # 数电机动车销售发票票面只有一个“数电号码”。模型只提取一次，
-        # 页面“发票代码”由确定性兼容层派生，避免模型分别生成两个可能冲突的值。
-        routed["invoice.code"] = routed["invoice.invoice_no"]
+    # 数电发票票面只有一个号码。模型只提取一次，另一个字段由确定性兼容层
+    # 派生，避免模型分别生成两个可能冲突的值。派生关系由材料声明给出——
+    # 报废置换的机动车销售发票和过户的二手车销售统一发票字段键并不相同。
+    if material is not None and material.derived_field is not None:
+        number_field, derived_field = material.derived_field
+        if number_field in routed:
+            routed[derived_field] = routed[number_field]
     return routed, None

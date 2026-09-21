@@ -206,8 +206,6 @@ def test_missing_page_field_routes_comparison_to_assistant() -> None:
 @pytest.mark.parametrize(
     "check_id",
     [
-        "POLICY-INVOICE-DATE",
-        "POLICY-DISPOSAL-DEADLINE",
         "POLICY-NEW-ORIGIN",
         "AFFILIATION-SUBJECT-001",
     ],
@@ -228,6 +226,63 @@ def test_business_rules_route_to_assistant(check_id: str) -> None:
 
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
+
+
+def date_rule(check_id: str) -> CheckResult:
+    return CheckResult(
+        check_id=check_id,
+        label="日期规则",
+        status="MATCH",
+        reason="符合政策范围",
+    )
+
+
+@pytest.mark.parametrize(
+    ("check_id", "field"),
+    [
+        ("POLICY-INVOICE-DATE", "invoice.invoice_date"),
+        ("POLICY-DISPOSAL-DEADLINE", "old_vehicle.recycle_date"),
+    ],
+)
+def test_date_rules_land_under_their_field(check_id: str, field: str) -> None:
+    """日期类规则并进对应字段行，**由业务声明决定并到哪个字段**。
+
+    写死一张表时，每来一个带日期规则的业务都要回引擎里补一行；漏了不报错，
+    只是审核员在字段下面找不到这条结论。
+    """
+    steps = build_steps(business_checks=[date_rule(check_id)])
+
+    assert not any(
+        item.step_id == f"BUSINESS-{check_id}" for item in steps
+    ), f"{check_id} 不应再单独成卡"
+    backed = next(item for item in steps if item.page_target_field == field)
+    assert check_id in backed.details["check_ids"]
+
+
+def test_transfer_invoice_date_lands_under_its_own_field() -> None:
+    """过户审核的开票日期规则走同一条路，字段键不同也照样能并。
+
+    这正是合并关系必须按业务声明取的原因：报废置换的日期政策绑在
+    `invoice.invoice_date` 上，过户绑在 `transfer.invoice_date` 上。
+    """
+    steps = build_review_tasks(
+        request=ReviewRequest(
+            page_url="https://admin.forjtruck.com/consistency-qingdao?showPageModel=1",
+            business_type="transfer",
+            region="default",
+            page_fields={"transfer.invoice_date": "2026-09-17"},
+        ),
+        profile=TRANSFER_DEFAULT,
+        comparisons=[],
+        external_checks=[],
+        business_checks=[date_rule("TRANSFER-INVOICE-DATE")],
+        completeness=None,
+        limitations=[],
+    )
+
+    assert not any(item.step_id == "BUSINESS-TRANSFER-INVOICE-DATE" for item in steps)
+    backed = next(item for item in steps if item.page_target_field == "transfer.invoice_date")
+    assert "TRANSFER-INVOICE-DATE" in backed.details["check_ids"]
 
 
 @pytest.mark.parametrize(
@@ -382,16 +437,19 @@ def test_non_target_profile_keeps_steps_as_assistant_contracts() -> None:
     ]
 
 
-def test_assistant_match_remains_in_contract_but_needs_no_reviewer_action():
-    steps = build_steps(business_checks=[CheckResult(
-        check_id="POLICY-INVOICE-DATE",
-        label="新车发票日期政策核验",
-        status="MATCH",
-        reason="符合政策",
-    )])
-    step = next(item for item in steps if item.step_id == "BUSINESS-POLICY-INVOICE-DATE")
-    assert step.display_target == "ASSISTANT"
+def test_a_passing_date_rule_needs_no_reviewer_action():
+    steps = build_steps(
+        page_fields={"invoice.invoice_date": "2026-06-01"},
+        business_checks=[CheckResult(
+            check_id="POLICY-INVOICE-DATE",
+            label="新车发票日期政策核验",
+            status="MATCH",
+            reason="符合政策",
+        )],
+    )
+    step = next(item for item in steps if item.page_target_field == "invoice.invoice_date")
     assert step.requires_reviewer_action is False
+    assert "符合政策" in step.reason
 
 
 def test_policy_date_checks_merge_into_field_tasks_for_page_first_profiles() -> None:

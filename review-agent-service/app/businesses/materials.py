@@ -77,6 +77,8 @@ class DocumentPolicy:
     scoped_fields: tuple[tuple[str, tuple[str, ...]], ...] = ()
     scoped_guidance: tuple[tuple[str, str], ...] = ()
     scoped_names: tuple[tuple[str, str], ...] = ()
+    # 票面只有一个号码的材料：`(号码字段, 派生字段)`，见 `MaterialDeclaration`。
+    derived_field: tuple[str, str] | None = None
 
     def fields_for_scope(self, business_scope: str = "unknown") -> tuple[str, ...]:
         """返回当前业务范围允许提取的字段，未知业务使用材料默认白名单。"""
@@ -170,6 +172,7 @@ def _merge_material(
         scoped_fields=declaration.scoped_fields,
         scoped_guidance=declaration.scoped_guidance,
         scoped_names=declaration.scoped_names,
+        derived_field=declaration.derived_field,
     )
     if current is None:
         return projected
@@ -190,6 +193,9 @@ def _merge_material(
         scoped_names=_merge_scoped(
             current.scoped_names, projected.scoped_names, lambda left, right: str(left)
         ),
+        # 派生关系不属于任何分区：同一份材料在哪个业务分区里都是同一个票面号码。
+        # 先声明的生效，两个业务对同一材料给出不同派生关系是配置错误。
+        derived_field=current.derived_field or projected.derived_field,
     )
 
 

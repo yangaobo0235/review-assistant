@@ -12,6 +12,7 @@ from app.businesses.packs.model import (
     build_collect_manifest,
 )
 from app.businesses.packs.scrap_replacement import SCRAP_REPLACEMENT_PACK
+from app.businesses.packs.transfer import TRANSFER_PACK
 from app.businesses.packs.vehicle_source import VEHICLE_SOURCE_PACK
 from app.models.review import BusinessType
 
@@ -19,6 +20,7 @@ from app.models.review import BusinessType
 BUSINESS_PACKS: dict[BusinessType, BusinessExtensionPack] = {
     BusinessType.SCRAP_REPLACEMENT: SCRAP_REPLACEMENT_PACK,
     BusinessType.VEHICLE_SOURCE: VEHICLE_SOURCE_PACK,
+    BusinessType.TRANSFER: TRANSFER_PACK,
 }
 
 # 业务分区 → 声明。各业务的分区互不相同（旧车/新车 vs 车源车辆），

@@ -12,7 +12,11 @@ from app.businesses.material_policies import (
     MaterialPolicy,
     RetryPolicy,
 )
-from app.businesses.packs import SCRAP_REPLACEMENT_PACK, VEHICLE_SOURCE_PACK
+from app.businesses.packs import (
+    SCRAP_REPLACEMENT_PACK,
+    TRANSFER_PACK,
+    VEHICLE_SOURCE_PACK,
+)
 from app.businesses.replacement_policies import ReplacementPolicy
 from app.capabilities.specs import CapabilityBinding, CapabilitySpec, ExternalCheckSpec
 from app.models.review import BusinessType, Region
@@ -48,6 +52,8 @@ class BusinessProfile:
     page_interaction: bool = False
     # 页面字段 → 投影到它上面的规则检查项。
     field_check_bindings: tuple[tuple[str, str], ...] = ()
+    # 「一键验真」的触发字段；None 表示本业务不做验真。由业务声明给出。
+    invoice_verification_field: str | None = None
     # 审核字段就是声明的字段；页面上其他控件不进审核目录。
     review_declared_fields_only: bool = False
 
@@ -192,6 +198,7 @@ def _build_profile(pack, region: Region) -> BusinessProfile:
         binding_declarations=pack.bindings_for(declaration),
         page_interaction=pack.page_interaction,
         field_check_bindings=pack.field_check_bindings,
+        invoice_verification_field=pack.invoice_verification_field,
         review_declared_fields_only=pack.review_declared_fields_only,
     )
 
@@ -206,9 +213,12 @@ SCRAP_REPLACEMENT_QINGDAO = build_scrap_profile(Region.QINGDAO)
 # 车源审核不分地区，页面地址是 /vehicle-source，配置取默认地区。
 VEHICLE_SOURCE_DEFAULT = _build_profile(VEHICLE_SOURCE_PACK, Region.DEFAULT)
 
-CONSISTENCY_QINGDAO = BusinessProfile(
+# 一致性审核不分地区：青岛与长春两个页面地址（/consistency-qingdao、
+# /consistency-changchun）用的是同一套规则，因此和车源审核一样取默认地区，
+# 由页面识别声明把两个地址都挂到这一条上。规则尚未配置，先立座位。
+CONSISTENCY_DEFAULT = BusinessProfile(
     business_type=BusinessType.CONSISTENCY,
-    region=Region.QINGDAO,
+    region=Region.DEFAULT,
     version="1.0",
     required_fields=(),
     sections=(),
@@ -221,9 +231,13 @@ CONSISTENCY_QINGDAO = BusinessProfile(
 
 SCRAP_REPLACEMENT_CHANGCHUN = build_scrap_profile(Region.CHANGCHUN)
 
+# 过户审核与一致性审核同址（两个地址都一样），靠列表页状态筛选进到各自的页面。
+# 同样不分地区，因此和车源审核一样取默认地区。
+TRANSFER_DEFAULT = _build_profile(TRANSFER_PACK, Region.DEFAULT)
 
-# 仅用于旧数据/测试迁移，永不加入 BUSINESS_PROFILES。
-TRANSFER_DEFAULT = BusinessProfile(
+# 仅用于旧数据/测试迁移，永不加入 BUSINESS_PROFILES。与上面的现役座位分开命名：
+# 两个都叫「过户 + 默认地区」，混用会让旧数据的迁移路径悄悄连到线上配置。
+TRANSFER_LEGACY = BusinessProfile(
     business_type=BusinessType.TRANSFER,
     region=Region.DEFAULT,
     version="deprecated",
@@ -233,20 +247,10 @@ TRANSFER_DEFAULT = BusinessProfile(
     unconfigured_message="过户审核已停用",
 )
 
-CONSISTENCY_CHANGCHUN = BusinessProfile(
-    business_type=BusinessType.CONSISTENCY,
-    region=Region.CHANGCHUN,
-    version="1.0",
-    required_fields=(),
-    sections=(),
-    rules_configured=False,
-    unconfigured_message="长春一致性审核规则尚未配置，请人工复核",
-)
-
 BUSINESS_PROFILES = (
     SCRAP_REPLACEMENT_QINGDAO,
     SCRAP_REPLACEMENT_CHANGCHUN,
     VEHICLE_SOURCE_DEFAULT,
-    CONSISTENCY_QINGDAO,
-    CONSISTENCY_CHANGCHUN,
+    CONSISTENCY_DEFAULT,
+    TRANSFER_DEFAULT,
 )

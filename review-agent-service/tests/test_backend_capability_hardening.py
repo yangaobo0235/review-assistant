@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_DEFAULT
+from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, TRANSFER_LEGACY
 from app.businesses.registry import BusinessRegistry
 from app.capabilities.business_rules import BusinessRuleRegistry
 from app.capabilities.specs import (
@@ -208,8 +208,8 @@ def test_duplicate_rule_groups_and_ids_produce_single_check():
     result = registry.execute(
         ("one", "two", "one"),
         ReviewExecutionContext(
-            request=request_for(TRANSFER_DEFAULT),
-            profile=TRANSFER_DEFAULT,
+            request=request_for(TRANSFER_LEGACY),
+            profile=TRANSFER_LEGACY,
             batch=AgentBatchResult(),
             observations=(),
         ),

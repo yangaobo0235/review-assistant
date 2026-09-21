@@ -1,0 +1,187 @@
+/**
+ * 过户审核的采集清单：后端声明 → 前端查找路径的端到端一致性。
+ *
+ * fixture 由后端 `build_collect_manifest(TRANSFER_PACK)` 生成。这组用例锁两件
+ * 容易静默失效的事：
+ *
+ * 1. **「车源发布时间」在页面上是纯文本，不是输入框。** 采集器读标签 + 后继
+ *    文本的那条路径（`structuredCandidates` / `adjacentCandidates`）**只在标签
+ *    已被声明时才工作**（`isKnownLabel`）。清单里漏掉这个别名，采集器就一个值
+ *    都拿不到，而开票日期那条规则只会报「待复核」——不报错，只是永远不生效。
+ * 2. 共用地址的两个业务特征文案不能撞车，撞了就互相误判。
+ */
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+import {
+  applyCollectManifest,
+  manifestIdentityAnchors,
+  manifestWritableControlKinds,
+  manifestWritableFields,
+} from "../src/browser/collect-manifest.ts";
+import { ReviewBusinessScope } from "../src/browser/business-scope.ts";
+import { ReviewPageFieldCollector } from "../src/browser/page-field-collector.ts";
+import { businessLabels } from "../src/reviewPanelConfig.ts";
+import { loadSource } from "./tsx-loader.mjs";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+const { resolveWorkbenchRenderer } = loadSource("components/workbenchRenderers.tsx");
+
+const manifest = JSON.parse(
+  readFileSync(new URL("./fixtures/collect-manifest-transfer.json", import.meta.url), "utf8"),
+);
+const pageCatalog = JSON.parse(
+  readFileSync(new URL("./fixtures/page-catalog.json", import.meta.url), "utf8"),
+);
+
+/** 构造一个审核任务；只填本组用例关心的字段。 */
+const step = (step_id, sequence, category, label, reason, result_status) => ({
+  step_id,
+  sequence,
+  category,
+  display_target: "ASSISTANT",
+  requires_reviewer_action: result_status !== "MATCH",
+  label,
+  result_status,
+  reason,
+  page_value: null,
+  page_values: [],
+  values: [],
+  evidence: [],
+  details: {},
+});
+
+test("过户清单声明了一个分区和两类材料", () => {
+  assert.equal(manifest.business_type, "transfer");
+  assert.deepEqual(manifest.scopes, ["transfer"]);
+  assert.deepEqual(
+    manifest.materials.map((item) => item.document_type),
+    ["registration_certificate", "used_car_invoice"],
+  );
+  // 登记证书按图片页脚印刷的页码统计，缺第 3、4 页要能报出来。
+  assert.equal(manifest.materials[0].label, "机动车登记证书");
+});
+
+test("14 个核对字段的别名在前端解析唯一", () => {
+  assert.equal(applyCollectManifest(manifest), true);
+
+  const aliases = new Set();
+  for (const field of manifest.fields) {
+    assert.equal(field.aliases[0], field.label, field.key);
+    for (const alias of field.aliases) {
+      assert.equal(aliases.has(alias), false, `别名重复：${alias}`);
+      aliases.add(alias);
+      assert.equal(ReviewPageFieldCollector.definitionForLabel(alias)?.field, field.key, alias);
+    }
+  }
+  // 14 个核对字段 + 车源发布时间（只读展示）。
+  assert.equal(manifest.fields.length, 15);
+});
+
+test("车源发布时间是纯文本，但必须被声明成已知标签才能采到", () => {
+  applyCollectManifest(manifest);
+
+  // 采集器读「标签 + 后继文本」的那条路径以 isKnownLabel 为闸门。这条断言
+  // 就是那个闸门：别名没进清单，值永远采不到，而且不报错。
+  assert.equal(
+    ReviewPageFieldCollector.definitionForLabel("车源发布时间")?.field,
+    "application.source_published_at",
+  );
+  // 带中文冒号的写法也要认——页面上标签就是这么写的。
+  assert.equal(
+    ReviewPageFieldCollector.definitionForLabel("车源发布时间：")?.field,
+    "application.source_published_at",
+  );
+  assert.equal(
+    manifest.fields.find((field) => field.key === "application.source_published_at").reviewable,
+    false,
+  );
+});
+
+test("过户资料归到过户分区，身份证和营业执照不上传", () => {
+  applyCollectManifest(manifest);
+
+  assert.deepEqual(
+    { ...ReviewBusinessScope.scopeForLabel("过户资料") },
+    { scope: "transfer", title: "过户资料" },
+  );
+  // 业务只要求登记证书和二手车发票；这两类资料是否参与审核待确认，当前排除。
+  for (const label of ["身份证正面", "身份证反面", "营业执照", "其他图片"]) {
+    assert.notEqual(ReviewBusinessScope.scopeForLabel(label)?.scope, "transfer", label);
+  }
+});
+
+test("写回只放开文本框，指纹用强锚点", () => {
+  applyCollectManifest(manifest);
+
+  assert.equal(manifestWritableFields()?.has("transfer.plate_no"), true);
+  // 开票日期是日期控件：声明为可写，但控件类型不在白名单里，界面上不会出现按钮。
+  assert.equal(manifestWritableFields()?.has("transfer.invoice_date"), true);
+  assert.deepEqual([...manifestWritableControlKinds()], ["text", "textarea", "number"]);
+
+  const anchors = manifestIdentityAnchors();
+  assert.equal(anchors.includes("transfer.vin"), true);
+  // 证件号是个人隐私，不放进指纹。
+  assert.equal(anchors.includes("transfer.buyer_id"), false);
+});
+
+test("共用地址的两个业务特征文案不重叠", () => {
+  const shared = pageCatalog.identities.filter((item) =>
+    item.paths.includes("/consistency-qingdao"));
+
+  assert.deepEqual(shared.map((item) => item.business_type).sort(), ["consistency", "transfer"]);
+  const transfer = shared.find((item) => item.business_type === "transfer");
+  const consistency = shared.find((item) => item.business_type === "consistency");
+  assert.deepEqual(transfer.anchors, ["审核过户凭证", "过户发票买家名称", "转入地车管所"]);
+  // 「过户」两个字只在一致性审核页上出现（那里有个页签叫「过户详情」），
+  // 拿它当过户审核的特征正好搞反。
+  for (const anchor of transfer.anchors) {
+    assert.equal(consistency.anchors.includes(anchor), false, anchor);
+  }
+});
+
+test("过户审核注册到字段优先工作台并显示材料要求", () => {
+  const renderer = resolveWorkbenchRenderer({
+    business_type: "transfer",
+    region: "default",
+    profile_version: "1.0",
+    review_tasks: [step("FIELD-transfer.plate_no", 1, "FIELD", "车牌号", "一致", "MATCH")],
+  });
+
+  assert.ok(renderer, "过户审核必须有自己的渲染器注册");
+  const markup = renderToStaticMarkup(
+    renderer({
+      review: {
+        business_type: "transfer",
+        region: "default",
+        profile_version: "1.0",
+        recommendation: "PASS",
+        summary: "",
+        comparisons: [],
+        qr_checks: [],
+        cross_checks: [],
+        issues: [],
+        sections: [],
+        review_tasks: [
+          step("FIELD-transfer.plate_no", 1, "FIELD", "车牌号", "字段一致", "MATCH"),
+          // 未完成的任务才进「待处理」视图；材料齐全会显示成一致，不进待处理。
+          step("MATERIAL-GROUP", 2, "MATERIAL", "材料完整性", "缺少登记证书第 3、4 页", "INSUFFICIENT"),
+        ],
+      },
+      pageData: null,
+      onFocusImage: async () => ({ ok: true }),
+      onApplyPageFieldValue: async () => ({ ok: true }),
+      onApplyPageFieldGroupValue: async () => ({ ok: true }),
+      onRerun: async () => {},
+    }),
+  );
+
+  // 登记证书第 3、4 页缺了就没有买家名称和证件号的来源，材料要求必须让审核员看到。
+  assert.match(markup, /材料完整性/);
+});
+
+test("过户审核不再是「未配置」，下拉里能手动选", () => {
+  assert.equal(businessLabels.transfer, "过户审核");
+});

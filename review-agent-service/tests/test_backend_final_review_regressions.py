@@ -14,7 +14,7 @@ from app.businesses.profiles import (
 from app.businesses.registry import BusinessRegistry
 from app.businesses.rules.affiliation import build_affiliation_subject_check
 from app.main import app
-from app.models.review import FieldObservation, ReviewRequest
+from app.models.review import FieldObservation, Region, ReviewRequest
 from app.services.review import ReviewService
 from app.workflow.models import AgentBatchResult
 
@@ -24,6 +24,7 @@ from app.workflow.models import AgentBatchResult
     [
         ("scrap-replace-changchun", "scrap_replacement", "qingdao"),
         ("scrap-replace-qingdao", "scrap_replacement", "changchun"),
+        # 这两个业务取默认地区，声明青岛或长春都不对。
         ("consistency-changchun", "consistency", "qingdao"),
         ("consistency-qingdao", "consistency", "changchun"),
         ("scrap-replace-changchun", "consistency", "changchun"),
@@ -49,8 +50,9 @@ def test_known_admin_route_rejects_conflicting_request_and_api(path, business, r
     [
         ("scrap-replace-changchun", "scrap_replacement", "changchun"),
         ("scrap-replace-qingdao", "scrap_replacement", "qingdao"),
-        ("consistency-changchun", "consistency", "changchun"),
-        ("consistency-qingdao", "consistency", "qingdao"),
+        # 一致性和过户不分地区：两个地址都取默认地区。
+        ("consistency-changchun", "consistency", "default"),
+        ("consistency-qingdao", "consistency", "default"),
     ],
 )
 def test_matching_admin_route_and_unknown_test_url_remain_accepted(
@@ -287,12 +289,12 @@ async def test_graph_blocks_intent_for_additional_bad_license_with_all_auxiliary
 @pytest.mark.parametrize(
     "path,region,stage",
     [
-        ("consistency-qingdao", "qingdao", "transfer"),
-        ("consistency-changchun", "changchun", "transfer"),
-        ("consistency-qingdao", "default", "consistency"),
-        ("consistency-changchun", "default", "scrap_replacement"),
         ("scrap-replace-qingdao", "default", "transfer"),
         ("scrap-replace-changchun", "default", "transfer"),
+        # 共用地址上的业务取默认地区，声明成青岛或长春都不对——地址上的两个
+        # 业务属于同一个地区，这个维度在它们身上不成立。
+        ("consistency-qingdao", "changchun", "transfer"),
+        ("consistency-changchun", "qingdao", "consistency"),
     ],
 )
 def test_transfer_compatibility_does_not_allow_other_route_contexts(
@@ -306,6 +308,27 @@ def test_transfer_compatibility_does_not_allow_other_route_contexts(
     )
     with pytest.raises((ValueError, LookupError)):
         ReviewService().resolve_profile(request)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["consistency-qingdao", "consistency-changchun"],
+)
+def test_transfer_shares_its_route_with_consistency(path):
+    """两个业务共用两个地址，且都不分地区；一致性的规则仍未配置。"""
+    for business_type, configured in (("consistency", False), ("transfer", True)):
+        request = ReviewRequest(
+            page_url=f"https://admin.forjtruck.com/{path}/review/1",
+            business_type=business_type,
+            region="default",
+            workflow_stage=business_type,
+        )
+        profile = ReviewService().resolve_profile(request)
+        assert profile.business_type.value == business_type
+        assert profile.region is Region.DEFAULT
+        assert profile.rules_configured is configured
+        # 未配置的业务必须说清楚为什么不能自动判；配置好的业务不写这句话。
+        assert bool(profile.unconfigured_message) is not configured
 
 
 @pytest.mark.parametrize(

@@ -1,25 +1,21 @@
 import type { BusinessSelection, ReviewFieldSnapshot } from "../types/review";
 import type { PageAdapter } from "./pageAdapter.ts";
-import { pagePath, pageSelection, pathMatches } from "./selection.ts";
-
-const ROUTES: readonly [string, "qingdao" | "changchun"][] = [
-  ["/consistency-qingdao", "qingdao"],
-  ["/consistency-changchun", "changchun"],
-];
 
 /**
  * 一致性审核页面的适配器。
  *
- * 当前只负责页面识别：一致性业务尚未配置审核规则，可写控件和写回未接入。
+ * **它不再自己判定页面。** 一致性审核与过户审核共用地址
+ * （`/consistency-qingdao`、`/consistency-changchun`），要靠列表页的状态筛选
+ * 进到各自的页面，URL 完全一样——只看地址必然认错，而认错不会报错，只会拿
+ * 某个业务的规则去审另一个业务的单子。
+ *
+ * 因此识别交给后端下发的页面识别清单（`browser/page-catalog.ts`）。这里只保留
+ * 适配器身份：可写控件和受控写回接入时在这里补。
  */
 export class ConsistencyPageAdapter implements PageAdapter {
   public readonly id = "consistency";
 
-  public detect(url: string): BusinessSelection | null {
-    const path = pagePath(url);
-    for (const [route, region] of ROUTES) {
-      if (pathMatches(path, route)) return pageSelection("consistency", region);
-    }
+  public detect(): BusinessSelection | null {
     return null;
   }
 

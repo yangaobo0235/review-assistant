@@ -28,6 +28,8 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
         "vehicle.issue_date",
         "vehicle.fuel_type",
     )
+    # 登记证书被报废置换、车源审核和过户审核共用，三家的白名单**叠加**在同一份
+    # 策略上；各业务的分区互不重叠，所以叠加出来的分区表只会命中当前业务那一份。
     assert DOCUMENT_POLICIES["registration_certificate"].fields == (
         "vehicle.owner",
         "vehicle.vin",
@@ -40,6 +42,12 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
         "vehicle.brand_model",
         "vehicle.emission_standard",
         "vehicle.power_kw",
+        # 过户审核从登记证书读的字段：第 1、2 页的车牌号与车架号，
+        # 第 3、4 页「转让登记」里的买家名称与证件号。
+        "transfer.plate_no",
+        "transfer.vin",
+        "transfer.buyer_name",
+        "transfer.buyer_id",
     )
     assert DOCUMENT_POLICIES["vehicle_nameplate"].fields == (
         "vehicle.vin",

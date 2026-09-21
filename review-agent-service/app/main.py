@@ -15,6 +15,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 
 from app.businesses.context_validation import BusinessContextMismatch
 from app.businesses.packs import build_collect_manifest, pack_for_business
+from app.businesses.page_catalog import page_catalog
 from app.businesses.registry import BusinessProfileNotFound
 from app.contracts.review_schema import review_contract_schema
 from app.models.review import (
@@ -73,6 +74,16 @@ def collect_manifest(business_type: BusinessType) -> dict[str, object]:
     if pack is None:
         raise HTTPException(status_code=404, detail="该业务尚未声明采集清单")
     return build_collect_manifest(pack)
+
+
+@app.get("/api/review/page-catalog")
+def review_page_catalog() -> dict[str, object]:
+    """下发页面识别清单：管理端审核页地址 → 业务、地区、页面特征文案。
+
+    必须独立于采集清单：识别发生在「按业务类型取采集清单」之前，识别不出来
+    就不知道该取哪份清单。因此这里一次下发全部业务，而不是按业务类型查。
+    """
+    return page_catalog()
 
 
 @app.post("/api/review/assist", response_model=ReviewResponse)

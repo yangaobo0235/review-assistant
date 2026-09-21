@@ -154,6 +154,47 @@ def test_out_of_window_dates_ask_for_human_review_instead_of_failing() -> None:
 
 
 @pytest.mark.parametrize(
+    "policy,keyword,other_region_value",
+    [
+        (QINGDAO_REPLACEMENT_POLICY, "青岛", "长春"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "长春", "青岛"),
+    ],
+)
+def test_origin_matches_by_keyword_in_every_region(
+    policy, keyword, other_region_value
+) -> None:
+    """两地的产地规则必须同口径：**包含本地关键词就通过**。
+
+    发票产地栏的写法不固定（"中国青岛""产地：中国 / 长 春"都出现过）。只要
+    一个地区按完全匹配、另一个按包含匹配，同一张发票换个地区审核结论就不同，
+    而且不会报错——只会静静地把一张合规发票判成冲突。
+    """
+    def status(value: str) -> str:
+        checks = build_replacement_policy_checks(
+            policy, [observation("new_vehicle.origin", value, "invoice")]
+        )
+        return {item.check_id: item.status for item in checks}["POLICY-NEW-ORIGIN"]
+
+    for value in (
+        keyword,
+        f"{keyword}市",
+        f"中国{keyword}",
+        f"产地：{keyword}",
+        f"产地：中国 / {keyword}",
+    ):
+        assert status(value) == "MATCH", value
+
+    # 是长春就判长春，是青岛就判青岛，不能两边都通过。
+    assert status(other_region_value) == "CONFLICT"
+    assert status(f"中国{other_region_value}市") == "CONFLICT"
+
+    # 读不出来一律人工复核，不能当成不符合——"读不到"和"读到了但不是本地"
+    # 是两件事，前者不该由自动规则下结论。
+    for value in ("", "无法识别", "???", "--", "未知", "长*"):
+        assert status(value) == "INSUFFICIENT", value
+
+
+@pytest.mark.parametrize(
     "value,expected",
     [
         ("长春", "MATCH"),

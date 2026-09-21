@@ -13,15 +13,12 @@ const ROUTE = "/vehicle-source";
 export class VehicleSourcePageAdapter implements PageAdapter {
   public readonly id = "vehicle-source";
 
-  public detect(url: string, text = ""): BusinessSelection | null {
+  public detect(url: string): BusinessSelection | null {
     if (pathMatches(pagePath(url), ROUTE)) {
       return pageSelection("vehicle_source", "default");
     }
-    // 页面指纹兜底：URL 改版但页面内容未变时仍能识别。
-    // 文案取自审核页自身的标题与区块名，不要用某个字段名，字段会改版。
-    if (text.includes("车源审核") && text.includes("行驶证信息")) {
-      return pageSelection("vehicle_source", "default");
-    }
+    // 地址改版但页面内容未变时的兜底不在这里：页面特征文案由业务声明
+    // （`RegionDeclaration.page_anchors`）下发，随页面识别清单一并生效。
     return null;
   }
 

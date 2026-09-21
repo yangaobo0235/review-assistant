@@ -15,6 +15,19 @@ import { ReviewResults } from "./components/ReviewResults";
 import type { ExceptionFilter } from "./exceptionPresentation";
 import { useReviewWorkflow } from "./hooks/useReviewWorkflow";
 import { businessLabels, type BusinessChoice } from "./reviewPanelConfig";
+import type { PageData } from "./types/review";
+
+/**
+ * 当前识别出来的业务名称。
+ *
+ * 按「业务_地区」拼键查下拉里的同一份标签，不在这里按业务写 switch——
+ * 每加一个共用地址的业务就要再补一个分支，漏一个不会报错，只会显示成
+ * 字段键。
+ */
+function currentBusinessLabel(page: PageData): string {
+  const key = `${page.businessType}_${page.region}` as BusinessChoice;
+  return businessLabels[key] ?? businessLabels[page.businessType as BusinessChoice] ?? String(page.businessType);
+}
 
 function App() {
   const [businessSelection, setBusinessSelection] = useState<BusinessChoice>("AUTO");
@@ -52,11 +65,7 @@ function App() {
         </select>
         {workflow.pageData?.businessType ? (
           <small>
-            当前：{workflow.pageData.businessType === "scrap_replacement"
-              ? `${workflow.pageData.region === "changchun" ? "长春" : "青岛"}报废置换审核`
-              : workflow.pageData.businessType === "consistency"
-                ? `${workflow.pageData.region === "changchun" ? "长春" : "青岛"}一致性审核`
-                : businessLabels[workflow.pageData.businessType]} ·{" "}
+            当前：{currentBusinessLabel(workflow.pageData)} ·{" "}
             {workflow.pageData.selectionMode === "MANUAL" ? "人工选择" : "自动识别"}
           </small>
         ) : null}

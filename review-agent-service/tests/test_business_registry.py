@@ -35,15 +35,17 @@ def test_registry_resolves_changchun_profiles_without_fallback() -> None:
         Region.CHANGCHUN,
         "1.0",
     )
+    assert replacement.region is Region.CHANGCHUN
+    assert "changchun_replacement_policy" in {spec.capability_id for spec in replacement.capabilities}
+
+    # 一致性审核不分地区：青岛和长春两个页面地址同一套规则，取默认地区。
+    # 拿 changchun 去取它会走近似匹配，取到的仍然是默认地区那一份。
     consistency = registry.resolve(
         BusinessType.CONSISTENCY,
         Region.CHANGCHUN,
         "1.0",
     )
-
-    assert replacement.region is Region.CHANGCHUN
-    assert "changchun_replacement_policy" in {spec.capability_id for spec in replacement.capabilities}
-    assert consistency.region is Region.CHANGCHUN
+    assert consistency.region is Region.DEFAULT
     assert consistency.rules_configured is False
 
 

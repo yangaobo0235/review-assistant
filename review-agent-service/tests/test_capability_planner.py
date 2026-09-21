@@ -1,5 +1,5 @@
 from app.businesses.profiles import (
-    CONSISTENCY_QINGDAO,
+    CONSISTENCY_DEFAULT,
     SCRAP_REPLACEMENT_QINGDAO,
     VEHICLE_SOURCE_DEFAULT,
 )
@@ -26,6 +26,6 @@ def test_vehicle_source_profile_plans_its_own_capabilities():
 
 
 def test_unconfigured_profile_is_explicitly_marked():
-    plan = plan_capabilities(CONSISTENCY_QINGDAO)
+    plan = plan_capabilities(CONSISTENCY_DEFAULT)
     assert [(item.capability_id, item.status) for item in plan] == [("profile", "NOT_CONFIGURED")]
 

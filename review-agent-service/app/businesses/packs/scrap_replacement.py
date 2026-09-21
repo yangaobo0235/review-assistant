@@ -10,6 +10,7 @@ from app.businesses.material_policies import MaterialPolicy, MaterialRequirement
 from app.businesses.packs.model import (
     AuthorityRule,
     BusinessExtensionPack,
+    CompositeFieldDeclaration,
     FieldDeclaration,
     MaterialDeclaration,
     PageGroupDeclaration,
@@ -35,7 +36,12 @@ QINGDAO_REPLACEMENT_POLICY = ReplacementPolicy(
     invoice_date_to=date(2026, 12, 31),
     disposal_deadline=date(2026, 12, 31),
     disposal_date_from=date(2026, 1, 1),
+    # 2026-09-21 起与长春同口径：**包含关键词即可**，不再要求一字不差。
+    # 发票产地栏的写法不固定（"中国青岛""产地：青岛"都出现过），完全匹配会把
+    # 规范写法之外的一律判成冲突；两地的宽松程度必须一致，否则同一张发票换个
+    # 地区审核结论就不同。
     allowed_origins=("青岛", "青岛市", "山东省青岛市"),
+    origin_keywords=("青岛",),
 )
 
 CHANGCHUN_REPLACEMENT_POLICY = ReplacementPolicy(
@@ -490,6 +496,10 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         MaterialDeclaration(
             document_type="invoice",
             display_name="机动车销售发票",
+            # 数电机动车销售发票票面只有一个「数电号码」，没有单独的发票代码；
+            # 模型只提取号码，页面上的发票代码由兼容层从它派生。让模型分别生成
+            # 两个值，它会给出两个互相冲突的答案，而冲突是它自己造出来的。
+            derived_field=("invoice.invoice_no", "invoice.code"),
             fields=(
                 "invoice.invoice_no",
                 "invoice.amount",
@@ -694,7 +704,36 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         "old_vehicle.owner",
         "new_vehicle.owner",
     ),
-    # 主体关系辅助检查同时投影成客户名称字段的核验条目。
-    field_check_bindings=(("AFFILIATION-AUX-CUSTOMER-NAME", "application.customer_name"),),
+    # 规则结论并进哪个字段行。日期政策的两条并进对应日期字段（合并由
+    # `prepare_display_tasks` 按这张表做），主体关系辅助检查并进客户名称。
+    field_check_bindings=(
+        ("AFFILIATION-AUX-CUSTOMER-NAME", "application.customer_name"),
+        ("POLICY-INVOICE-DATE", "invoice.invoice_date"),
+        ("POLICY-DISPOSAL-DEADLINE", "old_vehicle.recycle_date"),
+    ),
+    # 「一键验真」的触发字段：发票号码与页面一致时才值得去点页面上那个按钮。
+    invoice_verification_field="invoice.invoice_no",
+    # 页面上的组合字段：两个控件描述同一件事，页面自己填岔了就没有可比对的
+    # 对象，所以要先查页面内部一致性，再一起与材料比。
+    page_field_composites=(
+        CompositeFieldDeclaration(
+            check_id="FIELD-INVOICE-CODE-NO",
+            label="发票代码/号码",
+            primary_field="invoice.code",
+            secondary_field="invoice.invoice_no",
+            material_field="invoice.code",
+            primary_label="发票代码",
+            secondary_label="发票号码",
+        ),
+        CompositeFieldDeclaration(
+            check_id="FIELD-NEW-VEHICLE-VIN",
+            label="新车车架号",
+            primary_field="new_vehicle.vin",
+            secondary_field="page_ocr.new_vehicle_vin",
+            material_field="new_vehicle.vin",
+            primary_label="新车车架号",
+            secondary_label="OCR新车车架号",
+        ),
+    ),
     material_policy=SCRAP_REPLACEMENT_MATERIAL_POLICY,
 )

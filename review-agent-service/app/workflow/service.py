@@ -9,7 +9,7 @@ import asyncio
 import inspect
 import logging
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from app.businesses.material_policies import DEFAULT_RETRY_POLICY, RetryPolicy
@@ -59,6 +59,23 @@ SLOT_DOCUMENT_TYPES = {
 GENERIC_SCOPE_HINTS = {"", "unknown"} | {
     scope for pack in BUSINESS_PACKS.values() for scope in pack.scopes
 }
+
+
+def _derived_from(
+    policy: Any, field_name: str, extracted_fields: Mapping[str, Any]
+) -> str | None:
+    """该字段的值是不是从票面另一个号码派生的；是则返回那个号码的字段键。
+
+    数电发票票面只有一个号码，页面上的「发票代码」由兼容层补齐。派生关系写在
+    材料声明里（`MaterialDeclaration.derived_field`），这里只负责查。
+    """
+    derived = getattr(policy, "derived_field", None)
+    if derived is None:
+        return None
+    number_field, derived_field = derived
+    if field_name == derived_field and number_field in extracted_fields:
+        return number_field
+    return None
 
 
 def _covered_pages(value: Any) -> list[int]:
@@ -282,12 +299,10 @@ class AgentService:
                             group_title=image.group_title,
                             group_order=image.group_order,
                             value=value,
-                            derived_from=(
-                                "invoice.invoice_no"
-                                if field_name == "invoice.code"
-                                and "invoice.invoice_no" in extraction.fields
-                                else None
-                            ),
+                            # 派生字段标出它来自哪个号码：工作台据此说明
+                            # 「发票代码由票面数电号码适配」，不让审核员以为
+                            # 票面上真印了一个发票代码。关系由材料声明给出。
+                            derived_from=_derived_from(policy, field_name, extraction.fields),
                             evidence_region=routed_regions.get(field_name),
                             confidence=extraction.confidence,
                         )

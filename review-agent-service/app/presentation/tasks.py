@@ -5,12 +5,24 @@ from collections.abc import Sequence
 from app.models.review import ReviewTask
 from app.workflow.models import MaterialCompletenessReport
 
-DATE_POLICY_FIELDS = {
-    # Business rule steps are namespaced by review_step_routing as
-    # ``BUSINESS-{check_id}``; keep the merge keys aligned with that public ID.
-    "BUSINESS-POLICY-INVOICE-DATE": "invoice.invoice_date",
-    "BUSINESS-POLICY-DISPOSAL-DEADLINE": "old_vehicle.recycle_date",
-}
+# Business rule steps are namespaced by review_step_routing as
+# ``BUSINESS-{check_id}``; keep the merge keys aligned with that public ID.
+_BUSINESS_STEP_PREFIX = "BUSINESS-"
+
+
+def rule_fields_for_merge(
+    field_check_bindings: Sequence[tuple[str, str]],
+) -> dict[str, str]:
+    """规则检查项 → 它要并进去的页面字段。
+
+    合并关系**由业务声明给出**（`BusinessExtensionPack.field_check_bindings`）。
+    写死一张表时，每来一个带日期类规则的业务都要回引擎里补一行；漏了不会报错，
+    只会让结论单独成卡或者干脆看不见——审核员在字段下面找不到它。
+    """
+    return {
+        f"{_BUSINESS_STEP_PREFIX}{check_id}": field
+        for check_id, field in field_check_bindings
+    }
 
 
 def _merge(base: ReviewTask, members: Sequence[ReviewTask]) -> ReviewTask:
@@ -30,6 +42,7 @@ def _merge(base: ReviewTask, members: Sequence[ReviewTask]) -> ReviewTask:
 def prepare_display_tasks(
     tasks: Sequence[ReviewTask], *, qr_enabled: bool,
     completeness: MaterialCompletenessReport | None,
+    field_check_bindings: Sequence[tuple[str, str]] = (),
 ) -> list[ReviewTask]:
     # Field-first profiles keep the task in the assistant while exposing the
     # canonical DOM target through page_target_field. Date policy results must
@@ -44,8 +57,9 @@ def prepare_display_tasks(
     }
     consumed: set[str] = set()
     replacements: dict[str, ReviewTask] = {}
+    rule_fields = rule_fields_for_merge(field_check_bindings)
     for task in tasks:
-        field = DATE_POLICY_FIELDS.get(task.step_id)
+        field = rule_fields.get(task.step_id)
         if field and field in by_field:
             base = by_field[field]
             replacements[base.step_id] = _merge(base, [task])

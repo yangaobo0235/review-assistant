@@ -17,8 +17,8 @@ export type BusinessChoice =
   | "AUTO"
   | "scrap_replacement_qingdao"
   | "scrap_replacement_changchun"
-  | "consistency_qingdao"
-  | "consistency_changchun"
+  | "consistency"
+  | "transfer"
   | "vehicle_source";
 
 export const businessLabels: Record<BusinessChoice, string> = {
@@ -26,8 +26,12 @@ export const businessLabels: Record<BusinessChoice, string> = {
   scrap_replacement_qingdao: "青岛报废置换审核",
   scrap_replacement_changchun: "长春报废置换审核",
   vehicle_source: "车源审核",
-  consistency_qingdao: "青岛一致性审核（未配置）",
-  consistency_changchun: "长春一致性审核（未配置）",
+  // 一致性和过户都不分地区：青岛、长春两个页面地址用的是同一套规则，所以
+  // 这里各只有一项，不带地区后缀。
+  consistency: "一致性审核（未配置）",
+  // 与一致性审核共用两个地址，自动识别靠页面特征文案区分；特征不全时
+  // 需要审核员在这里手动选。
+  transfer: "过户审核",
 };
 
 /** 区域后缀：业务列表里的键是「业务_区域」，查采集清单时要去掉。 */
@@ -80,7 +84,9 @@ export function manualBusinessSelection(
     ? "scrap_replacement"
     : choice.startsWith("consistency")
       ? "consistency"
-      : choice as BusinessType;
+      : choice.startsWith("transfer")
+        ? "transfer"
+        : choice as BusinessType;
   return {
     businessType,
     region,

@@ -5,7 +5,6 @@
 锁定声明本身的关键内容——改字段、改材料或改权威链都会在这里失败。
 """
 
-from app.businesses.context_validation import ADMIN_REVIEW_ROUTES
 from app.businesses.field_policies import FIELD_EVIDENCE_POLICIES, field_policy
 from app.businesses.fields import (
     NEW_VEHICLE_AND_INVOICE_FIELDS,
@@ -15,6 +14,7 @@ from app.businesses.fields import (
 from app.businesses.materials import DOCUMENT_POLICIES
 from app.businesses.packs import BUSINESS_PACKS
 from app.businesses.packs import SCRAP_REPLACEMENT_PACK as PACK
+from app.businesses.page_catalog import identities_for_path
 from app.businesses.profiles import (
     SCRAP_REPLACEMENT_CHANGCHUN,
     SCRAP_REPLACEMENT_QINGDAO,
@@ -242,4 +242,7 @@ def test_admin_review_routes_cover_every_declared_page_path() -> None:
 
     assert declared
     for path, expected in declared.items():
-        assert ADMIN_REVIEW_ROUTES.get(path) == expected, path
+        # 一个地址可能被多个业务共用（一致性审核与过户审核同址），所以这里
+        # 只能要求声明的业务/地区在候选集合里，不能要求它唯一。
+        allowed = {(item.business_type, item.region) for item in identities_for_path(path)}
+        assert expected in allowed, path

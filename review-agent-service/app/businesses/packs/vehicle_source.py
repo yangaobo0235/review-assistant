@@ -471,7 +471,13 @@ VEHICLE_SOURCE_PACK = BusinessExtensionPack(
     regions=(
         # 车源审核不分地区：页面地址是 /vehicle-source，业务配置取默认地区。
         # 没有地区政策，因此不声明 replacement_policy。
-        RegionDeclaration(Region.DEFAULT, admin_paths=("/vehicle-source",)),
+        RegionDeclaration(
+            Region.DEFAULT,
+            admin_paths=("/vehicle-source",),
+            # 地址认不出来时的兜底（页面改版换路径）。取审核页自身的标题和
+            # 区块名，不要用某个字段名——字段会改版。
+            page_anchors=("车源审核", "行驶证信息"),
+        ),
     ),
     capability_specs=(
         CapabilitySpec(

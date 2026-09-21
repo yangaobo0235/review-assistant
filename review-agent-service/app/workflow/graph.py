@@ -25,6 +25,7 @@ from app.businesses.rules.affiliation import (
 )
 from app.businesses.rules.owner_consistency import build_owner_consistency_check
 from app.businesses.rules.replacement_policy import build_replacement_policy_checks
+from app.businesses.rules.transfer_invoice_date import build_transfer_invoice_date_check
 from app.businesses.rules.vehicle_model import build_vehicle_model_checks
 from app.capabilities import CapabilityRegistry
 from app.capabilities.business_rules import BusinessRuleRegistry
@@ -140,6 +141,7 @@ class ReviewWorkflow:
             "verify_invoice": self._run_verify_invoice,
             "vehicle_model_consistency": self._run_vehicle_model,
             "owner_consistency": self._run_owner_consistency,
+            "transfer_invoice_date": self._run_transfer_invoice_date,
         }
         additional_rules = dict(business_rule_handlers or {})
         overridden = builtin_rules.keys() & additional_rules.keys()
@@ -600,18 +602,21 @@ class ReviewWorkflow:
         只提出动作，不执行；是否执行以及如何执行由浏览器适配器决定。
         本能力不产出检查项，因此不会改变工作台的待处理计数。
         """
+        # 触发字段由业务声明：报废置换是 `invoice.invoice_no`，过户是
+        # `transfer.invoice_no`。写死一个业务的名字会让另一个业务永远不验真，
+        # 而且不报错——只是那个按钮从来不亮。
+        field = context.profile.invoice_verification_field
+        if field is None:
+            return RuleExecutionResult()
         matched = any(
-            item.field == "invoice.invoice_no" and item.status is FieldStatus.MATCH
+            item.field == field and item.status is FieldStatus.MATCH
             for item in context.comparisons
         )
         if not matched:
             return RuleExecutionResult()
         return RuleExecutionResult(
             page_action_intents=(
-                PageActionIntent(
-                    action_id="verify_invoice",
-                    payload={"field": "invoice.invoice_no"},
-                ),
+                PageActionIntent(action_id="verify_invoice", payload={"field": field}),
             )
         )
 
@@ -624,6 +629,13 @@ class ReviewWorkflow:
     def _run_owner_consistency(context: ReviewExecutionContext) -> RuleExecutionResult:
         """报废置换新旧车所有人一致性：先比页面，再比材料。"""
         return build_owner_consistency_check(context)
+
+    @staticmethod
+    def _run_transfer_invoice_date(
+        context: ReviewExecutionContext,
+    ) -> RuleExecutionResult:
+        """过户审核：开票日期必须晚于车源发布时间。"""
+        return build_transfer_invoice_date_check(context)
 
     @staticmethod
     def _run_replacement_policy(context: ReviewExecutionContext) -> RuleExecutionResult:

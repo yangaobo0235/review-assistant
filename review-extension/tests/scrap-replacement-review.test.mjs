@@ -50,13 +50,26 @@ test("manual input defaults to the page value below material candidates on every
   }
 });
 
-test("workbench hides duplicate date policy cards when the field card is present", () => {
-  const dateField = makeStep({ step_id: "FIELD-invoice.invoice_date", sequence: 1, category: "FIELD", page_field: "invoice.invoice_date", result_status: "CONFLICT", requires_reviewer_action: true, label: "开票日期", reason: "页面与发票日期冲突" });
-  const datePolicy = makeStep({ step_id: "BUSINESS-POLICY-INVOICE-DATE", sequence: 2, result_status: "CONFLICT", requires_reviewer_action: true, label: "新车发票日期", reason: "开票日期不符合政策范围" });
-  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, { review: workbenchReview([dateField, datePolicy]), pageData: { pageFields: { "invoice.invoice_date": "2024-06-25" }, images: [] } }));
+test("workbench shows a merged rule conclusion once, under its field", () => {
+  // 合并是**后端**做的：规则检查项声明了所属字段（`field_check_bindings`），
+  // 结论就并进那一行，后端也不再把它单独发出来。前端原样渲染，不自己拿表
+  // 去猜该藏哪条——前端持有那张表时，新增一个带日期规则的业务得回来补一行。
+  const dateField = makeStep({
+    step_id: "FIELD-invoice.invoice_date",
+    sequence: 1,
+    category: "FIELD",
+    page_field: "invoice.invoice_date",
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+    label: "开票日期",
+    reason: "页面与发票日期冲突；开票日期不符合政策范围",
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([dateField]),
+    pageData: { pageFields: { "invoice.invoice_date": "2024-06-25" }, images: [] },
+  }));
 
-  assert.doesNotMatch(html, /开票日期不符合政策范围/);
-  assert.doesNotMatch(html, /新车发票日期/);
+  assert.equal((html.match(/开票日期不符合政策范围/g) || []).length, 1);
   assert.match(html, /开票日期/);
 });
 

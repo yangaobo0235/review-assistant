@@ -198,10 +198,11 @@ def _field_step(
         reason = f"{comparison.message}；{MISSING_PAGE_FIELD_REASON}"
     else:
         reason = comparison.message
-    if comparison.field == "invoice.code" and any(
-        item.derived_from == "invoice.invoice_no" for item in comparison.evidence
-    ):
-        reason = f"{reason}；发票代码由票面数电号码适配"
+    # 数电发票票面上没有「发票代码」这一栏，值是从数电号码派生的。不说清楚，
+    # 审核员会照着这一栏去原图上找，找不到。派生关系由材料声明给出，这里
+    # 不看字段名——报废置换和过户的字段键并不相同。
+    if any(item.derived_from for item in comparison.evidence):
+        reason = f"{reason}；{label}由票面数电号码适配"
     # 报废置换字段全部在审核助手中展示；原页面保持干净，不再注入标记。
     # 页面是否采集、页面原值和材料证据都由 evidence/values 传给工作台处理。
     policy = field_policy(comparison.field)
@@ -799,4 +800,5 @@ def build_review_tasks(
             if spec.kind == "EXTERNAL"
         ),
         completeness=completeness,
+        field_check_bindings=profile.field_check_bindings,
     ) if page_interaction else _resequence(_deduplicate_steps(steps))

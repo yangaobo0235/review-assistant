@@ -1,6 +1,6 @@
 export interface DifferenceRange { kind: "REPLACE" | "EXTRA" | "MISSING"; start: number; end: number; page_start: number; page_end: number; page_text: string; }
 export type ImageGroup = "身份证" | "回收证明" | "旧车资料" | "新车资料" | "发票及其他图片" | "未分类";
-export type BusinessType = "scrap_replacement" | "vehicle_source" | "consistency";
+export type BusinessType = "scrap_replacement" | "vehicle_source" | "consistency" | "transfer";
 export type Region = "default" | "qingdao" | "changchun";
 export type SelectionMode = "AUTO" | "MANUAL";
 

@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "identities": [
+    {
+      "business_type": "scrap_replacement",
+      "region": "qingdao",
+      "paths": [
+        "/scrap-replace-qingdao"
+      ],
+      "anchors": []
+    },
+    {
+      "business_type": "scrap_replacement",
+      "region": "changchun",
+      "paths": [
+        "/scrap-replace-changchun"
+      ],
+      "anchors": []
+    },
+    {
+      "business_type": "vehicle_source",
+      "region": "default",
+      "paths": [
+        "/vehicle-source"
+      ],
+      "anchors": [
+        "车源审核",
+        "行驶证信息"
+      ]
+    },
+    {
+      "business_type": "transfer",
+      "region": "default",
+      "paths": [
+        "/consistency-qingdao",
+        "/consistency-changchun"
+      ],
+      "anchors": [
+        "审核过户凭证",
+        "过户发票买家名称",
+        "转入地车管所"
+      ]
+    },
+    {
+      "business_type": "consistency",
+      "region": "default",
+      "paths": [
+        "/consistency-qingdao",
+        "/consistency-changchun"
+      ],
+      "anchors": [
+        "新车信息",
+        "车辆所有人类型",
+        "新车挂靠"
+      ]
+    }
+  ]
+}

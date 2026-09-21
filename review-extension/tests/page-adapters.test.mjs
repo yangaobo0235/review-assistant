@@ -11,18 +11,24 @@ import { ReviewBusinessDetector } from "../src/browser/business-detector.ts";
 
 const registry = buildPageAdapterRegistry();
 
-test("每个已知页面都解析到自己的适配器", () => {
+test("地址唯一的页面解析到自己的适配器", () => {
   const cases = [
     ["https://admin.forjtruck.com/scrap-replace-qingdao", "scrap-replacement"],
     ["https://admin.forjtruck.com/scrap-replace-changchun?showPageModel=1", "scrap-replacement"],
     ["https://admin.forjtruck.com/vehicle-source", "vehicle-source"],
-    ["https://admin.forjtruck.com/consistency-qingdao", "consistency"],
-    ["https://admin.forjtruck.com/consistency-changchun", "consistency"],
   ];
 
   for (const [url, expected] of cases) {
     assert.equal(registry.resolve(url)?.id, expected, url);
   }
+});
+
+test("共用地址的页面在适配器层不判定", () => {
+  // 一致性审核与过户审核共用 /consistency-qingdao、/consistency-changchun，
+  // 只看地址必然认错。判定交给后端下发的页面识别清单（见
+  // `business-detector.test.mjs`）；适配器在这里必须说「不知道」，不能给答案。
+  assert.equal(registry.resolve("https://admin.forjtruck.com/consistency-qingdao"), null);
+  assert.equal(registry.resolve("https://admin.forjtruck.com/consistency-changchun"), null);
 });
 
 test("未登记的页面不解析到任何适配器", () => {

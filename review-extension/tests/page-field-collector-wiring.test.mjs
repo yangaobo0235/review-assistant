@@ -526,3 +526,13 @@ test("content script has no host-page review marker protocol", () => {
   assert.doesNotMatch(contentSource, /SHOW_REVIEW_FIELD_STEP|COMPLETE_REVIEW_FIELD_STEP|CLEAR_REVIEW_FIELD_MARKERS|REVIEW_FIELD_DECISION/);
   assert.doesNotMatch(contentSource, /ReviewPageMarker/);
 });
+
+test("组合回填失败时说明是哪个字段、哪一条不满足", () => {
+  // 组合回填有四种失败原因（控件找不到 / 不属于本次采集 / 不在白名单 / 写后回读
+  // 失败），表现形式都是"点了没反应"。审核员看的是面板提示行，所以原因必须写在
+  // 那里，而不是只丢进 Console——为了排查让审核员开开发者工具是不现实的。
+  assert.match(contentSource, /页面上没找到这个控件/);
+  assert.match(contentSource, /不属于本次采集/);
+  assert.match(contentSource, /不在允许回填的字段清单里/);
+  assert.match(contentSource, /组合字段无法回填：/);
+});

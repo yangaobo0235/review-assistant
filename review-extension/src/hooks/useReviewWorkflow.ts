@@ -9,6 +9,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { applyCollectManifest, fetchCollectManifest } from "../browser/collect-manifest.ts";
 import type { CollectManifest } from "../browser/collect-manifest.ts";
+import { fetchPageCatalog } from "../browser/page-catalog.ts";
+import type { PageCatalog } from "../browser/page-catalog.ts";
 import {
   agentBaseUrl,
   cancelReviewJob,
@@ -59,6 +61,10 @@ async function collectPageData(selection: BusinessChoice): Promise<PageData> {
     throw new Error("没有找到当前页面");
   }
   const manifests = await loadCollectManifests();
+  // 页面识别清单和采集清单一起拉：识别发生在按业务类型取采集清单之前，
+  // 所以它必须一次下发全部业务，不能按业务类型查。拉不到时为 null，
+  // Content Script 退回内置表并要求人工选择业务。
+  const pageCatalog: PageCatalog | null = await fetchPageCatalog(agentBaseUrl);
   const pageData = (await chrome.tabs.sendMessage(tab.id, {
     type: "COLLECT_PAGE_MANIFEST",
     businessSelection:
@@ -66,6 +72,7 @@ async function collectPageData(selection: BusinessChoice): Promise<PageData> {
     // 后端是字段别名和页面分组标题的唯一来源。拉取失败时下发空数组，
     // Content Script 会退回内置表，采集照常进行。
     collectManifests: manifests,
+    pageCatalog,
   })) as Omit<PageData, "sourceTabId">;
   // 侧边栏和 Content Script 是两个独立的 JS 运行时，Content Script 里应用的
   // 清单不会传到这里。面板重新应用同一份，用于把字段键和材料类型显示成中文；

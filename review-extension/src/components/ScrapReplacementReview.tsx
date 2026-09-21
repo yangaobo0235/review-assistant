@@ -29,10 +29,6 @@ interface Props {
 type View = "PENDING" | "ALL" | "EXTERNAL";
 type Decision = "MARKED_EXCEPTION";
 const statusText = { MATCH: "一致", CONFLICT: "冲突", INSUFFICIENT: "待复核" } as const;
-const DATE_POLICY_FIELD_BY_STEP: Record<string, string> = {
-  "BUSINESS-POLICY-INVOICE-DATE": "invoice.invoice_date",
-  "BUSINESS-POLICY-DISPOSAL-DEADLINE": "old_vehicle.recycle_date",
-};
 
 
 export function ScrapReplacementReview(props: Props) {
@@ -43,17 +39,11 @@ function Workbench({ review, pageData, onFocusImage = async () => ({ ok: false, 
   const steps = useMemo(() => [...(review.review_tasks ?? [])].sort((a, b) => a.sequence - b.sequence), [review.review_tasks]);
   // Apply the presentation policy before deriving tabs, counts or selection,
   // so hidden backend compatibility tasks cannot leak into a secondary view.
-  const fieldKeys = new Set(
-    steps
-      .filter((step) => step.category === "FIELD")
-      .map((step) => step.page_field ?? step.page_target_field)
-      .filter((field): field is string => Boolean(field)),
-  );
-  const displaySteps = steps.filter((step) => {
-    if (!isFieldFirstTaskVisible(step, { materialTasksVisible })) return false;
-    const policyField = DATE_POLICY_FIELD_BY_STEP[step.step_id];
-    return !(policyField && fieldKeys.has(policyField));
-  });
+  // 日期类规则结论已经由后端并进对应字段行（合并关系来自业务声明的
+  // `field_check_bindings`），这里不再自己拿一张表去猜该藏哪条任务——
+  // 前端持有那张表时，新增一个带日期规则的业务就要回来补一行。
+  const displaySteps = steps.filter((step) =>
+    isFieldFirstTaskVisible(step, { materialTasksVisible }));
   const [view, setView] = useState<View>("PENDING");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});

@@ -7,6 +7,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from app.businesses.packs import BUSINESS_PACKS
 from app.fields.normalize import normalize_value
 from app.models.checks import CheckResult, CheckResultValue
 from app.models.review import FieldComparison, ReviewRequest
@@ -23,26 +24,30 @@ class CompositeFieldSpec:
     secondary_label: str
 
 
-PAGE_FIELD_COMPOSITES = (
-    CompositeFieldSpec(
-        check_id="FIELD-INVOICE-CODE-NO",
-        label="发票代码/号码",
-        primary_field="invoice.code",
-        secondary_field="invoice.invoice_no",
-        material_field="invoice.code",
-        primary_label="发票代码",
-        secondary_label="发票号码",
-    ),
-    CompositeFieldSpec(
-        check_id="FIELD-NEW-VEHICLE-VIN",
-        label="新车车架号",
-        primary_field="new_vehicle.vin",
-        secondary_field="page_ocr.new_vehicle_vin",
-        material_field="new_vehicle.vin",
-        primary_label="新车车架号",
-        secondary_label="OCR新车车架号",
-    ),
-)
+def _declared_composites() -> tuple[CompositeFieldSpec, ...]:
+    """从业务扩展包合成组合字段表。
+
+    和材料策略、字段证据策略同样的做法：**字段键是业务知识，声明在
+    `app.businesses.packs`**，这里只把它转成运行时结构。写死在这张表里的
+    后果是，每来一个带发票代码/号码的业务就要回来改一次引擎，而两个业务的
+    字段键本来就不一样（报废置换是 `invoice.*`，过户是 `transfer.*`）。
+    """
+    return tuple(
+        CompositeFieldSpec(
+            check_id=item.check_id,
+            label=item.label,
+            primary_field=item.primary_field,
+            secondary_field=item.secondary_field,
+            material_field=item.material_field,
+            primary_label=item.primary_label,
+            secondary_label=item.secondary_label,
+        )
+        for pack in BUSINESS_PACKS.values()
+        for item in pack.page_field_composites
+    )
+
+
+PAGE_FIELD_COMPOSITES = _declared_composites()
 
 COMPOSITE_FIELDS_BY_MEMBER = {
     field: spec
