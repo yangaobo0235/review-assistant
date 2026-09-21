@@ -1,6 +1,7 @@
 import pytest
 
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
+from app.businesses.rules.affiliation import run_affiliation_subject
 from app.models.review import (
     FieldComparison,
     FieldObservation,
@@ -58,7 +59,7 @@ def test_affiliation_actions_follow_confirmed_subject_types_even_if_auxiliary_cu
         "qr_checks": [],
     }
 
-    result = ReviewWorkflow._run_affiliation_subject(ReviewWorkflow.__new__(ReviewWorkflow)._execution_context(state))
+    result = run_affiliation_subject(ReviewWorkflow.__new__(ReviewWorkflow)._execution_context(state))
 
     assert result.checks[0].check_id == "AFFILIATION-SUBJECT-001"
     assert result.checks[0].status == "MATCH"
@@ -98,7 +99,7 @@ def test_affiliation_actions_ignore_ocr_vin_and_accept_company_labels(ocr_vin) -
         "qr_checks": [],
     }
 
-    result = ReviewWorkflow._run_affiliation_subject(ReviewWorkflow.__new__(ReviewWorkflow)._execution_context(state))
+    result = run_affiliation_subject(ReviewWorkflow.__new__(ReviewWorkflow)._execution_context(state))
 
     assert [item.status for item in result.checks] == ["MATCH", "MATCH"]
     assert all("VIN" not in item.check_id for item in result.checks)

@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.models.review import ReviewRequest
 from app.services.review import ReviewService
-from app.services.tools import ToolResult
 
 client = TestClient(app)
 
@@ -118,16 +117,6 @@ def test_assist_marks_page_fields_for_manual_review_until_images_are_recognized(
 
     comparison = next(item for item in response.json()["comparisons"] if item["field"] == "old_vehicle.vin")
     assert comparison["status"] == "REVIEW_REQUIRED"
-
-
-class FixedOcr:
-    def recognize(self, image: object) -> ToolResult:
-        return ToolResult(fields={"old_vehicle.vin": "DIFFERENT"}, confidence=0.99)
-
-
-class FailingOcr:
-    def recognize(self, image: object) -> ToolResult:
-        raise RuntimeError("识别服务不可用")
 
 
 def test_review_service_reports_context_image_summary_and_collection_errors() -> None:

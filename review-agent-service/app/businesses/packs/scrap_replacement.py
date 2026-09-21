@@ -292,6 +292,18 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
             normalizer="date",
             required=True,
         ),
+        # 新车发票产地：页面上没有对应控件，也不进审核目录，只给地区政策规则
+        # （`replacement_policy`）读发票材料上的产地做产地判定。
+        # `reviewable=False` + 无别名 + `mode=None`：不采集、不比对、不判必审，
+        # 但字段键必须存在——否则发票那条路由的目标会指向一个未声明的键，
+        # 产地判定会因为「没有证据」而静默失效。口径同过户审核的
+        # `application.source_published_at`。
+        FieldDeclaration(
+            key="new_vehicle.origin",
+            label="新车发票产地",
+            section=NEW_SECTION,
+            reviewable=False,
+        ),
         FieldDeclaration(
             key="application.terminal_certificate_no",
             writable=True,
@@ -599,12 +611,28 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         # 登记证书：只认 vehicle. 前缀（不接受 old_vehicle./new_vehicle. 这类
         # 兼容写法），字段逐条显式声明，所以不使用通用的车辆前缀规则。
         RouteDeclaration("registration_certificate", "vehicle.vin", ("{scope}.vin",)),
-        RouteDeclaration("registration_certificate", "vehicle.type", ("{scope}.type",)),
-        RouteDeclaration("registration_certificate", "vehicle.fuel_type", ("{scope}.fuel_type",)),
+        # 车辆类型只审旧车，燃料类型只审新车：不限定分区时 `{scope}` 会展开出
+        # `new_vehicle.type` / `old_vehicle.fuel_type` 这两个并不存在的键，
+        # 产出的观察值被静默丢弃。
+        RouteDeclaration(
+            "registration_certificate", "vehicle.type", ("{scope}.type",), scope=OLD_SECTION
+        ),
+        RouteDeclaration(
+            "registration_certificate",
+            "vehicle.fuel_type",
+            ("{scope}.fuel_type",),
+            scope=NEW_SECTION,
+        ),
+        # 注册日期只属于新车。`registration_certificate` 没有
+        # `scoped_vehicle_fields`，只走显式路由，所以不限定分区时旧车一侧会被
+        # 展开成 `old_vehicle.registration_date`——这个字段键并不存在，产出的
+        # 观察值会被静默丢弃，表现为「该字段没有材料证据」而不是「配置写错了」。
+        # 限定分区后旧车侧不再产生该键，可观察行为与修复前一致。
         RouteDeclaration(
             "registration_certificate",
             "vehicle.registration_date",
             ("{scope}.registration_date",),
+            scope=NEW_SECTION,
         ),
         RouteDeclaration("scrap_certificate", "old_vehicle.recycle_date", ("old_vehicle.recycle_date",)),
         RouteDeclaration(

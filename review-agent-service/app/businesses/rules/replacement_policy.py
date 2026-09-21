@@ -3,6 +3,7 @@
 from datetime import date
 
 from app.businesses.replacement_policies import ReplacementPolicy
+from app.capabilities.specs import ReviewExecutionContext, RuleExecutionResult
 from app.compare.evidence_values import observation_evidence, readable_value
 from app.fields.normalize import normalize_value
 from app.models.checks import CheckResultValue
@@ -157,3 +158,15 @@ def build_replacement_policy_checks(
         )
     )
     return checks
+
+
+def run_replacement_policy(context: ReviewExecutionContext) -> RuleExecutionResult:
+    """按 Profile 绑定的地区政策执行确定性检查。"""
+    policy = context.profile.replacement_policy
+    if policy is None:
+        raise ValueError("地区政策规则缺少 replacement_policy 配置")
+    return RuleExecutionResult(
+        checks=tuple(
+            build_replacement_policy_checks(policy, list(context.observations))
+        )
+    )

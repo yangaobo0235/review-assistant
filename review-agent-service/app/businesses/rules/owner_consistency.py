@@ -222,3 +222,8 @@ def build_owner_consistency_check(context: ReviewExecutionContext) -> RuleExecut
         materials,
         values,
     ),))
+
+
+def run_owner_consistency(context: ReviewExecutionContext) -> RuleExecutionResult:
+    """报废置换新旧车所有人一致性：先比页面，再比材料。"""
+    return build_owner_consistency_check(context)

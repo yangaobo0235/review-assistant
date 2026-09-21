@@ -141,6 +141,13 @@ class ImageInput(BaseModel):
         ):
             return value
         category = value.get("category_hint", value.get("categoryHint", "unknown"))
+        # **这份名单和 `routing.scope_hint_types` 不是同一个集合，不要合并。**
+        # 那边回答的是「哪些材料属于旧车区」，用于决定二维码扫哪些图、哪些图的
+        # 正文要留到核验结束；这里回答的是「只看这个分类名，该把图片划到哪个
+        # 分区」——是在 `business_scope` 缺失时猜一个分区。行驶证和登记证书两个
+        # 分区都有，拿它们猜分区本身就是不成立的，所以这里既不列 `vehicle_license`
+        # 也不该按材料声明推导：改了会让旧客户端提交的图片落到另一个分区，
+        # 而这是一条纯兼容路径。
         old_types = {"scrap_certificate", "old_vehicle", "registration_certificate"}
         new_types = {"new_vehicle", "invoice"}
         scope = (

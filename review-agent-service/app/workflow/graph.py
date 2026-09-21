@@ -18,15 +18,16 @@ from langgraph.graph import END, START, StateGraph
 
 from app.businesses.completeness import evaluate_collected, evaluate_extracted
 from app.businesses.context_validation import validate_request_route
+from app.businesses.packs import pack_for_business
+from app.businesses.packs.model import material_types_for_scope
+from app.businesses.packs.scrap_replacement import OLD_SECTION
 from app.businesses.profiles import BusinessProfile
-from app.businesses.rules.affiliation import (
-    build_affiliation_auxiliary_checks,
-    build_affiliation_subject_check,
-)
-from app.businesses.rules.owner_consistency import build_owner_consistency_check
-from app.businesses.rules.replacement_policy import build_replacement_policy_checks
-from app.businesses.rules.transfer_invoice_date import build_transfer_invoice_date_check
-from app.businesses.rules.vehicle_model import build_vehicle_model_checks
+from app.businesses.rules.affiliation import run_affiliation_subject
+from app.businesses.rules.invoice_verification import run_verify_invoice
+from app.businesses.rules.owner_consistency import run_owner_consistency
+from app.businesses.rules.replacement_policy import run_replacement_policy
+from app.businesses.rules.transfer_invoice_date import run_transfer_invoice_date
+from app.businesses.rules.vehicle_model import run_vehicle_model
 from app.capabilities import CapabilityRegistry
 from app.capabilities.business_rules import BusinessRuleRegistry
 from app.capabilities.external_checks import ExternalCheckRegistry
@@ -42,17 +43,14 @@ from app.capabilities.specs import (
     ExternalCheckHandler,
     ExternalCheckSpec,
     ReviewExecutionContext,
-    RuleExecutionResult,
 )
 from app.capabilities.subgraphs import build_capability_subgraph
 from app.compare.check_results import qr_review_checks, unique_checks
 from app.compare.composite_fields import build_page_composite_checks
 from app.compare.evidence_values import batch_observations
-from app.compare.settled_values import raw_settled_value
 from app.models.review import (
     BusinessType,
     CapabilityPlanEntry,
-    FieldStatus,
     PageActionIntent,
     PageFillAction,
     QrCheck,
@@ -128,20 +126,33 @@ class ReviewWorkflow:
     ) -> None:
         """构建并编译审核状态图，具体业务能力由服务门面提供。"""
         self.service = service
+        # 地区政策规则的登记名从 Profile 推导，不在这里手抄一份青岛/长春名单：
+        # 能力 ID 由 `RegionDeclaration.policy_capability_id()` 定义为
+        # `{region}_replacement_policy`，处理器本身是通用的（具体政策从
+        # `profile.replacement_policy` 读）。于是新增地区只要在
+        # `packs/<业务>.py` 里加一条 `RegionDeclaration`，主图不必改动。
+        policy_rule_ids = tuple(
+            spec.capability_id
+            for profile in service.registry.profiles
+            for spec in profile.capabilities
+            if spec.capability_id.endswith("_replacement_policy")
+        )
         self.external_checks = ExternalCheckRegistry(
             {
                 "scrap_certificate_qr": self._run_scrap_certificate_qr,
                 **(external_check_handlers or {}),
             }
         )
+        # 规则实现都在 `app/businesses/rules/` 各自的模块里，主图只负责按稳定
+        # ID 登记。以前这些实现是 `ReviewWorkflow` 的私有方法，于是改一条业务
+        # 门槛（例如「挂靠写回要同时满足哪几个条件」）得动这个通用文件。
         builtin_rules: dict[str, BusinessRuleHandler] = {
-            "qingdao_replacement_policy": self._run_replacement_policy,
-            "changchun_replacement_policy": self._run_replacement_policy,
-            "affiliation_subject": self._run_affiliation_subject,
-            "verify_invoice": self._run_verify_invoice,
-            "vehicle_model_consistency": self._run_vehicle_model,
-            "owner_consistency": self._run_owner_consistency,
-            "transfer_invoice_date": self._run_transfer_invoice_date,
+            **{rule_id: run_replacement_policy for rule_id in policy_rule_ids},
+            "affiliation_subject": run_affiliation_subject,
+            "verify_invoice": run_verify_invoice,
+            "vehicle_model_consistency": run_vehicle_model,
+            "owner_consistency": run_owner_consistency,
+            "transfer_invoice_date": run_transfer_invoice_date,
         }
         additional_rules = dict(business_rule_handlers or {})
         overridden = builtin_rules.keys() & additional_rules.keys()
@@ -206,24 +217,18 @@ class ReviewWorkflow:
             self.external_checks.validate(external_specs)
             self.business_rules.validate(rule_ids)
             self.page_actions.validate(tuple(profile.enabled_page_actions))
-            if (
-                set(rule_ids)
-                & {"qingdao_replacement_policy", "changchun_replacement_policy"}
-                and profile.replacement_policy is None
-            ):
+            policy_rules = set(rule_ids) & set(policy_rule_ids)
+            if policy_rules and profile.replacement_policy is None:
                 raise ValueError("地区政策规则缺少 replacement_policy 配置")
             policy = profile.replacement_policy
-            policy_rules = set(rule_ids) & {
-                "qingdao_replacement_policy",
-                "changchun_replacement_policy",
-            }
+            # `and` 的优先级高于 `or`，最后一组条件必须加括号才读得出来。
+            expected_policy_rules = {f"{profile.region.value}_replacement_policy"}
             if policy is not None and (
                 profile.business_type is not BusinessType.SCRAP_REPLACEMENT
                 or policy.region != profile.region
                 or policy.version != profile.version
                 or policy.policy_id != f"scrap_replacement_{profile.region.value}"
-                or policy_rules
-                and policy_rules != {f"{profile.region.value}_replacement_policy"}
+                or (policy_rules and policy_rules != expected_policy_rules)
             ):
                 raise ValueError("地区政策的归属、版本或规则标识与 Profile 不一致")
         builder = StateGraph(ReviewState)
@@ -389,8 +394,14 @@ class ReviewWorkflow:
         available = {image.business_scope for image in state["request"].images if not image.collection_error}
         available.update(image.category_hint for image in state["request"].images if not image.collection_error)
         available.update(document.business_scope for document in state["batch"].recognized_documents)
-        if available & {"scrap_certificate", "registration_certificate", "vehicle_license"}:
-            available.add("old_vehicle")
+        # 出现旧车材料时补上旧车分区，让依赖它的能力（二维码核验）能进入计划。
+        # 集合从报废置换的材料声明推导——二维码核验只存在于这个业务，旧实现也是
+        # 所有业务共用这一份名单。漏改一处会让旧车能力被判成「材料不足」，不报错。
+        scrap_pack = pack_for_business(BusinessType.SCRAP_REPLACEMENT)
+        if scrap_pack is not None and available & material_types_for_scope(
+            scrap_pack, OLD_SECTION
+        ):
+            available.add(OLD_SECTION)
         return {"capability_plan": plan_capabilities(state["profile"], available), "capability_results": []}
 
     def _execution_context(self, state: ReviewState) -> ReviewExecutionContext:
@@ -528,7 +539,6 @@ class ReviewWorkflow:
             state["request"],
             batch,
             state["profile"],
-            include_tools=False,
             qr_checks=qr_checks,
             business_checks=[],
             defer_advice=True,
@@ -594,93 +604,6 @@ class ReviewWorkflow:
                 ),
             ],
         }
-
-    @staticmethod
-    def _run_verify_invoice(context: ReviewExecutionContext) -> RuleExecutionResult:
-        """发票号码与页面一致时，提出 `verify_invoice`（一键验真）页面动作。
-
-        只提出动作，不执行；是否执行以及如何执行由浏览器适配器决定。
-        本能力不产出检查项，因此不会改变工作台的待处理计数。
-        """
-        # 触发字段由业务声明：报废置换是 `invoice.invoice_no`，过户是
-        # `transfer.invoice_no`。写死一个业务的名字会让另一个业务永远不验真，
-        # 而且不报错——只是那个按钮从来不亮。
-        field = context.profile.invoice_verification_field
-        if field is None:
-            return RuleExecutionResult()
-        matched = any(
-            item.field == field and item.status is FieldStatus.MATCH
-            for item in context.comparisons
-        )
-        if not matched:
-            return RuleExecutionResult()
-        return RuleExecutionResult(
-            page_action_intents=(
-                PageActionIntent(action_id="verify_invoice", payload={"field": field}),
-            )
-        )
-
-    @staticmethod
-    def _run_vehicle_model(context: ReviewExecutionContext) -> RuleExecutionResult:
-        """车源车型一致性：车型下拉值分别与材料的型号、马力、排放标准比对。"""
-        return build_vehicle_model_checks(context)
-
-    @staticmethod
-    def _run_owner_consistency(context: ReviewExecutionContext) -> RuleExecutionResult:
-        """报废置换新旧车所有人一致性：先比页面，再比材料。"""
-        return build_owner_consistency_check(context)
-
-    @staticmethod
-    def _run_transfer_invoice_date(
-        context: ReviewExecutionContext,
-    ) -> RuleExecutionResult:
-        """过户审核：开票日期必须晚于车源发布时间。"""
-        return build_transfer_invoice_date_check(context)
-
-    @staticmethod
-    def _run_replacement_policy(context: ReviewExecutionContext) -> RuleExecutionResult:
-        policy = context.profile.replacement_policy
-        if policy is None:
-            raise ValueError("地区政策规则缺少 replacement_policy 配置")
-        return RuleExecutionResult(
-            checks=tuple(
-                build_replacement_policy_checks(policy, list(context.observations))
-            )
-        )
-
-    @staticmethod
-    def _run_affiliation_subject(
-        context: ReviewExecutionContext,
-    ) -> RuleExecutionResult:
-        comparisons = {item.field: item for item in context.comparisons}
-        result = build_affiliation_subject_check(
-            context.request.page_fields.get("old_vehicle.owner")
-            or raw_settled_value(comparisons, "old_vehicle.owner"),
-            context.request.page_fields.get("new_vehicle.owner")
-            or raw_settled_value(comparisons, "new_vehicle.owner"),
-            list(context.observations),
-            context.request.page_fields.get("application.owner_type"),
-        )
-        auxiliary_checks = build_affiliation_auxiliary_checks(
-            page_fields=context.request.page_fields,
-            new_owner_type=result.owner_types[1],
-            new_owner=context.request.page_fields.get("new_vehicle.owner")
-            or raw_settled_value(comparisons, "new_vehicle.owner"),
-        )
-        return RuleExecutionResult(
-            checks=(result.check, *auxiliary_checks),
-            page_action_candidates=(
-                result.page_actions
-                if result.check.status == "MATCH"
-                and {
-                    action.field for action in result.page_actions
-                } == {"old_vehicle.affiliation", "new_vehicle.affiliation"}
-                and len(result.page_actions) == 2
-                and len({action.owner_type for action in result.page_actions}) == 1
-                and {action.owner_type for action in result.page_actions} <= {"PERSONAL", "COMPANY"}
-                else ()
-            ),
-        )
 
     @staticmethod
     def _prepare_review_tasks(state: ReviewState) -> dict[str, Any]:

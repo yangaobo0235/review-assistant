@@ -96,3 +96,8 @@ def build_transfer_invoice_date_check(
         )
 
     return RuleExecutionResult(checks=(check,))
+
+
+def run_transfer_invoice_date(context: ReviewExecutionContext) -> RuleExecutionResult:
+    """过户审核：开票日期必须晚于车源发布时间。"""
+    return build_transfer_invoice_date_check(context)

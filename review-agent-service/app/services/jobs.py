@@ -16,7 +16,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from app.businesses.packs import pack_for_business
+from app.businesses.packs.scrap_replacement import OLD_SECTION
+from app.businesses.routing import scope_hint_types
 from app.models.review import (
+    BusinessType,
     ImageInput,
     JobStatus,
     ReviewGroupProgress,
@@ -283,6 +287,10 @@ class ReviewJobManager:
             )
             with self._lock:
                 stored.snapshot.status = JobStatus.FAILED
+                # 与 `_finalize_async` 的失败分支保持一致：只改 status 不改 phase
+                # 会让整批路径失败后永远停在 RECOGNIZING，于是同一个终态在两套
+                # 路径下含义不同。
+                stored.snapshot.phase = ReviewJobPhase.FAILED
                 # 对外只返回异常类型；具体原因保留在服务端日志中，避免模型响应、
                 # 页面字段或其他敏感数据随异常文本泄漏到前端。
                 stored.snapshot.message = f"审核任务失败：{type(exc).__name__}"
@@ -458,18 +466,25 @@ class ReviewJobManager:
     ) -> None:
         """识别后尽早释放最终二维码核验不再需要的图片正文。"""
 
-        old_document_hints = {
-            "old_vehicle",
-            "vehicle_license",
-            "registration_certificate",
-            "scrap_certificate",
-        }
+        # 旧车材料集合从业务声明推导，不在这里手抄一份：漏改的后果是静默的——
+        # 该留的图被提前释放，最终二维码核验拿不到正文，审核员只看到
+        # 「未识别到二维码」。
+        #
+        # **固定取报废置换的声明，不按本次请求的业务取**：二维码核验只存在于
+        # 报废置换，旧实现也是所有业务共用这一份名单。按请求业务取会让过户、
+        # 车源提前释放更多正文——那本身是合理的（它们没有二维码核验），但属于
+        # 行为变更，应该单独做，而且更好的表达是「问二维码能力需要哪些材料」，
+        # 而不是继续写死分区名。
+        scrap_pack = pack_for_business(BusinessType.SCRAP_REPLACEMENT)
+        old_document_hints = (
+            scope_hint_types(scrap_pack, OLD_SECTION) if scrap_pack else frozenset()
+        )
         recognized_as_scrap = any(
             document.document_type == "scrap_certificate"
             for document in batch.recognized_documents
         )
         needs_qr_payload = (
-            image.business_scope == "old_vehicle"
+            image.business_scope == OLD_SECTION
             or image.category_hint in old_document_hints
             or image.document_type_hint in old_document_hints
             or recognized_as_scrap

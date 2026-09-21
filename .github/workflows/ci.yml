@@ -40,6 +40,10 @@ jobs:
       - name: Run Ruff
         run: uv run ruff check app tests
 
+      # README 和 CONTRIBUTING 都要求提交前跑这一步，之前没有门禁。
+      - name: Byte-compile
+        run: uv run python -m compileall -q app
+
   extension:
     name: Extension
     runs-on: ubuntu-latest
@@ -66,5 +70,29 @@ jobs:
       - name: Build extension
         run: npm run build
 
+      # 发布给用户的是 build:public（见 docs/指南/部署.md）。之前 CI 只验证了
+      # 开发模式构建，发布路径没有任何门禁。
+      - name: Build extension (release)
+        run: npm run build:public
+
       - name: Run ESLint
         run: npm run lint
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 最低限度的凭据扫描，不依赖第三方 Action：只查高信号模式，排除示例文件
+      # 和锁文件（锁文件里可能有形似的高熵字符串）。更完整的方案是 gitleaks，
+      # 接入前需确认许可证要求。
+      - name: Smoke-check for committed credentials
+        run: |
+          if git grep -nIE '(sk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' \
+              -- ':(exclude)*.example' ':(exclude)*.lock' ':(exclude)*.md'; then
+            echo "::error::检测到疑似凭据。请改为环境变量或本地 .env（已被 .gitignore 忽略）。"
+            exit 1
+          fi
+          echo "未发现疑似凭据。"

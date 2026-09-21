@@ -53,9 +53,14 @@ test("material tasks are hidden only for profiles that place them elsewhere", ()
   assert.equal(material.every((step) => isFieldFirstTaskVisible(step, vehicleSourcePolicy)), true);
 });
 
-test("keeps generic step evidence readable in a narrow panel", () => {
+test("keeps step text readable in a narrow panel", () => {
   const stylesheet = readFileSync(new URL("../src/App.css", import.meta.url), "utf8");
 
-  assert.match(stylesheet, /\.stepper-evidence li,[\s\S]*overflow-wrap: anywhere/);
-  assert.match(stylesheet, /\.stepper-evidence-meta[\s\S]*overflow-wrap: anywhere/);
+  // 侧边栏只有几百像素宽，长理由/长字段值必须能断行，否则会横向溢出。
+  // 断言只能落在 CSS 文本上——这里没有布局引擎，样式本身没法做行为测试。
+  // 注意选择器必须指向**实际渲染**的容器：旧版本断言的是已退役的 `.stepper-*`
+  // （没有任何组件再产出那个类名），那条断言永远不会失败，也保护不了真实布局。
+  assert.match(stylesheet, /\.workbench-reason\s*{[^}]*overflow-wrap:\s*anywhere/);
+  assert.match(stylesheet, /\.workbench-index span\s*{[^}]*overflow-wrap:\s*anywhere/);
+  assert.match(stylesheet, /\.workbench-card-title h2\s*{[^}]*overflow-wrap:\s*anywhere/);
 });

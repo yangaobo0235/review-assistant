@@ -52,7 +52,7 @@ def test_capability_registries_cannot_be_modified_after_startup():
 def test_partial_response_never_runs_retired_owner_or_same_year_checks():
     service = ReviewService()
     response = service._build_response(
-        request_for(SCRAP_REPLACEMENT_QINGDAO), AgentBatchResult(), include_tools=False
+        request_for(SCRAP_REPLACEMENT_QINGDAO), AgentBatchResult()
     )
     assert response.cross_checks == []
     assert not any(

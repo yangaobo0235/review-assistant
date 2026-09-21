@@ -49,4 +49,3 @@ class MaterialPolicy:
 
 
 DEFAULT_RETRY_POLICY = RetryPolicy()
-TRANSFER_MATERIAL_POLICY = MaterialPolicy(mode="disabled")

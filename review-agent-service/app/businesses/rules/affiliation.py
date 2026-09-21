@@ -3,7 +3,9 @@
 import re
 from dataclasses import dataclass
 
+from app.capabilities.specs import ReviewExecutionContext, RuleExecutionResult
 from app.compare.evidence_values import observation_evidence, readable_value
+from app.compare.settled_values import raw_settled_value
 from app.fields.normalize import normalize_value
 from app.models.checks import CheckResultValue
 from app.models.review import FieldObservation, PageFillAction
@@ -513,4 +515,42 @@ def build_affiliation_subject_check(
         ),
         owner_types=(old_type, new_type),
         page_actions=actions,
+    )
+
+
+def run_affiliation_subject(context: ReviewExecutionContext) -> RuleExecutionResult:
+    """主体关系检查，并推导可受控写回的挂靠动作。
+
+    写回候选只在结论为 MATCH、且恰好是两个挂靠字段、主体类型唯一且属于
+    个人/公司时才产出——这是**业务门槛**，不是编排，所以它属于这里而不是主图。
+    """
+    comparisons = {item.field: item for item in context.comparisons}
+    result = build_affiliation_subject_check(
+        context.request.page_fields.get("old_vehicle.owner")
+        or raw_settled_value(comparisons, "old_vehicle.owner"),
+        context.request.page_fields.get("new_vehicle.owner")
+        or raw_settled_value(comparisons, "new_vehicle.owner"),
+        list(context.observations),
+        context.request.page_fields.get("application.owner_type"),
+    )
+    auxiliary_checks = build_affiliation_auxiliary_checks(
+        page_fields=context.request.page_fields,
+        new_owner_type=result.owner_types[1],
+        new_owner=context.request.page_fields.get("new_vehicle.owner")
+        or raw_settled_value(comparisons, "new_vehicle.owner"),
+    )
+    action_fields = {action.field for action in result.page_actions}
+    action_types = {action.owner_type for action in result.page_actions}
+    write_back = (
+        result.page_actions
+        if result.check.status == "MATCH"
+        and action_fields == {"old_vehicle.affiliation", "new_vehicle.affiliation"}
+        and len(result.page_actions) == 2
+        and len(action_types) == 1
+        and action_types <= {"PERSONAL", "COMPANY"}
+        else ()
+    )
+    return RuleExecutionResult(
+        checks=(result.check, *auxiliary_checks),
+        page_action_candidates=write_back,
     )

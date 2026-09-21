@@ -9,7 +9,11 @@ from typing import Any
 
 from app.businesses.packs import SCRAP_REPLACEMENT_PACK as _PACK
 from app.businesses.packs import pack_for_scope
-from app.businesses.packs.model import BusinessExtensionPack, MaterialDeclaration
+from app.businesses.packs.model import (
+    BusinessExtensionPack,
+    MaterialDeclaration,
+    material_types_for_scope,
+)
 
 # 材料上的车辆通用字段可能写作这三种前缀之一，落到哪个分区由页面决定。
 VEHICLE_PREFIXES = {"vehicle", "old_vehicle", "new_vehicle"}
@@ -24,6 +28,28 @@ LEGACY_DOCUMENT_TYPES = {
 def normalize_document_type(document_type: str) -> str:
     """把旧版车辆角色名称归一为实际材料类型。"""
     return LEGACY_DOCUMENT_TYPES.get(document_type, document_type)
+
+
+def scope_hint_types(pack: BusinessExtensionPack, scope: str) -> frozenset[str]:
+    """「可能表示该分区材料」的类型集合：声明的材料类型 ＋ 指向它们的旧版角色别名。
+
+    这个集合是「二维码扫哪些图」和「哪些图的正文必须留到核验结束」的共同依据。
+    以前这两处各自手抄了一份 `{old_vehicle, vehicle_license, registration_certificate,
+    scrap_certificate}`，改一处漏一处的后果是静默的：该留的图被提前释放，最终二维码
+    核验拿不到正文，审核员只看到「未识别到二维码」。
+
+    别名取**名字就等于该分区**的那一个（`old_vehicle` / `new_vehicle`）：旧版前端
+    把业务角色当作材料类型提交，角色名本身就是分区名。不能按「别名映射到的材料
+    类型是否属于该分区」反查——行驶证两个分区都有，那样查会让 `new_vehicle` 也
+    落进旧车集合。
+
+    该分区**没有声明任何材料**时返回空集：此时角色别名指向的是别的分区的材料
+    （例如拿车源审核去问旧车分区），带上别名只会凭空多出一个并不存在的候选。
+    """
+    declared = material_types_for_scope(pack, scope)
+    if not declared:
+        return frozenset()
+    return frozenset(declared | {alias for alias in LEGACY_DOCUMENT_TYPES if alias == scope})
 
 
 def _vehicle_suffix(material: MaterialDeclaration | None, field_name: str) -> str | None:

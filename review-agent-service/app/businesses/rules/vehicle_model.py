@@ -479,3 +479,8 @@ def build_vehicle_model_checks(context: ReviewExecutionContext) -> RuleExecution
             _emission_check(context),
         )
     )
+
+
+def run_vehicle_model(context: ReviewExecutionContext) -> RuleExecutionResult:
+    """车源车型一致性：车型下拉值分别与材料的型号、马力、排放标准比对。"""
+    return build_vehicle_model_checks(context)

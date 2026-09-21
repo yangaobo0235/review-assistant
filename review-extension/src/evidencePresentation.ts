@@ -5,7 +5,35 @@
  * 修改人：wuyi
  */
 
+import { manifestMaterialLabels } from "./browser/collect-manifest.ts";
 import type { EvidenceFact } from "./types/review";
+
+/**
+ * 材料中文名的兜底表，**只有清单不可用时才生效**。
+ *
+ * 以前这里是唯一的来源，绕过了后端下发的采集清单——于是同一份材料在同一块
+ * 面板上有两个名字（清单说「机动车行驶证或车辆资料」，证据卡写死成「行驶证」），
+ * 而车源/过户的材料类型（车辆铭牌、二手车销售统一发票）一律落到「图片证据」。
+ * 新增材料类型只需在后端声明，不必回来加分支。
+ */
+const FALLBACK_MATERIAL_LABELS: Record<string, string> = {
+  invoice: "机动车销售发票",
+  registration_certificate: "机动车登记证书",
+  vehicle_license: "行驶证",
+  scrap_certificate: "报废机动车回收证明",
+  business_license: "营业执照",
+  identity_card: "身份证",
+};
+
+/** 材料类型 → 中文名：优先用清单，清单不可用时退回内置表。 */
+function materialLabel(documentType: string | null | undefined): string | null {
+  if (!documentType) return null;
+  return (
+    manifestMaterialLabels()?.[documentType] ??
+    FALLBACK_MATERIAL_LABELS[documentType] ??
+    null
+  );
+}
 
 export interface EvidenceHighlightPlan {
   compareTo?: string;
@@ -85,25 +113,11 @@ export function evidencePresentation(evidence: Pick<EvidenceFact, "source" | "va
   if (evidence.source === "二维码官网字段") {
     return { kind: "page" as const, label: "二维码官网", value };
   }
-  if (evidence.document_type === "invoice") {
-    const label = "机动车销售发票";
-    return { kind: "image" as const, label, value };
-  }
-  if (evidence.document_type === "registration_certificate") {
-    const label = "机动车登记证书";
-    return { kind: "image" as const, label, value };
-  }
-  if (evidence.document_type === "vehicle_license") {
-    return { kind: "image" as const, label: "行驶证", value };
-  }
-  if (evidence.document_type === "scrap_certificate") {
-    return { kind: "image" as const, label: "报废机动车回收证明", value };
-  }
-  if (evidence.document_type === "business_license") {
-    return { kind: "image" as const, label: "营业执照", value };
-  }
-  if (evidence.document_type === "identity_card") {
-    return { kind: "image" as const, label: "身份证", value };
-  }
-  return { kind: "image" as const, label: "图片证据", value };
+  // 材料名以清单为准；清单里没有这个名字（例如后端刚新增了材料类型而清单
+  // 还没重新拉取）时退回内置表，再退回「图片证据」，不编造名字。
+  return {
+    kind: "image" as const,
+    label: materialLabel(evidence.document_type) ?? "图片证据",
+    value,
+  };
 }

@@ -140,7 +140,6 @@ def test_scrap_target_profile_uncertain_observation_forces_review() -> None:
             page_fields={"new_vehicle.vin": "VIN-1"},
         ),
         batch,
-        include_tools=False,
     )
 
     vin = next(item for item in result.comparisons if item.field == "new_vehicle.vin")

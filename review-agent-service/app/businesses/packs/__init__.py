@@ -10,6 +10,7 @@ from app.businesses.packs.model import (
     RegionDeclaration,
     SectionDeclaration,
     build_collect_manifest,
+    validate_pack_references,
 )
 from app.businesses.packs.scrap_replacement import SCRAP_REPLACEMENT_PACK
 from app.businesses.packs.transfer import TRANSFER_PACK
@@ -58,6 +59,20 @@ def _validate_scope_ownership() -> None:
 
 
 _validate_scope_ownership()
+
+
+def _validate_all_pack_references() -> None:
+    """每个业务的声明内部交叉引用都必须指向真实存在的字段键。
+
+    配错的后果是静默的——那条观察值被丢掉，审核员看到的是「该字段没有材料
+    证据」而不是「配置写错了」。所以放在 import 期直接失败，和上面的分区
+    归属校验同一个口径：宁可服务起不来，也不带着静默错误去审单子。
+    """
+    for pack in BUSINESS_PACKS.values():
+        validate_pack_references(pack)
+
+
+_validate_all_pack_references()
 
 
 __all__ = [

@@ -1,10 +1,11 @@
 import pytest
 
 from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO
+from app.businesses.rules.invoice_verification import run_verify_invoice
 from app.capabilities.specs import ReviewExecutionContext
 from app.models.review import FieldObservation, ReviewRequest
 from app.services.review import ReviewService
-from app.workflow.graph import WORKFLOW_NODE_ORDER, ReviewState, ReviewWorkflow
+from app.workflow.graph import WORKFLOW_NODE_ORDER, ReviewState
 from app.workflow.models import AgentBatchResult
 
 INVOICE_NO = "26320000000801433801"
@@ -78,7 +79,6 @@ def test_partial_response_uses_final_advice_contract() -> None:
     response = service._build_response(
         request,
         AgentBatchResult(),
-        include_tools=False,
     )
 
     assert response.agent_advice.title == "建议人工复核"
@@ -142,7 +142,7 @@ def test_verify_invoice_capability_is_silent_without_comparisons() -> None:
         comparisons=(),
     )
 
-    result = ReviewWorkflow._run_verify_invoice(context)
+    result = run_verify_invoice(context)
 
     assert result.checks == ()
     assert result.page_action_intents == ()

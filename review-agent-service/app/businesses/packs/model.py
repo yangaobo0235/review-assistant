@@ -360,6 +360,109 @@ def slot_document_types(pack: BusinessExtensionPack) -> dict[tuple[str, int], st
     }
 
 
+def material_types_for_scope(pack: BusinessExtensionPack, scope: str) -> frozenset[str]:
+    """业务声明的「属于某个分区的材料类型」集合。
+
+    唯一来源是业务的**材料要求声明**（`MaterialDeclaration.material_policy` 的
+    `MaterialRequirement.business_scope`），不是手抄一份名单、也不能从
+    `MaterialDeclaration.allowed_scopes` 推导：行驶证和登记证书两个分区都能
+    出现，它们的 `allowed_scopes` 是**空元组**（表示不限制），照那个推导只会
+    得到回收证明一个，会把「二维码扫哪些图」「哪些图的正文必须留到核验结束」
+    这两件事的范围改错，而且不报错。
+
+    调用方需要匹配旧版前端的角色别名时，用 `routing.scope_hint_types`。
+    """
+    policy = pack.material_policy
+    if policy is None:
+        return frozenset()
+    return frozenset(
+        requirement.document_type
+        for requirement in policy.materials
+        if requirement.business_scope == scope
+    )
+
+
+def validate_pack_references(pack: BusinessExtensionPack) -> None:
+    """校验声明内部的交叉引用是否指向真实存在的字段键。
+
+    此前这些引用**没有任何校验**：写错一个字段键不会报错，只会让那条观察值
+    在 `field_policy()` 处被静默丢弃——审核员看到的是「该字段没有材料证据」，
+    而不是「配置写错了」。两种情况的处理方式完全不同，所以这里在启动期
+    直接失败，并指出是哪个声明的哪一处。
+
+    与 `_validate_scope_ownership`（分区归属）同一套做法：宁可服务起不来，
+    也不要带着一个静默错误去审单子。
+    """
+    field_keys = {item.key for item in pack.fields}
+    scopes = set(pack.scopes)
+    problems: list[str] = []
+
+    def require(field_key: str, where: str) -> None:
+        if field_key and field_key not in field_keys:
+            problems.append(f"{where} 引用了未声明的字段键「{field_key}」")
+
+    seen_fields: set[str] = set()
+    for item in pack.fields:
+        if item.key in seen_fields:
+            problems.append(f"字段键重复声明：「{item.key}」")
+        seen_fields.add(item.key)
+        # 该字段与另一个材料字段共用证据策略，两者都必须存在。
+        if item.material_field:
+            require(item.material_field, f"字段「{item.key}」的 material_field")
+
+    seen_materials: set[str] = set()
+    for material in pack.materials:
+        if material.document_type in seen_materials:
+            problems.append(f"材料类型重复声明：「{material.document_type}」")
+        seen_materials.add(material.document_type)
+        if material.derived_field is not None:
+            number_field, derived = material.derived_field
+            require(number_field, f"材料「{material.document_type}」派生关系的号码字段")
+            require(derived, f"材料「{material.document_type}」派生关系的派生字段")
+        for slot_scope, _ in material.slots:
+            if slot_scope not in scopes:
+                problems.append(
+                    f"材料「{material.document_type}」的上传槽位用了未声明的分区「{slot_scope}」"
+                )
+
+    for rule in pack.routes:
+        if rule.scope and rule.scope not in scopes:
+            problems.append(
+                f"材料「{rule.document_type}」的路由限定了未声明的分区「{rule.scope}」"
+            )
+        # `{scope}` 会按当前分区展开，所以展开后的键都要存在——这正是
+        # 「只声明了新车字段、却让路由对旧车也生效」会踩到的坑。
+        # 路由声明了 `scope` 时只对该分区生效，不能按全部分区展开。
+        expanded_scopes = (rule.scope,) if rule.scope else tuple(scopes)
+        targets = {target for target in rule.targets if "{scope}" not in target}
+        targets |= {
+            target.replace("{scope}", scope)
+            for target in rule.targets
+            if "{scope}" in target
+            for scope in expanded_scopes
+        }
+        for target in sorted(targets):
+            require(target, f"材料「{rule.document_type}」到「{rule.source_field}」的路由目标")
+
+    for composite in pack.page_field_composites:
+        require(composite.primary_field, f"组合字段「{composite.check_id}」的 primary_field")
+        require(composite.secondary_field, f"组合字段「{composite.check_id}」的 secondary_field")
+        require(composite.material_field, f"组合字段「{composite.check_id}」的 material_field")
+
+    for check_id, field_key in pack.field_check_bindings:
+        require(field_key, f"检查项「{check_id}」的 field_check_bindings")
+
+    for anchor in pack.identity_anchors:
+        require(anchor, "页面指纹锚点 identity_anchors")
+
+    if pack.invoice_verification_field:
+        require(pack.invoice_verification_field, "发票验真触发字段 invoice_verification_field")
+
+    if problems:
+        detail = "\n  - ".join(problems)
+        raise ValueError(f"业务声明「{pack.business_type}」存在无效引用：\n  - {detail}")
+
+
 def build_collect_manifest(pack: BusinessExtensionPack) -> dict[str, object]:
     """生成前端页面采集清单。
 

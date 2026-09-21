@@ -2,7 +2,13 @@ import type { PageData, PageActionIntent } from "../types/review";
 
 export type PageActionExecutor = (intent: PageActionIntent, page: PageData) => Promise<string>;
 
-/** Frontend action catalog; execution remains guarded by the active PageAdapter. */
+/**
+ * 前端页面动作目录：按后端下发的稳定 `action_id` 找到执行器。
+ *
+ * 注意这里只做「有没有注册执行器」的判定，不做页面身份校验——身份、白名单、
+ * 控件唯一性、原值校验和回读回滚都在写回器（`page-field-writer.ts`）里，
+ * 每个执行器自己负责调用。
+ */
 export class PageActionRegistry {
   private readonly executors = new Map<string, PageActionExecutor>();
 
@@ -15,7 +21,13 @@ export class PageActionRegistry {
     const messages: string[] = [];
     for (const action of actions) {
       const executor = this.executors.get(action.action_id);
-      if (!executor) continue;
+      if (!executor) {
+        // 后端新增了动作、前端还没注册执行器时，以前是静默跳过：页面上什么都
+        // 没发生，也没有任何提示。「新增业务前端零改动」的破口就在这里，
+        // 所以至少要变成审核员看得见的一句话。
+        messages.push(`页面动作「${action.action_id}」尚未在前端注册，已跳过`);
+        continue;
+      }
       messages.push(await executor(action, page));
     }
     return messages;

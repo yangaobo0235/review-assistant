@@ -12,7 +12,6 @@ dependencies = [
     "pillow>=12.3.0",
     "pydantic>=2.13.4",
     "python-multipart>=0.0.22",
-    "pytest>=9.1.1",
     "uvicorn>=0.52.4",
     "zxing-cpp>=3.1.1",
 ]

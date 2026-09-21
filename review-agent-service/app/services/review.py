@@ -12,12 +12,16 @@ from typing import Any
 from uuid import uuid4
 
 from app.businesses.context_validation import validate_request_route
+from app.businesses.packs import pack_for_business
+from app.businesses.packs.scrap_replacement import OLD_SECTION
 from app.businesses.profiles import BusinessProfile
 from app.businesses.registry import BusinessRegistry, build_business_registry
+from app.businesses.routing import scope_hint_types
 from app.capabilities.page_actions import PageActionHandler
 from app.capabilities.specs import BusinessRuleHandler, ExternalCheckHandler
 from app.compare.evidence_values import batch_observations
 from app.models.review import (
+    BusinessType,
     FieldObservation,
     FieldStatus,
     ImageInput,
@@ -30,7 +34,6 @@ from app.services.review_response import (
     build_review_response,
     build_unconfigured_response,
 )
-from app.services.tools import MockOcrTool, MockVisionTool
 from app.workflow.config import load_qwen_config
 from app.workflow.graph import ReviewWorkflow
 from app.workflow.models import AgentBatchResult, MaterialCompletenessReport
@@ -45,16 +48,12 @@ class ReviewService:
 
     def __init__(
         self,
-        ocr: object | None = None,
-        vision: object | None = None,
         qr: object | None = None,
         registry: BusinessRegistry | None = None,
         external_check_handlers: Mapping[str, ExternalCheckHandler] | None = None,
         business_rule_handlers: Mapping[str, BusinessRuleHandler] | None = None,
         page_action_handlers: Mapping[str, PageActionHandler] | None = None,
     ) -> None:
-        self.ocr = ocr or MockOcrTool()
-        self.vision = vision or MockVisionTool()
         self.qr = qr or QrCodeService()
         self.qr_web = QrWebVerifier(allowed_hosts=["qclt.mofcom.gov.cn"])
         self.registry = registry or build_business_registry()
@@ -99,7 +98,6 @@ class ReviewService:
                 request,
                 batch,
                 profile,
-                include_tools=False,
             )
             callback_result = on_progress(progress_response, batch)
             if inspect.isawaitable(callback_result):
@@ -174,7 +172,6 @@ class ReviewService:
         batch: AgentBatchResult,
         profile: BusinessProfile | None = None,
         *,
-        include_tools: bool,
         qr_checks: list[QrCheck] | None = None,
         business_checks: list | None = None,
         page_fill_intent: list | None = None,
@@ -208,30 +205,6 @@ class ReviewService:
             if image.collection_error:
                 image_name = image.image_id or image.index
                 issues.append(f"图片 {image_name} 采集失败：{image.collection_error}")
-                continue
-            if not include_tools:
-                continue
-            try:
-                ocr_result = self.ocr.recognize(image.model_dump())
-                self.vision.inspect(image.model_dump(), image.group)
-            except (OSError, RuntimeError, TypeError, ValueError) as exc:
-                issues.append(f"图片 {image.index} 识别失败：{type(exc).__name__}")
-                continue
-            for field_name, value in ocr_result.fields.items():
-                if (
-                    field_name in resolved_profile.required_fields
-                    or field_name == "scrap_certificate.certificate_no"
-                ) and value:
-                    observations.append(
-                        FieldObservation(
-                            field=field_name,
-                            source_type="image",
-                            source_id=f"ocr-{image.image_id or image.index}",
-                            image_index=image.index,
-                            value=value,
-                            confidence=ocr_result.confidence,
-                        )
-                    )
 
         response = build_review_response(
             request,
@@ -274,6 +247,13 @@ class ReviewService:
     ) -> list[QrCheck]:
         resolved_profile = profile or self.resolve_profile(request)
         checks: list[QrCheck] = []
+        # 旧车材料集合从业务声明推导，不在扫描条件和「保留正文」条件里各手抄
+        # 一份（以前同一个表达式里还逐字写了两遍）。**固定取报废置换的声明**：
+        # 二维码核验只存在于这个业务，旧实现也是所有业务共用这一份名单。
+        scrap_pack = pack_for_business(BusinessType.SCRAP_REPLACEMENT)
+        old_document_hints = (
+            scope_hint_types(scrap_pack, OLD_SECTION) if scrap_pack else frozenset()
+        )
         scrap_indices = {
             item.image_index
             for item in batch.observations
@@ -309,22 +289,11 @@ class ReviewService:
             # 页面采集器在部分旧页面无法从 DOM 标签推导业务分组，会把
             # business_scope 留为 unknown；已知的旧车材料类型仍然是安全的
             # 二维码扫描候选。官网域名白名单会在后续步骤再次兜底。
-            fallback_old_vehicle = image.business_scope == "old_vehicle" or (
+            fallback_old_vehicle = image.business_scope == OLD_SECTION or (
                 image.business_scope in {"unknown", ""}
                 and (
-                    image.category_hint in {
-                        "old_vehicle",
-                        "vehicle_license",
-                        "registration_certificate",
-                        "scrap_certificate",
-                    }
-                    or image.document_type_hint
-                    in {
-                        "old_vehicle",
-                        "vehicle_license",
-                        "registration_certificate",
-                        "scrap_certificate",
-                    }
+                    image.category_hint in old_document_hints
+                    or image.document_type_hint in old_document_hints
                 )
             )
             if image.collection_error or not (is_scrap or fallback_old_vehicle):

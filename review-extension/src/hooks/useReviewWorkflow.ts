@@ -219,6 +219,12 @@ export function useReviewWorkflow(
         );
       }
       setPageData(data);
+      // 采集阶段的问题必须写在面板上。`collectionIssues` 目前承载的是
+      // 「候选资料超过 16 张，请确认是否漏审」——图片溢出意味着可能漏审，
+      // 而它以前只进 Console，审核员看不到。结构化诊断仍留给开发者。
+      if (data.collectionIssues?.length) {
+        setNotice(data.collectionIssues.join("；"));
+      }
       console.info(
         "[ReviewAgent][panel] page collected",
         data.collectionDiagnostics,
@@ -262,7 +268,10 @@ export function useReviewWorkflow(
       if (finalSnapshot.status === "CANCELLED") throw new Error("审核任务已取消");
       if (finalSnapshot.status !== "RUNNING") activeJobId = "";
       const actionResults = await executePageActions(finalSnapshot.result?.page_actions ?? [], data);
-      if (actionResults.length) setNotice(actionResults.join("；"));
+      // 与采集阶段的提示合并，而不是互相覆盖：两条都是审核员需要看到的。
+      if (actionResults.length) {
+        setNotice((current) => [current, ...actionResults].filter(Boolean).join("；"));
+      }
       // The client deadline is a presentation boundary: a running snapshot still
       // contains useful partial review results and is not a transport failure.
       setNotice((current) => current || completionNotice(finalSnapshot));
