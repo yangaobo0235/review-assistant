@@ -18,5 +18,9 @@ class ReplacementPolicy:
     invoice_date_from: date
     invoice_date_to: date
     disposal_deadline: date
+    # 报废交车日期的下界。None 表示只卡截止日（历史口径：交早了不管）。
+    # 字段排在 `disposal_deadline` 之后是因为它有默认值——数据类的必填项
+    # 不能跟在带默认值的字段后面。
+    disposal_date_from: date | None = None
     allowed_origins: tuple[str, ...] = ()
     origin_keywords: tuple[str, ...] = ()

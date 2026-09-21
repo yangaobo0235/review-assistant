@@ -30,9 +30,11 @@ QINGDAO_REPLACEMENT_POLICY = ReplacementPolicy(
     policy_id="scrap_replacement_qingdao",
     region=Region.QINGDAO,
     version="1.0",
-    invoice_date_from=date(2026, 9, 1),
-    invoice_date_to=date(2026, 9, 30),
-    disposal_deadline=date(2026, 10, 31),
+    # 2026-09-21 起两地的日期窗口统一为 2026 全年（见 docs/业务/报废置换-青岛.md）。
+    invoice_date_from=date(2026, 1, 1),
+    invoice_date_to=date(2026, 12, 31),
+    disposal_deadline=date(2026, 12, 31),
+    disposal_date_from=date(2026, 1, 1),
     allowed_origins=("青岛", "青岛市", "山东省青岛市"),
 )
 
@@ -40,9 +42,11 @@ CHANGCHUN_REPLACEMENT_POLICY = ReplacementPolicy(
     policy_id="scrap_replacement_changchun",
     region=Region.CHANGCHUN,
     version="1.0",
-    invoice_date_from=date(2026, 7, 1),
-    invoice_date_to=date(2026, 9, 30),
+    # 与青岛一致：2026-09-21 起日期窗口统一为 2026 全年。
+    invoice_date_from=date(2026, 1, 1),
+    invoice_date_to=date(2026, 12, 31),
     disposal_deadline=date(2026, 12, 31),
+    disposal_date_from=date(2026, 1, 1),
     allowed_origins=("长春", "长春市", "吉林省长春市"),
     origin_keywords=("长春",),
 )
@@ -81,6 +85,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
     fields=(
         FieldDeclaration(
             key="old_vehicle.type",
+            writable=True,
             label="报废车辆类型",
             section=OLD_SECTION,
             aliases=("报废车辆类型",),
@@ -92,6 +97,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="old_vehicle.recycle_date",
+            writable=True,
             label="报废交车日期",
             section=OLD_SECTION,
             aliases=("报废交车日期", "报废车日期"),
@@ -103,6 +109,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="scrap_certificate.certificate_no",
+            writable=True,
             label="报废证明编号",
             section=OLD_SECTION,
             aliases=("报废证明编号", "回收证明编号"),
@@ -113,6 +120,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="old_vehicle.vin",
+            writable=True,
             label="报废车辆车架号",
             section=OLD_SECTION,
             aliases=("报废车辆车架号", "旧车车架号", "车架号"),
@@ -135,6 +143,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="old_vehicle.plate_no",
+            writable=True,
             label="报废车辆车牌号",
             section=OLD_SECTION,
             aliases=("报废车辆车牌号", "旧车车牌号", "车牌号"),
@@ -147,6 +156,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="old_vehicle.owner",
+            writable=True,
             label="报废车辆所有人",
             section=OLD_SECTION,
             aliases=("报废车辆所有人", "旧车所有人", "车辆所有人", "所有人"),
@@ -159,6 +169,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="old_vehicle.engine_model",
+            writable=True,
             label="报废发动机型号",
             section=OLD_SECTION,
             aliases=("报废发动机型号", "发动机型号"),
@@ -169,6 +180,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="new_vehicle.fuel_type",
+            writable=True,
             label="新车燃料类型",
             section=NEW_SECTION,
             aliases=("新车燃料类型",),
@@ -179,6 +191,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="invoice.code",
+            writable=True,
             label="发票代码",
             section=NEW_SECTION,
             aliases=("发票代码",),
@@ -189,6 +202,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="invoice.invoice_no",
+            writable=True,
             label="发票号码",
             section=NEW_SECTION,
             aliases=("发票号码",),
@@ -199,6 +213,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="invoice.amount",
+            writable=True,
             label="开票金额",
             section=NEW_SECTION,
             aliases=("开票金额",),
@@ -210,6 +225,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="invoice.invoice_date",
+            writable=True,
             label="开票日期",
             section=NEW_SECTION,
             aliases=("开票日期", "发票日期"),
@@ -221,6 +237,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="new_vehicle.vin",
+            writable=True,
             label="新车车架号",
             section=NEW_SECTION,
             aliases=("新车车架号", "车架号"),
@@ -233,6 +250,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="new_vehicle.plate_no",
+            writable=True,
             label="新车车牌号",
             section=NEW_SECTION,
             aliases=("新车车牌号", "车牌号"),
@@ -245,6 +263,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="new_vehicle.owner",
+            writable=True,
             label="新车所有人",
             section=NEW_SECTION,
             aliases=("新车所有人", "车辆所有人", "所有人"),
@@ -257,6 +276,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="new_vehicle.registration_date",
+            writable=True,
             label="注册日期",
             section=NEW_SECTION,
             aliases=("注册日期",),
@@ -268,6 +288,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="application.terminal_certificate_no",
+            writable=True,
             label="终端证件号",
             section=NEW_SECTION,
             aliases=("终端证件号",),
@@ -278,6 +299,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="application.customer_name",
+            writable=True,
             label="客户名称",
             section=NEW_SECTION,
             aliases=("客户名称",),
@@ -289,6 +311,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="application.terminal_phone",
+            writable=True,
             label="终端客户手机号",
             section=NEW_SECTION,
             aliases=("终端客户手机号",),
@@ -311,6 +334,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="application.owner_type",
+            writable=True,
             label="车辆所有人类型",
             aliases=("车辆所有人类型",),
             page_section="unknown",
@@ -325,6 +349,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="page_ocr.new_vehicle_vin",
+            writable=True,
             label="OCR新车车架号",
             aliases=("OCR新车车架号",),
             page_section="unknown",
@@ -332,6 +357,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="old_vehicle.affiliation",
+            writable=True,
             label="报废车挂靠",
             aliases=(),
             page_section="unknown",
@@ -339,6 +365,7 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
         ),
         FieldDeclaration(
             key="new_vehicle.affiliation",
+            writable=True,
             label="新车挂靠",
             aliases=(),
             page_section="unknown",
@@ -641,14 +668,33 @@ SCRAP_REPLACEMENT_PACK = BusinessExtensionPack(
             required=False, output_facts=("invoice.verification",),
             failure_policy="SAFE_DEGRADE",
         ),
+        # 新旧车所有人一致性。独立于 `affiliation_subject`：那条判断的是
+        # 主体类型（个人/公司），用来决定挂靠下拉怎么填，且在报废置换工作台
+        # 里不展示；这条判断的是"是不是同一个主体"，审核员要看。
+        CapabilitySpec(
+            "owner_consistency", kind="RULE", stage="POST_COMPARE",
+            output_facts=("owner.consistency",), failure_policy="MANUAL_REVIEW",
+        ),
     ),
     binding_declarations=(
         CapabilityBinding("material_completeness"),
         CapabilityBinding("scrap_certificate_qr", required=True),
         CapabilityBinding("affiliation_subject"),
         CapabilityBinding("verify_invoice", required=False),
+        CapabilityBinding("owner_consistency"),
     ),
     page_action_ids=("fill_affiliation_fields",),
     page_interaction=True,
+    # 页面指纹锚点：审核单号、新旧车车架号（强锚点）和所有人。与浏览器里
+    # 的内置兜底表一致，这里显式声明之后清单就是运行时的唯一来源。
+    identity_anchors=(
+        "application.id",
+        "old_vehicle.vin",
+        "new_vehicle.vin",
+        "old_vehicle.owner",
+        "new_vehicle.owner",
+    ),
+    # 主体关系辅助检查同时投影成客户名称字段的核验条目。
+    field_check_bindings=(("AFFILIATION-AUX-CUSTOMER-NAME", "application.customer_name"),),
     material_policy=SCRAP_REPLACEMENT_MATERIAL_POLICY,
 )

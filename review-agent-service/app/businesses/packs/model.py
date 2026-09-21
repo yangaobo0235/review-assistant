@@ -81,6 +81,15 @@ class FieldDeclaration:
     material_field: str | None = None
     # 该字段进入 Profile 的必审清单。
     required: bool = False
+    # 是否允许审核员把这个字段的值写回页面控件。默认不允许：写回是不可逆的
+    # 页面操作，每个字段都要单独声明。浏览器侧还有字段白名单和控件类型两道闸，
+    # 声明为可写不等于页面上一定会出现回填按钮。
+    writable: bool = False
+    # 日期时效：字段的日期必须落在「审核日往前推 N 天」到今天之间（含两端）。
+    # None 表示不检查。超出不自动判不通过，而是降为人工复核——时效是政策口径，
+    # 边上的一天之差通常要靠人判断。同一个页面在不同日期审核可能得到不同结果，
+    # 这是政策本身的性质。
+    max_age_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -91,9 +100,13 @@ class MaterialDeclaration:
     display_name: str
     fields: tuple[str, ...] = ()
     guidance: str = ""
-    # 业务范围（业务分区）对白名单和读取指引的覆写。
+    # 业务范围（业务分区）对白名单、读取指引和显示名的覆写。
     scoped_fields: tuple[tuple[str, tuple[str, ...]], ...] = ()
     scoped_guidance: tuple[tuple[str, str], ...] = ()
+    # 一份材料被多个业务共用时（如行驶证），不同业务的称呼可能不同，
+    # 识别提示词里的称呼按业务分区覆写，避免车源审核的行驶证提示词
+    # 沿用报废置换的“行驶证或车辆资料”。
+    scoped_names: tuple[tuple[str, str], ...] = ()
     # 页面分组文字，供前端识别该材料的图片区域。
     hints: tuple[str, ...] = ()
     # 该材料允许出现的业务分区；空元组表示不限制。
@@ -120,6 +133,12 @@ class MaterialDeclaration:
             if key == scope:
                 return guidance
         return self.guidance
+
+    def name_for_scope(self, scope: str) -> str:
+        for key, name in self.scoped_names:
+            if key == scope:
+                return name
+        return self.display_name
 
 
 @dataclass(frozen=True)
@@ -199,12 +218,37 @@ class BusinessExtensionPack:
     # 允许的页面动作 ID 与是否启用页内交互。
     page_action_ids: tuple[str, ...] = ()
     page_interaction: bool = False
+    # 允许浏览器写回的控件类型（`ReviewFieldSnapshot.control_type` 的取值，
+    # 如 text / textarea / number / select / date）。**空元组表示不限制**，
+    # 供没有声明过类型的业务沿用历史口径；新增业务应当显式声明，只放开
+    # 浏览器写回器验证过的类型，没验证过的一律交人工填写。
+    writable_control_kinds: tuple[str, ...] = ()
+    # 页面指纹锚点：能唯一标识"这条审核记录"的字段。浏览器用有值的锚点拼出
+    # 指纹，页面写回和原图定位都以它为前提；一个强锚点（`*.vin` 或
+    # `application.id`）都没有时指纹为空，这些操作全部拒绝执行。
+    # **必须按业务声明**：写死成某一个业务的字段名会让别的业务永远拿不到指纹。
+    identity_anchors: tuple[str, ...] = ()
+    # 规则检查项 → 页面字段：(check_id, field)。规则结论同时投影成该字段的
+    # 核验条目，审核员在字段视图里就能看到结论，不必到页面外核验里找。
+    # 一个字段可以绑定多条检查，投影时按最坏状态合并。
+    field_check_bindings: tuple[tuple[str, str], ...] = ()
+    # 本业务的审核字段就是声明的字段：页面上其他控件不进审核目录。
+    # False（默认）表示未配置核验来源的页面控件仍保留一条“请人工核对”条目，
+    # 避免页面控件被静默忽略。
+    review_declared_fields_only: bool = False
     # 该业务的材料要求和受控执行预算。
     material_policy: MaterialPolicy | None = None
     retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY
 
     def region(self, region: Region) -> RegionDeclaration | None:
         return next((item for item in self.regions if item.region == region), None)
+
+    def check_bindings_by_field(self) -> dict[str, tuple[str, ...]]:
+        """页面字段 → 投影到它上面的规则检查项，保持声明顺序。"""
+        grouped: dict[str, list[str]] = {}
+        for check_id, field in self.field_check_bindings:
+            grouped.setdefault(field, []).append(check_id)
+        return {field: tuple(check_ids) for field, check_ids in grouped.items()}
 
     def capabilities_for(self, declaration: RegionDeclaration) -> tuple[CapabilitySpec, ...]:
         """该地区的完整能力规格：共用部分 + 地区政策能力。"""
@@ -249,6 +293,14 @@ class BusinessExtensionPack:
         """字段键 → 中文标签。"""
         return {item.key: item.label for item in self.fields}
 
+    def writable_field_keys(self) -> tuple[str, ...]:
+        """允许写回的字段键，保持声明顺序。
+
+        这是浏览器写回白名单的唯一来源；浏览器侧还有控件类型闸，声明为可写
+        的字段在页面上渲染成下拉/日期控件时同样不允许写回。
+        """
+        return tuple(item.key for item in self.fields if item.writable)
+
     def material(self, document_type: str) -> MaterialDeclaration | None:
         return next(
             (item for item in self.materials if item.document_type == document_type),
@@ -292,6 +344,14 @@ def build_collect_manifest(pack: BusinessExtensionPack) -> dict[str, object]:
             for item in pack.fields
             if item.aliases
         ],
+        # 允许写回的字段：**单独一张表，不能从 `fields` 里筛**。上面那张表只
+        # 收录有中文别名的采集字段，而挂靠这类只用于操作、没有别名的字段同样
+        # 允许写回；按 `fields` 过滤会静默丢掉它们。
+        "writable_fields": list(pack.writable_field_keys()),
+        # 允许写回的控件类型；空列表表示不限制（历史业务口径）。
+        "writable_control_kinds": list(pack.writable_control_kinds),
+        # 页面指纹锚点：浏览器用它判断"还是不是同一条审核记录"。
+        "identity_anchors": list(pack.identity_anchors),
         "materials": [
             {
                 "document_type": item.document_type,

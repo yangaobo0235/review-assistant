@@ -36,7 +36,7 @@ npm run build
 
 页面脚本先通过 `COLLECT_PAGE_MANIFEST` 采集标准 `PageData` 清单，不在初始阶段读取全部图片。Hook 创建流式任务后启动两个上传 Worker；每个 Worker 通过 `READ_REVIEW_IMAGE` 逐张完成图片读取、压缩和 multipart 上传，服务端可以同时开始识别。Hook 每秒轮询任务状态，最长等待 120 秒，响应中的 `ReviewTask` 进入任务工作台。
 
-浏览器图片压缩并发和上传并发均为 2。压缩后的图片可以保留在当前页面状态中用于结果缩略图，但发送到创建任务接口的清单和上传 metadata 不得重复携带 Base64 正文。Renderer 只负责可视化和用户确认；Action Controller 在执行前重新确认页面实例、字段原值和动作权限。任何网络错误、协议错误或页面变化都应显示为可恢复状态，不能静默清空审核结果。完整生命周期见[审核流水线文档](../docs/review-pipeline.md)。
+浏览器图片压缩并发和上传并发均为 2。压缩后的图片可以保留在当前页面状态中用于结果缩略图，但发送到创建任务接口的清单和上传 metadata 不得重复携带 Base64 正文。Renderer 只负责可视化和用户确认；Action Controller 在执行前重新确认页面实例、字段原值和动作权限。任何网络错误、协议错误或页面变化都应显示为可恢复状态，不能静默清空审核结果。完整生命周期见[审核流水线文档](../docs/概念/审核流水线.md)。
 
 重新加载或更新扩展后，已经打开的业务网页不会自动获得新 Content Script。出现 `Could not establish connection. Receiving end does not exist.` 时，应刷新业务网页并重新打开侧边栏，不要把它误判为后端故障。
 

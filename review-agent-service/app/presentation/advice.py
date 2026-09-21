@@ -5,7 +5,7 @@
 修改人：wuyi
 """
 
-from app.businesses.fields import SCRAP_PAGE_FIELD_LABELS
+from app.businesses.fields import PAGE_FIELD_LABELS
 from app.compare.check_results import qr_review_checks, unique_checks
 from app.compare.composite_fields import PAGE_FIELD_COMPOSITES
 from app.models.checks import CheckResultValue
@@ -17,7 +17,7 @@ from app.workflow.models import (
 )
 
 FIELD_LABELS = {
-    **SCRAP_PAGE_FIELD_LABELS,
+    **PAGE_FIELD_LABELS,
 }
 
 

@@ -15,28 +15,42 @@ from app.models.review import FieldComparison, FieldStatus
 
 AUTHORITY_SUFFIX_LENGTH = 8
 
+# 页面侧的展示来源。字段比较和确定性规则都用它标记“这一条是页面值”，
+# 任务装配据此把页面侧和材料侧分开摆。
+PAGE_VALUE_SOURCE = "申请页面字段"
+
 EVIDENCE_SOURCE_LABELS = {
     "image": "图片识别",
-    "page": "申请页面字段",
+    "page": PAGE_VALUE_SOURCE,
     "qr_page": "二维码官网字段",
 }
 
 
-def _deduplicate_sources(
+def deduplicate_sources(
     field_name: str,
     observations: list[FieldObservation],
 ) -> list[FieldObservation]:
-    """把同一物理图片的重复 OCR 行合并为一个证据来源。"""
+    """把同一份材料的多次读取合并为一个证据来源。
+
+    一份材料可以由多张图片组成——行驶证正反面、登记证书第 1、2 页与第 3、4 页，
+    或者用户把同一张图重复上传。它们是**同一份材料**的多次读取，不是多个互相
+    独立的来源，因此按（业务分区，材料类型）合并，而不是按图片合并。
+
+    合并策略与同一张图内部的重复行完全一致：优先保留与页面值一致的候选，
+    否则取置信度最高者。材料之间的比较仍然发生在不同材料类型之间
+    （例如行驶证与登记证书），那才是真正的两个来源。
+    """
     grouped: dict[tuple[str, str], list[FieldObservation]] = {}
     order: list[tuple[str, str]] = []
     for item in observations:
-        # image_index 是同一张材料在请求中的稳定物理标识。它比 source_id
-        # 更可靠，因为兼容 OCR 层可能同时产生 ``ocr-1`` 和 ``1`` 两行。
-        source_key = (
-            f"image-index:{item.image_index}"
-            if item.source_type == "image" and item.image_index is not None
-            else item.image_id or item.source_id or "page"
-        )
+        # 材料类型是这份材料在请求中的稳定身份；只有类型缺失时才退回
+        # image_index——兼容 OCR 层可能同时产生 ``ocr-1`` 和 ``1`` 两行。
+        if item.source_type == "image" and item.document_type:
+            source_key = f"material:{item.business_scope or 'unknown'}:{item.document_type}"
+        elif item.source_type == "image" and item.image_index is not None:
+            source_key = f"image-index:{item.image_index}"
+        else:
+            source_key = item.image_id or item.source_id or "page"
         key = (item.source_type, str(source_key))
         current = grouped.get(key)
         if current is None:
@@ -101,7 +115,7 @@ def aggregate_field(
     single_evidence_requires_review: bool = True,
 ) -> FieldComparison:
     """Compare all non-empty sources without discarding conflicting values."""
-    valid = _deduplicate_sources(
+    valid = deduplicate_sources(
         field_name,
         [item for item in observations if str(item.value or "").strip()]
     )
@@ -298,7 +312,7 @@ def aggregate_by_authority(
     if not authority:
         raise ValueError(f"{field_name} 未声明权威链")
 
-    valid = _deduplicate_sources(
+    valid = deduplicate_sources(
         field_name,
         [
             item

@@ -11,18 +11,22 @@
 | `app/api` | HTTP 路由、鉴权、请求响应边界 |
 | `app/contracts` | 对外协议、兼容转换和错误码 |
 | `app/models` | Pydantic 数据模型与领域值对象 |
-| `app/agent` | LangGraph 状态、节点、规划器和模型客户端 |
-| `app/businesses` | Profile、业务注册和上下文校验 |
-| `app/rules` | 可注册能力、规则、比较、聚合和建议 |
-| `app/capabilities` | 能力 Handler、子图及执行结果 |
+| `app/fields` | 字段规格与归一化 |
+| `app/workflow` | LangGraph 状态、节点、规划器、模型客户端与图片识别服务 |
+| `app/compare` | 证据取值、跨材料比较与聚合 |
+| `app/capabilities` | 能力契约、注册表、Handler 及执行结果 |
+| `app/presentation` | 任务展示、步骤路由与最终建议 |
+| `app/businesses` | 业务声明（`packs/`）、Profile、路由、材料策略与业务规则 |
 | `app/services` | 作业、HTTP、二维码和审核装配服务 |
 | `tests` | 按契约、规则、工作流和 API 分层的测试 |
+
+引擎目录（`workflow`、`compare`、`capabilities`、`presentation`、`fields`、`services`、`contracts`）不含业务知识；业务相关的全部声明集中在 `app/businesses/packs/<业务>.py`。
 
 ## 异步审核接口
 
 浏览器插件使用流式任务接口：先通过 `POST /api/review/jobs/stream` 创建图片清单，再通过 `/images` 逐张上传，最后调用 `/complete` 关闭上传阶段，并通过 `GET /api/review/jobs/{job_id}` 轮询。旧版 `POST /api/review/jobs` 继续保留，生产 `ReviewService` 会把整批请求内部转换到同一公平识别队列。
 
-当前默认限制为：单次最多 16 张、单图最多 5 MB、全服务上传处理 8、单任务模型识别 6、全服务模型识别 12、最终汇总 2。最终汇总复用流式识别得到的 `AgentBatchResult`，不得重复调用图片模型。具体状态、阶段、清理规则和环境变量见[审核流水线文档](../docs/review-pipeline.md)。
+当前默认限制为：单次最多 16 张、单图最多 5 MB、全服务上传处理 8、单任务模型识别 6、全服务模型识别 12、最终汇总 2。最终汇总复用流式识别得到的 `AgentBatchResult`，不得重复调用图片模型。具体状态、阶段、清理规则和环境变量见[审核流水线文档](../docs/概念/审核流水线.md)。
 
 不参与二维码核验的图片在单图识别后尽早释放；二维码候选保留到最终核验结束；完成、失败或取消后清除任务中的全部图片正文。任务快照保留约 10 分钟供轮询，不应把快照 TTL 理解为图片保存时间。
 

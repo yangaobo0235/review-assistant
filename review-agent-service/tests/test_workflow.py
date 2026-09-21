@@ -45,6 +45,7 @@ async def test_workflow_returns_both_cross_checks_and_two_state_advice() -> None
         "POLICY-NEW-ORIGIN",
         "AFFILIATION-SUBJECT-001",
         "AFFILIATION-AUX-CUSTOMER-NAME",
+        "OWNER-CONSISTENCY-001",
         "MATERIAL-COMPLETENESS",
         "FIELD-INVOICE-CODE-NO",
         "FIELD-NEW-VEHICLE-VIN",

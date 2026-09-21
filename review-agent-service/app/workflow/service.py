@@ -14,7 +14,7 @@ from typing import Any
 
 from app.businesses.material_policies import DEFAULT_RETRY_POLICY, RetryPolicy
 from app.businesses.materials import DOCUMENT_POLICIES, DocumentPolicy
-from app.businesses.packs import SCRAP_REPLACEMENT_PACK
+from app.businesses.packs import BUSINESS_PACKS
 from app.businesses.packs.model import slot_document_types
 from app.businesses.routing import normalize_document_type, route_fields
 from app.models.review import FieldObservation
@@ -49,8 +49,16 @@ CLASSIFICATION_CONFIDENCE_THRESHOLD = 0.70
 logger = logging.getLogger("uvicorn.error")
 
 # 上传槽位 → 材料类型来自业务声明；前端也读同一份，不再各写一遍。
-SLOT_DOCUMENT_TYPES = slot_document_types(SCRAP_REPLACEMENT_PACK)
-GENERIC_SCOPE_HINTS = {"", "unknown", "old_vehicle", "new_vehicle"}
+# 槽位键带业务分区，各业务分区互不重叠，可以直接合成一张表。
+SLOT_DOCUMENT_TYPES = {
+    slot: document_type
+    for pack in BUSINESS_PACKS.values()
+    for slot, document_type in slot_document_types(pack).items()
+}
+# 这些提示是页面业务归属（分区）名称，不是资料类型；不能拿去查资料白名单。
+GENERIC_SCOPE_HINTS = {"", "unknown"} | {
+    scope for pack in BUSINESS_PACKS.values() for scope in pack.scopes
+}
 
 
 def _covered_pages(value: Any) -> list[int]:

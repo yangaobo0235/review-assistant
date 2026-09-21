@@ -23,7 +23,9 @@ from app.businesses.rules.affiliation import (
     build_affiliation_auxiliary_checks,
     build_affiliation_subject_check,
 )
+from app.businesses.rules.owner_consistency import build_owner_consistency_check
 from app.businesses.rules.replacement_policy import build_replacement_policy_checks
+from app.businesses.rules.vehicle_model import build_vehicle_model_checks
 from app.capabilities import CapabilityRegistry
 from app.capabilities.business_rules import BusinessRuleRegistry
 from app.capabilities.external_checks import ExternalCheckRegistry
@@ -136,6 +138,8 @@ class ReviewWorkflow:
             "changchun_replacement_policy": self._run_replacement_policy,
             "affiliation_subject": self._run_affiliation_subject,
             "verify_invoice": self._run_verify_invoice,
+            "vehicle_model_consistency": self._run_vehicle_model,
+            "owner_consistency": self._run_owner_consistency,
         }
         additional_rules = dict(business_rule_handlers or {})
         overridden = builtin_rules.keys() & additional_rules.keys()
@@ -148,6 +152,9 @@ class ReviewWorkflow:
         builtin_page_actions = {
             "fill_affiliation_fields": _propose_page_action,
             "verify_invoice": _propose_page_action,
+            # 字段级回填：写回由浏览器按后端下发的白名单执行，后端只负责
+            # 声明"这个业务允许提出写回请求"。
+            "fill_review_fields": _propose_page_action,
         }
         builtin_page_specs = {"fill_affiliation_fields": PageActionSpec(
                 "fill_affiliation_fields",
@@ -157,6 +164,12 @@ class ReviewWorkflow:
             )}
         builtin_page_specs["verify_invoice"] = PageActionSpec(
             "verify_invoice", reversible=False, requires_authorization=True,
+            writable_fields=(),
+        )
+        # writable_fields 留空：可写字段是业务知识，由扩展包的字段声明给出，
+        # 不在这里再维护一份，避免和 `writable_field_keys()` 打架。
+        builtin_page_specs["fill_review_fields"] = PageActionSpec(
+            "fill_review_fields", reversible=True, requires_authorization=True,
             writable_fields=(),
         )
         for action_id, handler in (page_action_handlers or {}).items():
@@ -601,6 +614,16 @@ class ReviewWorkflow:
                 ),
             )
         )
+
+    @staticmethod
+    def _run_vehicle_model(context: ReviewExecutionContext) -> RuleExecutionResult:
+        """车源车型一致性：车型下拉值分别与材料的型号、马力、排放标准比对。"""
+        return build_vehicle_model_checks(context)
+
+    @staticmethod
+    def _run_owner_consistency(context: ReviewExecutionContext) -> RuleExecutionResult:
+        """报废置换新旧车所有人一致性：先比页面，再比材料。"""
+        return build_owner_consistency_check(context)
 
     @staticmethod
     def _run_replacement_policy(context: ReviewExecutionContext) -> RuleExecutionResult:

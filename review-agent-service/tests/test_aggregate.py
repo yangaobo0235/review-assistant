@@ -609,3 +609,69 @@ def test_batch_observations_does_not_mark_untouched_images_as_retried() -> None:
     )
 
     assert batch_observations(batch)[0].retried is False
+
+
+def test_one_material_read_from_several_images_stays_a_single_evidence_source() -> None:
+    """一份材料的多次读取合并成一条证据。
+
+    行驶证正反面、登记证书第 1、2 页与第 3、4 页，以及用户重复上传的同一张图，
+    都是**同一份材料**的多次读取。它们不是互相独立的来源，审核员不应该在
+    材料提取值里看到两条一模一样的“行驶证”。
+    """
+    observations = [
+        FieldObservation(
+            field="vehicle.type", source_type="image", source_id="license-front",
+            image_index=1, image_id="license-front", value="重型半挂牵引车",
+            document_type="vehicle_license", business_scope="vehicle",
+        ),
+        FieldObservation(
+            field="vehicle.type", source_type="image", source_id="license-back",
+            image_index=2, image_id="license-back", value="重型半挂牵引车",
+            document_type="vehicle_license", business_scope="vehicle",
+        ),
+        FieldObservation(
+            field="vehicle.type", source_type="image", source_id="registration",
+            image_index=3, image_id="registration", value="重型半挂牵引车",
+            document_type="registration_certificate", business_scope="vehicle",
+        ),
+        FieldObservation(
+            field="vehicle.type", source_type="page", source_id="review_page",
+            value="牵引车",
+        ),
+    ]
+
+    comparison = aggregate_field("vehicle.type", observations)
+
+    # 两类材料 + 页面 = 三条证据；行驶证的两张图合并成一条。
+    assert [(item.document_type, item.value) for item in comparison.evidence] == [
+        ("vehicle_license", "重型半挂牵引车"),
+        ("registration_certificate", "重型半挂牵引车"),
+        (None, "牵引车"),
+    ]
+    assert comparison.status is FieldStatus.MATCH
+
+
+def test_material_merge_keeps_the_candidate_matching_the_page_value() -> None:
+    """同一份材料的两次读取不一致时，优先保留与页面值一致的那条。"""
+    observations = [
+        FieldObservation(
+            field="vehicle.brand_model", source_type="image", source_id="license-a",
+            image_index=1, image_id="license-a", value="解放牌CA4250P66K25T1A1E",
+            document_type="vehicle_license", business_scope="vehicle",
+        ),
+        FieldObservation(
+            field="vehicle.brand_model", source_type="image", source_id="license-b",
+            image_index=2, image_id="license-b", value="解放牌CA4250P66M25T1A1E6",
+            document_type="vehicle_license", business_scope="vehicle",
+        ),
+        FieldObservation(
+            field="vehicle.brand_model", source_type="page", source_id="review_page",
+            value="解放牌CA4250P66M25T1A1E6",
+        ),
+    ]
+
+    comparison = aggregate_field("vehicle.brand_model", observations)
+
+    material = [item for item in comparison.evidence if item.document_type == "vehicle_license"]
+    assert [item.value for item in material] == ["解放牌CA4250P66M25T1A1E6"]
+    assert comparison.status is FieldStatus.MATCH

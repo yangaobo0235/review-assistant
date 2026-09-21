@@ -25,14 +25,15 @@ def observation(field: str, value: str, document_type: str) -> FieldObservation:
 @pytest.mark.parametrize(
     ("policy", "invoice_date", "expected"),
     [
-        (QINGDAO_REPLACEMENT_POLICY, "2026-09-01", "MATCH"),
-        (QINGDAO_REPLACEMENT_POLICY, "2026-09-30", "MATCH"),
-        (QINGDAO_REPLACEMENT_POLICY, "2026-08-31", "CONFLICT"),
-        (QINGDAO_REPLACEMENT_POLICY, "2026-10-01", "CONFLICT"),
-        (CHANGCHUN_REPLACEMENT_POLICY, "2026-07-01", "MATCH"),
-        (CHANGCHUN_REPLACEMENT_POLICY, "2026-09-30", "MATCH"),
-        (CHANGCHUN_REPLACEMENT_POLICY, "2026-06-30", "CONFLICT"),
-        (CHANGCHUN_REPLACEMENT_POLICY, "2026-10-01", "CONFLICT"),
+        # 两地统一为 2026 全年，含两端。
+        (QINGDAO_REPLACEMENT_POLICY, "2026-01-01", "MATCH"),
+        (QINGDAO_REPLACEMENT_POLICY, "2026-12-31", "MATCH"),
+        (QINGDAO_REPLACEMENT_POLICY, "2025-12-31", "INSUFFICIENT"),
+        (QINGDAO_REPLACEMENT_POLICY, "2027-01-01", "INSUFFICIENT"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "2026-01-01", "MATCH"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "2026-12-31", "MATCH"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "2025-12-31", "INSUFFICIENT"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "2027-01-01", "INSUFFICIENT"),
     ],
 )
 def test_invoice_date_policy_boundaries(policy, invoice_date, expected) -> None:
@@ -112,19 +113,44 @@ def test_policy_uses_image_evidence_and_reports_missing_as_insufficient() -> Non
 @pytest.mark.parametrize(
     "policy,value,expected",
     [
-        (QINGDAO_REPLACEMENT_POLICY, "2026-10-31", "MATCH"),
-        (QINGDAO_REPLACEMENT_POLICY, "2026-11-01", "CONFLICT"),
-        (CHANGCHUN_REPLACEMENT_POLICY, "2026-12-31", "MATCH"),
-        (CHANGCHUN_REPLACEMENT_POLICY, "2027-01-01", "CONFLICT"),
+        # 交车日期现在是**范围**：两头都卡，含两端。
+        (QINGDAO_REPLACEMENT_POLICY, "2026-01-01", "MATCH"),
+        (QINGDAO_REPLACEMENT_POLICY, "2026-12-31", "MATCH"),
+        (QINGDAO_REPLACEMENT_POLICY, "2025-12-31", "INSUFFICIENT"),
+        (QINGDAO_REPLACEMENT_POLICY, "2027-01-01", "INSUFFICIENT"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "2026-06-15", "MATCH"),
+        (CHANGCHUN_REPLACEMENT_POLICY, "2027-01-01", "INSUFFICIENT"),
     ],
 )
-def test_disposal_deadline_is_inclusive(policy, value, expected):
+def test_disposal_date_window_is_inclusive(policy, value, expected):
     checks = build_replacement_policy_checks(
         policy, [observation("old_vehicle.recycle_date", value, "scrap_certificate")]
     )
     assert {item.check_id: item.status for item in checks}[
         "POLICY-DISPOSAL-DEADLINE"
     ] == expected
+
+
+def test_out_of_window_dates_ask_for_human_review_instead_of_failing() -> None:
+    """超出政策窗口交人工复核，不自动判不通过。
+
+    窗口边上的一天之差（材料出具时间、节假日顺延）要靠人工判断，自动否决
+    会误伤；状态必须是 INSUFFICIENT，理由里要说清超出的是哪个范围。
+    """
+    checks = build_replacement_policy_checks(
+        QINGDAO_REPLACEMENT_POLICY,
+        [
+            observation("invoice.invoice_date", "2025-12-31", "invoice"),
+            observation("old_vehicle.recycle_date", "2027-01-05", "scrap_certificate"),
+        ],
+    )
+
+    statuses = {item.check_id: item for item in checks}
+    assert statuses["POLICY-INVOICE-DATE"].status == "INSUFFICIENT"
+    assert "2025-12-31" in statuses["POLICY-INVOICE-DATE"].reason
+    assert "人工复核" in statuses["POLICY-INVOICE-DATE"].reason
+    assert statuses["POLICY-DISPOSAL-DEADLINE"].status == "INSUFFICIENT"
+    assert "2027-01-05" in statuses["POLICY-DISPOSAL-DEADLINE"].reason
 
 
 @pytest.mark.parametrize(

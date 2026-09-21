@@ -25,7 +25,7 @@ export const businessLabels: Record<BusinessChoice, string> = {
   AUTO: "自动识别",
   scrap_replacement_qingdao: "青岛报废置换审核",
   scrap_replacement_changchun: "长春报废置换审核",
-  vehicle_source: "车源审核（未配置）",
+  vehicle_source: "车源审核",
   consistency_qingdao: "青岛一致性审核（未配置）",
   consistency_changchun: "长春一致性审核（未配置）",
 };

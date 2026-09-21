@@ -1,0 +1,294 @@
+{
+  "business_type": "vehicle_source",
+  "scopes": [
+    "vehicle"
+  ],
+  "page_groups": [
+    {
+      "label": "证件照",
+      "scope": "vehicle",
+      "title": "证件照"
+    },
+    {
+      "label": "行驶证",
+      "scope": "vehicle",
+      "title": "行驶证"
+    },
+    {
+      "label": "行驶证信息",
+      "scope": "vehicle",
+      "title": "行驶证信息"
+    },
+    {
+      "label": "行驶证资料",
+      "scope": "vehicle",
+      "title": "行驶证资料"
+    },
+    {
+      "label": "登记证书",
+      "scope": "vehicle",
+      "title": "登记证书"
+    },
+    {
+      "label": "机动车登记证书",
+      "scope": "vehicle",
+      "title": "机动车登记证书"
+    },
+    {
+      "label": "车辆铭牌",
+      "scope": "vehicle",
+      "title": "车辆铭牌"
+    },
+    {
+      "label": "铭牌",
+      "scope": "vehicle",
+      "title": "铭牌"
+    },
+    {
+      "label": "车源资料",
+      "scope": "vehicle",
+      "title": "车源资料"
+    },
+    {
+      "label": "车源信息",
+      "scope": "vehicle",
+      "title": "车源信息"
+    },
+    {
+      "label": "车辆资料",
+      "scope": "vehicle",
+      "title": "车辆资料"
+    },
+    {
+      "label": "车身与车籍信息",
+      "scope": "vehicle",
+      "title": "车身与车籍信息"
+    },
+    {
+      "label": "补充信息",
+      "scope": "vehicle",
+      "title": "补充信息"
+    },
+    {
+      "label": "车况承诺书",
+      "scope": "other",
+      "title": "车况承诺书"
+    },
+    {
+      "label": "车况照片",
+      "scope": "other",
+      "title": "车况照片"
+    },
+    {
+      "label": "其他资料",
+      "scope": "other",
+      "title": "其他资料"
+    },
+    {
+      "label": "其他图片",
+      "scope": "other",
+      "title": "其他图片"
+    }
+  ],
+  "fields": [
+    {
+      "key": "vehicle.type",
+      "label": "车辆类型",
+      "aliases": [
+        "车辆类型"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.plate_no",
+      "label": "车牌号码",
+      "aliases": [
+        "车牌号码",
+        "号牌号码"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.vin",
+      "label": "VIN",
+      "aliases": [
+        "VIN",
+        "车架号",
+        "车辆识别代号"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.engine_no",
+      "label": "发动机号",
+      "aliases": [
+        "发动机号",
+        "发动机号码"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.license_vehicle_type",
+      "label": "行驶证车辆类型",
+      "aliases": [
+        "行驶证车辆类型"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.brand_model",
+      "label": "品牌型号",
+      "aliases": [
+        "品牌型号"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.usage_nature",
+      "label": "使用性质",
+      "aliases": [
+        "使用性质"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.registration_date",
+      "label": "注册日期",
+      "aliases": [
+        "注册日期"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.issue_date",
+      "label": "发证日期",
+      "aliases": [
+        "发证日期"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.owner",
+      "label": "所有人",
+      "aliases": [
+        "所有人"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.model",
+      "label": "车型",
+      "aliases": [
+        "车型"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.fuel_type",
+      "label": "燃料种类",
+      "aliases": [
+        "燃料种类"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    },
+    {
+      "key": "vehicle.engine_model",
+      "label": "发动机型号",
+      "aliases": [
+        "发动机型号"
+      ],
+      "section": "unknown",
+      "section_required": false,
+      "reviewable": true
+    }
+  ],
+  "writable_fields": [
+    "vehicle.type",
+    "vehicle.plate_no",
+    "vehicle.vin",
+    "vehicle.engine_no",
+    "vehicle.license_vehicle_type",
+    "vehicle.brand_model",
+    "vehicle.usage_nature",
+    "vehicle.registration_date",
+    "vehicle.issue_date",
+    "vehicle.owner",
+    "vehicle.model",
+    "vehicle.fuel_type",
+    "vehicle.engine_model"
+  ],
+  "writable_control_kinds": [
+    "text",
+    "textarea",
+    "number"
+  ],
+  "identity_anchors": [
+    "vehicle.vin",
+    "vehicle.plate_no",
+    "vehicle.owner"
+  ],
+  "materials": [
+    {
+      "document_type": "vehicle_license",
+      "label": "机动车行驶证",
+      "hints": [
+        "行驶证",
+        "行驶证正面",
+        "行驶证反面",
+        "证件照",
+        "车源资料",
+        "车辆资料"
+      ],
+      "slots": []
+    },
+    {
+      "document_type": "registration_certificate",
+      "label": "机动车登记证书",
+      "hints": [
+        "登记证书",
+        "机动车登记证",
+        "登记证",
+        "证件照",
+        "车源资料",
+        "车辆资料"
+      ],
+      "slots": []
+    },
+    {
+      "document_type": "vehicle_nameplate",
+      "label": "车辆铭牌",
+      "hints": [
+        "车辆铭牌",
+        "铭牌",
+        "证件照",
+        "车源资料",
+        "车辆资料"
+      ],
+      "slots": []
+    }
+  ]
+}

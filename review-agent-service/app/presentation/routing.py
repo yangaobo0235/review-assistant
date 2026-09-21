@@ -7,15 +7,14 @@
 """
 
 from collections.abc import Sequence
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from app.businesses.field_policies import field_policy
-from app.businesses.fields import (
-    SCRAP_FIELD_BY_AFFILIATION_CHECK_ID,
-    SCRAP_PAGE_FIELD_LABELS,
-)
+from app.businesses.fields import PAGE_FIELD_LABELS
 from app.businesses.profiles import BusinessProfile
 from app.businesses.rules.affiliation import normalize_page_owner_type
+from app.compare.aggregate import PAGE_VALUE_SOURCE
 from app.compare.composite_fields import (
     COMPOSITE_FIELDS_BY_MEMBER,
     PAGE_FIELD_COMPOSITES,
@@ -45,6 +44,13 @@ MISSING_PAGE_FIELD_REASON = "页面字段缺失或存在歧义，请人工核对
 
 Category = Literal["FIELD", "EXTERNAL", "BUSINESS_RULE", "MATERIAL"]
 ResultStatus = Literal["MATCH", "CONFLICT", "INSUFFICIENT"]
+
+# 规则把页面侧取值交给任务装配时使用的 `details` 键，见 `_business_step`。
+PAGE_VALUES_DETAIL_KEY = "page_values"
+# 合并多个来源的状态时的严重度顺序：冲突最重，一致最轻。
+SEVERITY = {"MATCH": 0, "INSUFFICIENT": 1, "CONFLICT": 2}
+# 规则结论投影成字段条目时的结论文字；详细过程在 reason 和页面外核验里。
+CONCLUSION_TEXT = {"MATCH": "一致", "CONFLICT": "不一致", "INSUFFICIENT": "证据不足"}
 
 
 def _evidence_source(item: EvidenceFact | dict[str, object]) -> str:
@@ -127,6 +133,37 @@ def _page_field_collected(request: ReviewRequest, page_field: str) -> bool:
     return request.page_fields.get(page_field) not in (None, "")
 
 
+def _date_window_problem(
+    label: str,
+    field: str,
+    raw_value: object | None,
+    max_age_days: int | None,
+) -> str | None:
+    """日期时效：页面日期是否落在「审核日往前推 N 天」到今天之间。
+
+    解析不出日期时返回 None：读不出值由字段比对负责（材料缺失、页面未采集
+    各有自己的状态），时效只是叠加在上面的政策检查，不在这一层再判一次。
+    """
+    if not max_age_days:
+        return None
+    normalized = normalize_value(field, raw_value)
+    if not normalized:
+        return None
+    try:
+        parsed = date.fromisoformat(normalized)
+    except ValueError:
+        return None
+    # 用本地时区的当天：审核发生在国内，按 UTC 算会在每天后半夜错一天。
+    today = datetime.now().astimezone().date()
+    earliest = today - timedelta(days=max_age_days)
+    if earliest <= parsed <= today:
+        return None
+    return (
+        f"{label} {parsed.isoformat()} 不在最近 {max_age_days} 天内"
+        f"（{earliest.isoformat()} 至 {today.isoformat()}），请人工复核"
+    )
+
+
 def _field_step(
     request: ReviewRequest,
     comparison: FieldComparison,
@@ -168,6 +205,18 @@ def _field_step(
     # 报废置换字段全部在审核助手中展示；原页面保持干净，不再注入标记。
     # 页面是否采集、页面原值和材料证据都由 evidence/values 传给工作台处理。
     policy = field_policy(comparison.field)
+    # 日期时效：页面日期超出允许的最近天数时降为人工复核。已经冲突的字段
+    # 不因此升级（冲突本身更需要处理），只把窗口写进理由。
+    window_problem = _date_window_problem(
+        label,
+        comparison.field,
+        request.page_fields.get(comparison.field),
+        policy.max_age_days if policy else None,
+    )
+    if window_problem:
+        if result_status == "MATCH":
+            result_status = "INSUFFICIENT"
+        reason = f"{reason}；{window_problem}"
     return _step(
         step_id=f"FIELD-{comparison.field}",
         category="FIELD",
@@ -196,7 +245,11 @@ def _field_step(
 
 
 def _page_catalog_step(snapshot: ReviewFieldSnapshot, step_id: str) -> ReviewTask:
-    """为没有已配置核验来源的实际页面控件保留可审查步骤。"""
+    """为没有已配置核验来源的实际页面控件保留可审查步骤。
+
+    只有声明了 `review_declared_fields_only` 的业务不生成这类条目——那类业务
+    的审核字段就是声明过的字段，页面上其余控件直接不进审核目录。
+    """
     has_value = snapshot.value not in (None, "")
     return _step(
         step_id=step_id,
@@ -215,6 +268,17 @@ def _page_catalog_step(snapshot: ReviewFieldSnapshot, step_id: str) -> ReviewTas
         writable=False,
         values=[CheckResultValue(source="申请页面字段", value=snapshot.value)],
     )
+
+
+def _is_review_scope_field(profile: BusinessProfile, field: str | None) -> bool:
+    """该页面控件是否属于本业务的审核目录。
+
+    默认所有页面控件都留在目录里（未配置来源时提示人工核对）；声明了
+    `review_declared_fields_only` 的业务只保留自己声明过的字段。
+    """
+    if not profile.review_declared_fields_only:
+        return True
+    return bool(field) and field in PAGE_FIELD_LABELS
 
 
 def _composite_field_step(
@@ -280,32 +344,82 @@ def _owner_type_system_step(snapshot: ReviewFieldSnapshot) -> ReviewTask:
     )
 
 
-def _affiliation_catalog_step(
+def _check_backed_field_step(
     request: ReviewRequest,
-    check: CheckResult,
     field: str,
+    checks: Sequence[CheckResult],
 ) -> ReviewTask:
-    """把主体关系辅助检查同时投影为实际 DOM 字段目录中的字段项。"""
-    result_status: ResultStatus = check.status
-    reason = check.reason
-    if result_status == "MATCH" and not _page_field_collected(request, field):
-        result_status = "INSUFFICIENT"
+    """把声明过的规则结论投影为实际 DOM 字段目录中的字段项。
+
+    一个字段可以绑定多条检查（如车源的「车型」绑定马力、整车型号、排放标准
+    三条）。字段条目展示的是**每条检查比了什么、结果如何**，不是规则的原始
+    输入：把功率千瓦数、型号字符串之类的中间值堆进来，审核员只会看到一堆
+    无法解释的数字。
+
+    每条检查用 `PAGE_VALUE_SOURCE` 标出自己的页面侧取值。页面侧摆进
+    「页面原始值」区块，材料侧摆进「材料提取值」区块，两侧用同一条检查的
+    标签命名，审核员据此一一对应，而不是只看三行「一致」。
+
+    每条检查自己的比对说明同时写进候选值的 `check_reason`，工作台会把它放进
+    对应的候选框里。车型这种多结论字段只有把说明和值放在一起才读得懂。
+    """
+    status = max(
+        (item.status for item in checks),
+        key=lambda value: SEVERITY[value],
+    )
+    reason = "；".join(dict.fromkeys(item.reason for item in checks if item.reason))
+    page_text = request.page_fields.get(field)
+    # 理由是否已经逐条搬进候选框。整段理由和框里的说明同时出现是重复信息；
+    # 但只要理由里多出检查没写过的一句（页面字段缺失），那一句就没有别的地方
+    # 可看，整段必须留着。
+    reason_distributed = True
+    if status == "MATCH" and not _page_field_collected(request, field):
+        status = "INSUFFICIENT"
         reason = f"{reason}；{MISSING_PAGE_FIELD_REASON}"
+        reason_distributed = False
+    label = PAGE_FIELD_LABELS.get(field, field)
+    page_values = [CheckResultValue(source=f"{label}原文", value=page_text)]
+    page_values.extend(
+        # 页面侧改用检查自己的标签命名，与材料侧一一对应；`PAGE_VALUE_SOURCE`
+        # 只是检查内部用来区分两侧的标记，不是展示名。
+        CheckResultValue(source=check.label, value=value.value)
+        for check in checks
+        for value in check.values
+        if value.source == PAGE_VALUE_SOURCE
+    )
     return _step(
         step_id=f"FIELD-{field}",
         category="FIELD",
         display_target=ReviewDisplayTarget.ASSISTANT,
-        label=SCRAP_PAGE_FIELD_LABELS[field],
-        result_status=result_status,
+        label=label,
+        result_status=status,
         reason=reason,
         page_target_field=field,
-        values=check.values,
-        evidence=check.evidence,
+        page_value=page_text,
+        page_values=page_values,
+        # 每条检查的比对说明贴到它自己的候选值上。车型一个条目下挂着五六条
+        # 候选，整段理由读下来才知道哪一条对不上；句子跟值放在一起，审核员
+        # 在一个框里就能看完。理由本身仍然完整保留，供列表和别处使用。
+        values=[
+            value.model_copy(update={"check_reason": check.reason})
+            for check in checks
+            for value in check.values
+            if value.source != PAGE_VALUE_SOURCE
+        ],
+        evidence=[item for check in checks for item in check.evidence],
+        details={
+            "check_ids": [item.check_id for item in checks],
+            "reason_distributed": reason_distributed,
+        },
     )
 
 
 def _with_control_snapshot(
-    step: ReviewTask, snapshot: ReviewFieldSnapshot
+    step: ReviewTask,
+    snapshot: ReviewFieldSnapshot,
+    *,
+    allow_write: bool,
+    profile: BusinessProfile,
 ) -> ReviewTask:
     # Operation-only affiliation controls are identified by their canonical
     # field key. Never expose that internal key as the reviewer-facing label.
@@ -318,7 +432,14 @@ def _with_control_snapshot(
             "label": label,
             "page_value": snapshot.value,
             "control_type": snapshot.control_type,
-            "writable": snapshot.editable,
+            # 三层都满足才给出回填按钮：业务注册了写回动作、控件本身可写、
+            # 控件类型在业务声明里放开过。任何一层不满足都不显示按钮，避免
+            # 审核员点出一个必然失败或写不进去的操作。
+            "writable": (
+                allow_write
+                and snapshot.editable
+                and profile.allows_field_write(snapshot.control_type)
+            ),
         }
     )
 
@@ -379,11 +500,25 @@ def _affiliation_control_step(
     )
 
 
-def _scrap_field_steps(
+def _field_first_steps(
     request: ReviewRequest,
+    profile: BusinessProfile,
     comparisons: Sequence[FieldComparison],
     business_checks: Sequence[CheckResult],
+    *,
+    writable: bool,
 ) -> list[ReviewTask]:
+    """字段优先工作台：按页面字段目录出条目，字段缺失时降级人工复核。"""
+    comparisons_by_field = {item.field: item for item in comparisons}
+    checks_by_id = {item.check_id: item for item in business_checks}
+    # 页面字段 → 投影到它上面的规则结论。一个字段可以绑定多条检查，
+    # 按声明顺序合并成一条字段条目。
+    projected_by_field: dict[str, list[CheckResult]] = {}
+    for check_id, field in profile.field_check_bindings:
+        check = checks_by_id.get(check_id)
+        if check is not None:
+            projected_by_field.setdefault(field, []).append(check)
+
     if not request.review_fields:
         composite_checks = {
             item.check_id: item
@@ -395,20 +530,21 @@ def _scrap_field_steps(
         for comparison in comparisons:
             composite = COMPOSITE_FIELDS_BY_MEMBER.get(comparison.field)
             if composite is None:
-                result.append(_field_step(request, comparison, page_interaction=True))
+                result.append(_field_step(request, comparison, page_interaction=writable))
                 continue
             check = composite_checks.get(composite.check_id)
             if check is not None and composite.check_id not in emitted:
-                result.append(_composite_field_step(request, check, page_interaction=True))
+                result.append(_composite_field_step(request, check, page_interaction=writable))
                 emitted.add(composite.check_id)
+        # 没有 DOM 目录时也要给出投影字段的条目：同一份响应不能因为这一轮
+        # 采集是否成功而少一行字段。
+        result.extend(
+            _check_backed_field_step(request, field, checks)
+            for field, checks in projected_by_field.items()
+            if field not in comparisons_by_field
+        )
         return result
 
-    comparisons_by_field = {item.field: item for item in comparisons}
-    auxiliary_by_field = {
-        SCRAP_FIELD_BY_AFFILIATION_CHECK_ID[item.check_id]: item
-        for item in business_checks
-        if item.check_id in SCRAP_FIELD_BY_AFFILIATION_CHECK_ID
-    }
     subject = next(
         (item for item in business_checks if item.check_id == "AFFILIATION-SUBJECT-001"),
         None,
@@ -449,9 +585,11 @@ def _scrap_field_steps(
                 step = _composite_field_step(
                     request,
                     check,
-                    page_interaction=True,
+                    page_interaction=writable,
                 ).model_copy(update={
-                    "writable": all(item is not None and item.editable for item in paired_snapshots),
+                    "writable": writable and all(
+                        item is not None and item.editable for item in paired_snapshots
+                    ),
                     "control_type": "group",
                 })
                 steps.append(step)
@@ -464,20 +602,26 @@ def _scrap_field_steps(
             steps.append(_affiliation_control_step(snapshot, subject))
             continue
         comparison = comparisons_by_field.get(field)
-        auxiliary = auxiliary_by_field.get(field)
+        projected = projected_by_field.get(field or "")
         if comparison is not None:
             steps.append(
                 _with_control_snapshot(
-                    _field_step(request, comparison, page_interaction=True), snapshot
+                    _field_step(request, comparison, page_interaction=writable),
+                    snapshot,
+                    allow_write=writable,
+                    profile=profile,
                 )
             )
-        elif auxiliary is not None:
+        elif projected:
             steps.append(
                 _with_control_snapshot(
-                    _affiliation_catalog_step(request, auxiliary, field), snapshot
+                    _check_backed_field_step(request, field, projected),
+                    snapshot,
+                    allow_write=writable,
+                    profile=profile,
                 )
             )
-        else:
+        elif _is_review_scope_field(profile, field):
             step_id = f"FIELD-{field}" if field else f"FIELD-DOM-{index}"
             steps.append(_page_catalog_step(snapshot, step_id))
     return steps
@@ -502,6 +646,15 @@ def _business_step(
     *,
     page_interaction: bool,
 ) -> ReviewTask:
+    # 规则可以把自己比对的**页面侧取值**放在 `details["page_values"]` 里，
+    # 工作台据此多摆一个「页面原始值」区块（新旧车所有人一致性要审核员先看到
+    # 页面比出了什么，再看材料）。放在 details 里而不是 values 里，是为了不
+    # 让页面值混进「材料提取值」列表。取走之后 details 不再保留这一项。
+    details = dict(check.details)
+    page_values = [
+        CheckResultValue.model_validate(item)
+        for item in details.pop(PAGE_VALUES_DETAIL_KEY, [])
+    ]
     return _step(
         step_id=f"BUSINESS-{check.check_id}",
         category="BUSINESS_RULE",
@@ -509,9 +662,10 @@ def _business_step(
         label=check.label,
         result_status=check.status,
         reason=check.reason,
+        page_values=page_values,
         values=check.values,
         evidence=check.evidence,
-        details=check.details,
+        details=details,
     )
 
 
@@ -592,7 +746,15 @@ def build_review_tasks(
     # 缺失字段转为 ASSISTANT + INSUFFICIENT。
     # 外部规则、派生规则和材料异常使用 ASSISTANT。
     if page_interaction:
-        steps.extend(_scrap_field_steps(request, comparisons, effective_business_checks))
+        # 没有注册页面动作的业务只展示结论，不提供回填按钮：写在未注册动作上
+        # 的回填必然失败，把按钮禁掉比让审核员点出一个错误提示更诚实。
+        steps.extend(_field_first_steps(
+            request,
+            profile,
+            comparisons,
+            effective_business_checks,
+            writable=bool(profile.enabled_page_actions),
+        ))
     else:
         steps.extend(
             _field_step(request, comparison, page_interaction=False)
@@ -608,12 +770,23 @@ def build_review_tasks(
             continue
         seen_external.add(key)
         steps.append(_external_step(check))
+    # 已经投影进字段条目的结论不再单出自己的任务：同一句话在字段行里已经
+    # 完整展示（含页面侧、材料侧和逐条说明），再出一张卡片就是让审核员在
+    # 「待处理」里看到同一条结论两遍。只有投影**成功**时才抑制——字段控件
+    # 不在页面上时字段条目根本出不来，那几条结论就只剩这张卡片可看。
+    projected_check_ids = {
+        check_id
+        for step in steps
+        if step.category == "FIELD"
+        for check_id in step.details.get("check_ids", ())
+    }
     steps.extend(
         _business_step(request, check, page_interaction=page_interaction)
         for check in effective_business_checks
         if check.check_id not in {
             spec.check_id for spec in PAGE_FIELD_COMPOSITES
         }
+        and check.check_id not in projected_check_ids
     )
     steps.extend(_material_steps(profile, completeness, limitations))
     from app.presentation.tasks import prepare_display_tasks

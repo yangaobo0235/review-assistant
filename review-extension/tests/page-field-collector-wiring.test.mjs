@@ -439,6 +439,75 @@ test("content rejects a mapped image when its source changes after collection", 
   assert.match(changed[0]?.error || "", /原图已变化|重新采集/);
 });
 
+test("framework re-render 换掉 <img> 节点后按图片地址重新定位", async () => {
+  let handler;
+  let clicks = 0;
+  const fields = { "application.id": "case-a", "old_vehicle.vin": "OLD-A" };
+  const collected = {
+    isConnected: true,
+    src: "https://images.test/original",
+    currentSrc: "https://images.test/original",
+    alt: "原始资料",
+    className: "",
+    naturalWidth: 100,
+    naturalHeight: 80,
+    getBoundingClientRect() { return { left: 0, top: 0, width: 100, height: 80 }; },
+    closest() { return null; },
+    getAttribute() { return null; },
+    click() { clicks += 1; },
+  };
+  // 上传组件重新挂载缩略图：节点换了，地址没变。
+  const rerendered = { ...collected, click() { clicks += 1; } };
+  const context = {
+    chrome: {
+      runtime: {
+        onMessage: { addListener(listener) { handler = listener; } },
+        sendMessage: async () => ({ ok: true, mimeType: "image/jpeg", sizeBytes: 1, dataUrl: "data:image/jpeg;base64,AA==" }),
+      },
+    },
+    document: {
+      title: "审核页",
+      images: [collected],
+      body: { innerText: "", querySelectorAll() { return []; } },
+    },
+    window: {
+      location: { href: "https://admin.forjtruck.com/scrap-replace-qingdao?showPageModel=1" },
+      getComputedStyle() { return { display: "block", visibility: "visible" }; },
+    },
+    console: { info() {} },
+    globalThis: {
+      crypto: { randomUUID: () => "page-instance" },
+      ReviewBusinessDetector: { resolve() { return { business: { businessType: "scrap_replacement" } }; } },
+      ReviewPageFieldCollector: {
+        collect() { return { pageFields: fields, fieldTargets: [], writableTargets: [], unmatchedLabels: [], scannedControls: 0, candidateCount: 0, ambiguousFields: [] }; },
+      },
+      ReviewBusinessScope: { scopeForLabel() { return null; }, assign() { return []; } },
+      ReviewImageCandidates: { select(candidates) { return { selected: candidates, scannedCount: candidates.length, overflow: false }; } },
+      ReviewImageFocus: { focus(node) { node.click(); return { ok: true }; } },
+    },
+  };
+  runContent(context);
+  const collectedResponses = [];
+  handler({ type: "COLLECT_PAGE_DATA" }, null, (response) => collectedResponses.push(response));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  collected.isConnected = false;
+  context.document.images = [rerendered];
+
+  const responses = [];
+  handler({
+    type: "FOCUS_REVIEW_IMAGE",
+    imageId: "unknown-01",
+    expectedPageUrl: context.window.location.href,
+    expectedPageInstanceId: "page-instance",
+    expectedPageFingerprint: '[["application.id","case-a"],["old_vehicle.vin","OLD-A"]]',
+    expectedCollectionId: collectedResponses[0].collectionId,
+  }, null, (response) => responses.push(response));
+
+  assert.equal(responses[0]?.ok, true);
+  assert.equal(clicks, 1);
+});
+
 test("manifest grants access to the production review host", () => {
   assert.ok(manifest.host_permissions.includes("https://admin.forjtruck.com/*"));
   assert.ok(manifest.host_permissions.includes("http://175.178.6.214:18110/*"));

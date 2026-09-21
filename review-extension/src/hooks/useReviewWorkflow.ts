@@ -20,7 +20,7 @@ import {
 } from "../reviewClient";
 import { pollReviewJob } from "../reviewJobs";
 import { applyPageFieldGroupValue, applyPageFieldValue, applyPageFillIntent, verifyInvoice, type PageFillResult } from "../pageFillClient";
-import { focusReviewImage } from "../imageFocusClient";
+import { focusReviewImage, type ImageFocusResult } from "../imageFocusClient";
 import { PageActionRegistry } from "../session/pageActionRegistry";
 import {
   manifestBusinessTypes,
@@ -145,7 +145,7 @@ export interface ReviewWorkflow {
   applyAffiliationFill: (actions: PageFillAction[]) => Promise<PageFillResult>;
   applyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   applyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
-  focusOriginalImage: (imageId: string) => Promise<void>;
+  focusOriginalImage: (imageId: string) => Promise<ImageFocusResult>;
 }
 
 /** 管理一次审核从页面采集到最终或部分结果的完整客户端生命周期。 */
@@ -316,13 +316,15 @@ export function useReviewWorkflow(
 
   const focusOriginalImage = useCallback(async (imageId: string) => {
     if (!pageData) {
-      setNotice("没有找到原审核页面");
-      return;
+      const failure = { ok: false, error: "没有找到原审核页面" };
+      setNotice(failure.error);
+      return failure;
     }
+    // 无论成功还是失败都把结果交回调用方：面板顶部的提示离字段卡片很远，
+    // 只在那里报错等于"点了没反应"。详情卡片会把结果显示在卡片旁边。
     const response = await focusReviewImage(imageId, pageData);
-    if (!response?.ok) {
-      setNotice(response?.error || "原图已变化，请重新采集");
-    }
+    if (!response?.ok) setNotice(response?.error || "原图已变化，请重新采集");
+    return response ?? { ok: false, error: "原图已变化，请重新采集" };
   }, [pageData]);
 
   return {

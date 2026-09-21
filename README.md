@@ -61,7 +61,7 @@ npm --prefix review-extension run build
 
 后端入口通常从 `app/main.py` 和 API 路由进入，审核流程从 `app/workflow/graph.py` 进入；业务 Profile 位于 `app/businesses`，能力和规则位于 `app/capabilities`、`app/compare` 与 `app/presentation`。前端入口从 `src/main.tsx` 开始，页面采集查看 `src/browser`，工作台查看 `src/components`，页面写回查看 `src/session`。遇到不确定的代码归属，先阅读 [系统架构与边界](docs/概念/系统定位.md) 和模块 README。
 
-`src/adapters`（页面适配器）目前尚未接入主流程：页面识别、采集和写回全部在 `src/browser` 内实现，`src/adapters` 是为多页面拆分预留的边界。新增页面时请以 `src/browser` 为准。
+`src/adapters`（页面适配器）已经接入主流程：`src/browser/business-detector.ts` 通过 `buildPageAdapterRegistry()`（`src/adapters/index.ts`）解析当前页面，`ScrapReplacementPageAdapter` 等适配器负责页面识别与业务判定。采集和写回仍在 `src/browser` 内实现，新增页面时在 `src/adapters/` 新增一个适配器并在 `buildPageAdapterRegistry()` 中注册。
 
 ## 交付标准
 

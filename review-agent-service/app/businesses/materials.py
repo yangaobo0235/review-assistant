@@ -7,8 +7,12 @@
 import json
 from dataclasses import dataclass
 
-from app.businesses.packs import SCRAP_REPLACEMENT_PACK as _PACK
+from app.businesses.packs import BUSINESS_PACKS
+from app.businesses.packs.model import MaterialDeclaration
 from app.workflow.models import RETRYABLE_UNCERTAIN_PREFIX
+
+# 未识别出资料类型时的兜底类型；分类提示词的候选表按字典序输出。
+UNSUPPORTED_DOCUMENT_TYPE = "unsupported"
 
 COLLECTION_TYPE_INSTRUCTION = (
     "uncertain_fields 必须是 JSON 字符串数组；没有不确定字段时输出 []，"
@@ -72,6 +76,7 @@ class DocumentPolicy:
     field_guidance: str
     scoped_fields: tuple[tuple[str, tuple[str, ...]], ...] = ()
     scoped_guidance: tuple[tuple[str, str], ...] = ()
+    scoped_names: tuple[tuple[str, str], ...] = ()
 
     def fields_for_scope(self, business_scope: str = "unknown") -> tuple[str, ...]:
         """返回当前业务范围允许提取的字段，未知业务使用材料默认白名单。"""
@@ -87,6 +92,13 @@ class DocumentPolicy:
                 return guidance
         return self.field_guidance
 
+    def name_for_scope(self, business_scope: str) -> str:
+        """返回匹配业务范围的材料称呼。"""
+        for key, name in self.scoped_names:
+            if key == business_scope:
+                return name
+        return self.display_name
+
     def build_extraction_prompt(
         self,
         image_index: int,
@@ -100,7 +112,8 @@ class DocumentPolicy:
             ensure_ascii=False,
         )
         prompt = (
-            f"你正在识别{self.display_name}。{LAYOUT_INSTRUCTION}{self.guidance_for_scope(business_scope)}"
+            f"你正在识别{self.name_for_scope(business_scope)}。"
+            f"{LAYOUT_INSTRUCTION}{self.guidance_for_scope(business_scope)}"
             f"仅允许输出字段：{allowed_fields}。"
             "只读取图片中明确可见的内容，不推测、不补全；看不清的字段不写入 fields，"
             "并将字段名写入 uncertain_fields；版面不存在的字段不要写入 uncertain_fields，"
@@ -118,26 +131,97 @@ class DocumentPolicy:
         return _append_retry_instruction(prompt, retry_reason)
 
 
-# 材料类型、字段白名单和识别指引的唯一来源是业务扩展包
-# `app.businesses.packs`；本表只是把声明转成运行时结构。
-DOCUMENT_POLICIES: dict[str, DocumentPolicy] = {
-    item.document_type: DocumentPolicy(
-        document_type=item.document_type,
-        display_name=item.display_name,
-        fields=item.fields,
-        field_guidance=item.guidance,
-        scoped_fields=item.scoped_fields,
-        scoped_guidance=item.scoped_guidance,
+def _keep_order(merged: list[str], extra: tuple[str, ...]) -> tuple[str, ...]:
+    """按首次出现顺序合并白名单，去掉重复项。"""
+    for field in extra:
+        if field not in merged:
+            merged.append(field)
+    return tuple(merged)
+
+
+def _merge_scoped(left, right, combine):
+    """按业务分区合并 scoped 覆写；同一分区出现在多份声明里时调用 combine。"""
+    merged = list(left)
+    for key, value in right:
+        for index, (existing_key, existing_value) in enumerate(merged):
+            if existing_key == key:
+                merged[index] = (key, combine(existing_value, value))
+                break
+        else:
+            merged.append((key, value))
+    return tuple(merged)
+
+
+def _merge_material(
+    declaration: MaterialDeclaration,
+    current: DocumentPolicy | None,
+) -> DocumentPolicy:
+    """把一份材料声明并入已有策略；同一 document_type 被多个业务共用时叠加。
+
+    白名单按分区叠加是安全的：材料提取按业务分区选择白名单，而各业务的分区
+    互不重叠，所以叠加出来的分区表只会命中当前业务那一份。未声明分区的兜底
+    白名单同样叠加——它只在业务分区不匹配时生效（如 classify 阶段）。
+    """
+    projected = DocumentPolicy(
+        document_type=declaration.document_type,
+        display_name=declaration.display_name,
+        fields=declaration.fields,
+        field_guidance=declaration.guidance,
+        scoped_fields=declaration.scoped_fields,
+        scoped_guidance=declaration.scoped_guidance,
+        scoped_names=declaration.scoped_names,
     )
-    for item in _PACK.materials
-}
+    if current is None:
+        return projected
+    return DocumentPolicy(
+        document_type=current.document_type,
+        # 首份声明的材料名作为兜底；分区分歧由 scoped_names 解决。
+        display_name=current.display_name,
+        fields=_keep_order(list(current.fields), projected.fields),
+        field_guidance=f"{current.field_guidance}{projected.field_guidance}",
+        scoped_fields=_merge_scoped(
+            current.scoped_fields, projected.scoped_fields, _keep_order
+        ),
+        scoped_guidance=_merge_scoped(
+            current.scoped_guidance,
+            projected.scoped_guidance,
+            lambda left, right: f"{left}{right}",
+        ),
+        scoped_names=_merge_scoped(
+            current.scoped_names, projected.scoped_names, lambda left, right: str(left)
+        ),
+    )
+
+
+def _merge_document_policies() -> dict[str, DocumentPolicy]:
+    """材料类型、字段白名单和识别指引的唯一来源是业务扩展包
+    `app.businesses.packs`；本表把各业务的声明转成运行时结构。
+
+    同一份材料可能被多个业务共用（行驶证、登记证书），因此这里按
+    `document_type` **叠加**而不是覆盖。覆盖会让后声明的业务悄悄吃掉前一个
+    业务的白名单，表现为“另一个业务的字段永远识别不出来”。
+    """
+    policies: dict[str, DocumentPolicy] = {}
+    for pack in BUSINESS_PACKS.values():
+        for declaration in pack.materials:
+            policies[declaration.document_type] = _merge_material(
+                declaration, policies.get(declaration.document_type)
+            )
+    return policies
+
+
+DOCUMENT_POLICIES: dict[str, DocumentPolicy] = _merge_document_policies()
+
+# 分类提示词的候选资料类型；新增材料类型只需在扩展包里声明。
+DOCUMENT_TYPE_CHOICES = "、".join(
+    [*sorted(DOCUMENT_POLICIES), UNSUPPORTED_DOCUMENT_TYPE]
+)
 
 
 def build_classification_prompt() -> str:
     """构建未知图片的首阶段分类提示词，不允许同时提取业务字段。"""
     return (
-        "只判断这张图片的资料类型。document_type 只能是 scrap_certificate、vehicle_license、"
-        "registration_certificate、invoice、business_license、identity_card 或 unsupported。"
+        f"只判断这张图片的资料类型。document_type 只能是 {DOCUMENT_TYPE_CHOICES}。"
         "不要提取业务字段，不要输出身份证号码等敏感信息，不要给出审核结论。"
         "只输出 JSON 对象，包含 document_type、confidence、reason；confidence 取值为 0 到 1。"
     )
@@ -153,7 +237,7 @@ def build_unknown_extraction_prompt(
     # 把每类材料的白名单与指引一并提供给模型，分类后只能输出命中类型对应的字段。
     policies = {
         key: {
-            "name": policy.display_name,
+            "name": policy.name_for_scope(business_scope),
             "fields": policy.fields_for_scope(business_scope),
             "guidance": policy.guidance_for_scope(business_scope),
         }
@@ -161,8 +245,8 @@ def build_unknown_extraction_prompt(
     }
     prompt = (
         f"请判断资料类型并提取图片中明确可见的审核字段。{LAYOUT_INSTRUCTION}"
-        "document_type 只能是 scrap_certificate、vehicle_license、registration_certificate、"
-        "invoice、business_license、identity_card 或 unsupported。旧车和新车是页面业务归属，不是图片资料类型。"
+        f"document_type 只能是 {DOCUMENT_TYPE_CHOICES}。"
+        "旧车、新车和车源车辆都是页面业务归属，不是图片资料类型。"
         f"各类型字段白名单：{json.dumps(policies, ensure_ascii=False)}。"
         "只能输出最终 document_type 对应白名单中的字段，不推测、不补全，不给出审核结论。"
         "fields 是‘标准字段路径: 图片中的实际文字值’的对象，字段路径只能作为键，绝不能作为值；"

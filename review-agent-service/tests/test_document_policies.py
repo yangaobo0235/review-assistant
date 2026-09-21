@@ -14,12 +14,19 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
         "vehicle.plate_no",
         "vehicle.owner",
     )
+    # 行驶证和登记证书被报废置换与车源审核共用，未声明分区的兜底白名单是
+    # 两份声明的合集；运行时按业务分区选择白名单，见下一个用例。
     assert DOCUMENT_POLICIES["vehicle_license"].fields == (
         "vehicle.type",
         "vehicle.vin",
         "vehicle.plate_no",
         "vehicle.owner",
         "vehicle.registration_date",
+        "vehicle.engine_no",
+        "vehicle.brand_model",
+        "vehicle.usage_nature",
+        "vehicle.issue_date",
+        "vehicle.fuel_type",
     )
     assert DOCUMENT_POLICIES["registration_certificate"].fields == (
         "vehicle.owner",
@@ -29,6 +36,17 @@ def test_each_supported_document_has_a_specific_allowlist() -> None:
         "vehicle.fuel_type",
         "vehicle.registration_date",
         "registration.covered_pages",
+        "vehicle.model_code",
+        "vehicle.brand_model",
+        "vehicle.emission_standard",
+        "vehicle.power_kw",
+    )
+    assert DOCUMENT_POLICIES["vehicle_nameplate"].fields == (
+        "vehicle.vin",
+        "vehicle.model_code",
+        "vehicle.brand_model",
+        "vehicle.power_kw",
+        "vehicle.emission_standard",
     )
     assert DOCUMENT_POLICIES["invoice"].fields == (
         "invoice.invoice_no",
@@ -68,6 +86,47 @@ def test_prompts_restrict_model_scope_and_output_contract() -> None:
     assert "identity_card.name" in identity_prompt
     assert "identity_card.side" in identity_prompt
     assert "不要读取或输出身份证号码" in identity_prompt
+
+
+def test_shared_materials_keep_each_business_scope_isolated() -> None:
+    """共用材料的白名单按业务分区隔离：合并声明不能把另一个业务的字段带进来。
+
+    行驶证被报废置换与车源审核共用。登记证书和车辆铭牌是车源的辅助材料，
+    只有车源分区才允许读发动机型号。
+    """
+    license_policy = DOCUMENT_POLICIES["vehicle_license"]
+
+    assert license_policy.fields_for_scope("old_vehicle") == (
+        "vehicle.type",
+        "vehicle.vin",
+        "vehicle.plate_no",
+        "vehicle.owner",
+    )
+    assert license_policy.fields_for_scope("new_vehicle") == (
+        "vehicle.vin",
+        "vehicle.plate_no",
+        "vehicle.owner",
+        "vehicle.registration_date",
+    )
+    assert "vehicle.engine_no" not in license_policy.fields_for_scope("old_vehicle")
+    assert "vehicle.engine_no" not in license_policy.fields_for_scope("new_vehicle")
+
+    vehicle_fields = license_policy.fields_for_scope("vehicle")
+    assert "vehicle.engine_no" in vehicle_fields
+    # 行驶证上只有“发动机号码”，没有“发动机型号”，也没有独立的“车辆型号”。
+    assert "vehicle.engine_model" not in vehicle_fields
+    assert "vehicle.model_code" not in vehicle_fields
+    assert license_policy.name_for_scope("vehicle") == "机动车行驶证"
+
+    registration_scope = DOCUMENT_POLICIES["registration_certificate"].fields_for_scope("vehicle")
+    assert "vehicle.engine_model" in registration_scope
+    assert "vehicle.emission_standard" in registration_scope
+    # 车源审核不读轴数和排量。
+    assert "vehicle.axle_count" not in registration_scope
+
+    nameplate_scope = DOCUMENT_POLICIES["vehicle_nameplate"].fields_for_scope("vehicle")
+    assert "vehicle.engine_model" in nameplate_scope
+    assert "registration.covered_pages" not in nameplate_scope
 
 
 def test_engine_model_is_extracted_only_from_registration_certificate() -> None:

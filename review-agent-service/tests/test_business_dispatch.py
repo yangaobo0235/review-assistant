@@ -163,7 +163,8 @@ def test_scrap_request_uses_scrap_fields_and_sections() -> None:
     assert [item.id for item in result.sections] == ["old_vehicle", "new_vehicle"]
 
 
-def test_vehicle_source_does_not_execute_scrap_rules() -> None:
+def test_vehicle_source_keeps_scrap_fields_out_of_its_own_review() -> None:
+    """车源审核只核对自己的 13 个字段，页面上的报废置换字段必须被完全忽略。"""
     result = ReviewService().assist(
         ReviewRequest(
             page_url="https://example.test/vehicle-source",
@@ -175,9 +176,23 @@ def test_vehicle_source_does_not_execute_scrap_rules() -> None:
         )
     )
 
-    assert result.comparisons == []
-    assert result.recommendation.value == "REVIEW_REQUIRED"
-    assert "车源审核规则尚未配置，请人工复核" in result.issues
+    fields = {item.field for item in result.comparisons}
+    assert fields == {
+        "vehicle.type",
+        "vehicle.plate_no",
+        "vehicle.vin",
+        "vehicle.engine_no",
+        "vehicle.license_vehicle_type",
+        "vehicle.brand_model",
+        "vehicle.usage_nature",
+        "vehicle.registration_date",
+        "vehicle.issue_date",
+        "vehicle.owner",
+        "vehicle.fuel_type",
+        "vehicle.engine_model",
+    }
+    assert not any(field.startswith("old_vehicle") for field in fields)
+    assert [item.id for item in result.sections] == ["vehicle"]
     assert result.business_type.value == "vehicle_source"
 
 

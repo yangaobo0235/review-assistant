@@ -590,12 +590,40 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     return control ? { control, value: readValueControl(control) } : null;
   }
 
-  async function executeValue(root: DomRoot, entry: DomElement | null | undefined, action: PageWriteAction, guard: Guard) {
-    if (!action || !ALLOWED_VALUE_FIELDS.has(action.field)) return { ok: false, message: "该字段不在报废置换允许回填范围内" };
+  // 控件类型判定必须和采集器一致：采集器决定控件能不能写，这里决定写回器
+  // 是否支持这种控件。两处用同一套取值，业务声明才能同时约束采集和写回。
+  const controlKind = (control: DomElement | null | undefined) => {
+    const role = String(control?.getAttribute?.("role") || "").toLowerCase();
+    if (role === "combobox" || control?.tagName === "SELECT") return "select";
+    if (control?.tagName === "TEXTAREA") return "textarea";
+    if (control?.getAttribute?.("contenteditable") === "true") return "contenteditable";
+    return String(control?.getAttribute?.("type") || "text").toLowerCase() || "text";
+  };
+
+  /**
+   * 写回策略：后端下发的字段与控件类型白名单。
+   *
+   * 没传（或没应用清单）时退回内置的报废置换白名单。`controlKinds` 空集合
+   * 表示业务声明了"不限制"，与没声明是两件事。
+   */
+  interface WritePolicy {
+    fields?: ReadonlySet<string> | null;
+    controlKinds?: ReadonlySet<string> | null;
+  }
+
+  const fieldAllowed = (field: string, policy: WritePolicy | undefined) =>
+    !policy?.fields ? ALLOWED_VALUE_FIELDS.has(field) : policy.fields.has(field);
+
+  async function executeValue(root: DomRoot, entry: DomElement | null | undefined, action: PageWriteAction, guard: Guard, policy?: WritePolicy) {
+    if (!action || !fieldAllowed(action.field, policy)) return { ok: false, message: "该字段不在允许回填范围内" };
     if (!entry || !sameCollectedRecord(guard)) return { ok: false, message: guardError };
     const control = writableValueControl(entry);
     const custom = control?.getAttribute?.("role") === "combobox";
     if (!control || !writable(control, custom)) return { ok: false, message: "目标字段不可写或页面已变化" };
+    const kinds = policy?.controlKinds;
+    if (kinds && kinds.size && !kinds.has(controlKind(control))) {
+      return { ok: false, message: "该控件类型暂不支持自动回填，请手工填写" };
+    }
     if (!String(action.value ?? "").trim()) return { ok: false, message: "回填值不能为空" };
     const original = readValueControl(control);
     const originalRaw = control.tagName === "SELECT" ? String(control.value ?? "") : original;
@@ -708,4 +736,4 @@ interface RollbackEntry { action: PageFillAction; resolved: ResolvedControl; ori
     return { ok: true, message: "组合字段已同时回填并回读", actions: results };
   }
 
-  export const ReviewPageFieldWriter = { execute, preflight, executeValue, executeValueGroup, captureValue, triggerInvoiceVerification };
+  export const ReviewPageFieldWriter = { execute, preflight, executeValue, executeValueGroup, captureValue, triggerInvoiceVerification, controlKind };

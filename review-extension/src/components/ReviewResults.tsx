@@ -29,7 +29,7 @@ interface ReviewResultsProps {
   pageData: PageData | null;
   exceptionFilter: ExceptionFilter;
   onExceptionFilterChange: (filter: ExceptionFilter) => void;
-  onFocusImage: (imageId: string) => Promise<void>;
+  onFocusImage: (imageId: string) => Promise<{ ok: boolean; error?: string }>;
   onApplyPageFieldValue: (field: string, value: string, expectedValue?: string | null) => Promise<PageFillResult>;
   onApplyPageFieldGroupValue: (fields: string[], value: string, expectedValues?: Record<string, string | null | undefined>) => Promise<PageFillResult>;
   onRerun: () => Promise<void>;
@@ -141,7 +141,7 @@ interface ResultGroupProps {
   comparisons: FieldComparison[];
   groupStatus?: JobStatus;
   imagesById: Map<string, PageData["images"][number]>;
-  onFocusImage: (imageId: string) => Promise<void>;
+  onFocusImage: (imageId: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 function ResultGroup({ title, comparisons, groupStatus, imagesById, onFocusImage }: ResultGroupProps) {
@@ -184,7 +184,7 @@ interface EvidenceSourceProps {
   compareByPosition?: boolean;
   image?: PageData["images"][number];
   compact?: boolean;
-  onFocusImage: (imageId: string) => Promise<void>;
+  onFocusImage: (imageId: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 function EvidenceSource({ evidence, highlightPlan, compareByPosition = false, image, compact = false, onFocusImage }: EvidenceSourceProps) {

@@ -17,9 +17,10 @@
 
 from dataclasses import dataclass, replace
 
-from app.businesses.packs import SCRAP_REPLACEMENT_PACK as _PACK
+from app.businesses.packs import BUSINESS_PACKS
 from app.businesses.packs.model import (
     AuthorityRule,
+    BusinessExtensionPack,
     EvidenceMode,
 )
 
@@ -32,9 +33,11 @@ class FieldEvidencePolicy:
     allow_single_evidence: bool = True
     normalizer: str = "default"
     authority: tuple[AuthorityRule, ...] = ()
+    # 日期时效：页面日期必须落在审核日往前推 N 天内。None 表示不检查。
+    max_age_days: int | None = None
 
 
-def _build_policies(pack) -> dict[str, FieldEvidencePolicy]:
+def _build_policies(pack: BusinessExtensionPack) -> dict[str, FieldEvidencePolicy]:
     policies = {
         item.key: FieldEvidencePolicy(
             field=item.key,
@@ -43,6 +46,7 @@ def _build_policies(pack) -> dict[str, FieldEvidencePolicy]:
             allow_single_evidence=item.allow_single_evidence,
             normalizer=item.normalizer,
             authority=item.authority,
+            max_age_days=item.max_age_days,
         )
         for item in pack.fields
         if item.mode is not None
@@ -54,14 +58,38 @@ def _build_policies(pack) -> dict[str, FieldEvidencePolicy]:
     return policies
 
 
-FIELD_EVIDENCE_POLICIES = _build_policies(_PACK)
+def _merge_policies(
+    packs: tuple[BusinessExtensionPack, ...],
+) -> tuple[dict[str, FieldEvidencePolicy], dict[str, str]]:
+    """把所有业务的证据策略合成一张表，字段键重复即启动期报错。
 
-# 页面控件与材料字段共用同一份证据策略。
-MATERIAL_FIELD_BY_PAGE_FIELD = {
-    item.key: item.material_field
-    for item in _PACK.fields
-    if item.material_field is not None
-}
+    字段键带业务分区前缀（`old_vehicle.` / `vehicle.`），各业务之间不重叠；
+    这里显式校验，避免后者静默覆盖前者——那类问题只有在生产上才会表现为
+    “字段按错误的来源策略比对”。
+    """
+    policies: dict[str, FieldEvidencePolicy] = {}
+    owners: dict[str, str] = {}
+    for pack in packs:
+        for key, policy in _build_policies(pack).items():
+            previous = owners.get(key)
+            if previous is not None and previous != pack.business_type:
+                raise ValueError(
+                    f"字段 {key} 同时被 {previous} 和 {pack.business_type} 声明了证据策略"
+                )
+            policies[key] = policy
+            owners[key] = pack.business_type
+    material_fields = {
+        item.key: item.material_field
+        for pack in packs
+        for item in pack.fields
+        if item.material_field is not None
+    }
+    return policies, material_fields
+
+
+FIELD_EVIDENCE_POLICIES, MATERIAL_FIELD_BY_PAGE_FIELD = _merge_policies(
+    tuple(BUSINESS_PACKS.values())
+)
 
 
 def field_policy(field: str) -> FieldEvidencePolicy | None:

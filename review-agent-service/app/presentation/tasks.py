@@ -73,17 +73,21 @@ def prepare_display_tasks(
             continue
         consumed.update(item.step_id for item in members)
         # 材料任务的公开语义只有“是否齐全”。识别限制、字段异常等
-        # 内部诊断不能通过任务 reason 泄漏到工作台。
+        # 内部诊断不能通过任务 reason 泄漏到工作台——成员条目只来自
+        # `completeness.issues`，把它们的理由合并进组任务是安全的。
         status = (
             "MATCH"
             if completeness is not None and completeness.status == "COMPLETE"
             else fallback
         ) if category == "MATERIAL" else ("MATCH" if members else fallback)
+        member_reasons = "；".join(
+            dict.fromkeys(item.reason for item in members if item.reason)
+        )
         base = ReviewTask(
             step_id=task_id, sequence=min((item.sequence for item in members), default=10000),
             category=category, display_target="ASSISTANT", label=label,
             result_status=status, requires_reviewer_action=status != "MATCH",
-            reason="" if members else reason,
+            reason=member_reasons or reason,
         )
         result.append(base if category == "MATERIAL" else _merge(base, members))
     result.extend(replacements.get(item.step_id, item) for item in tasks if item.step_id not in consumed)

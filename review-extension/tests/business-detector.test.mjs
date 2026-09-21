@@ -86,9 +86,17 @@ test("does not guess a region-specific profile from page text alone", () => {
 
   assert.equal(detect("http://localhost:5173/review", "申请信息 报废车辆信息 报废证明编号"), null);
   assert.equal(detect("http://localhost:5173/review", "一致性审核"), null);
-  assert.equal(
-    detect("http://localhost:5173/review", "车源审核 车辆来源信息").businessType,
-    "vehicle_source",
+  // 车源审核不分地区，指纹兜底只认页面自身的标题和区块名。
+  assert.deepEqual(
+    { ...detect("http://localhost:5173/review", "车源审核 行驶证信息") },
+    {
+      businessType: "vehicle_source",
+      region: "default",
+      profileVersion: "1.0",
+      workflowStage: "vehicle_source",
+      selectionMode: "AUTO",
+      detectionStatus: "CONFIRMED",
+    },
   );
 });
 

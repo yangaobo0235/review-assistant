@@ -73,11 +73,17 @@ def _date_check(
         if lower
         else f"不晚于 {upper.isoformat()}"
     )
+    # 超期不判"不通过"，而是交人工复核：日期窗口是政策口径，窗口边上的一天
+    # 之差通常要靠人工判断（材料出具时间、节假日顺延），自动否决会误伤。
     return CheckResult(
         check_id=check_id,
         label=label,
-        status="MATCH" if matches else "CONFLICT",
-        reason=f"{label}{'符合' if matches else '不符合'}政策范围：{range_text}",
+        status="MATCH" if matches else "INSUFFICIENT",
+        reason=(
+            f"{label}符合政策范围：{range_text}"
+            if matches
+            else f"{label} {parsed.isoformat()} 超出政策范围（{range_text}），请人工复核"
+        ),
         values=values,
         evidence=evidence,
     )
@@ -111,7 +117,7 @@ def build_replacement_policy_checks(
             "回收证明交车日期",
             "old_vehicle.recycle_date",
             recycle_date,
-            None,
+            policy.disposal_date_from,
             policy.disposal_deadline,
             recycle_evidence,
         ),

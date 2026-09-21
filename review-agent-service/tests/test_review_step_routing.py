@@ -250,10 +250,13 @@ def test_present_affiliation_safeguard_routes_to_its_page_field(
         ],
     )
 
-    step = next(item for item in steps if check_id in item.step_id)
-
+    # 结论投影到字段条目上；同一句话不再单出一张助手卡片，否则「待处理」里
+    # 会看到同一条结论两遍。
+    step = next(item for item in steps if item.step_id == f"FIELD-{page_field}")
     assert step.display_target is ReviewDisplayTarget.ASSISTANT
     assert step.page_field is None
+    assert step.details["check_ids"] == [check_id]
+    assert [item.step_id for item in steps if item.step_id.startswith("BUSINESS-")] == []
 
 
 def test_owner_type_control_is_a_non_writable_system_field() -> None:

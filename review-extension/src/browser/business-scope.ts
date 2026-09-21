@@ -36,6 +36,7 @@ import {
     ["scrap_certificate", "scrap_certificate"],
     ["vehicle_license", "vehicle_license"],
     ["registration_certificate", "registration_certificate"],
+    ["vehicle_nameplate", "vehicle_nameplate"],
     ["invoice", "invoice"],
     ["business_license", "business_license"],
     ["id_card", "identity_card"],

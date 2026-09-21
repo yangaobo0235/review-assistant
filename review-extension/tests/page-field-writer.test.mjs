@@ -692,12 +692,12 @@ test("rolls back a filled custom control through its clear affordance when the s
   assert.match(result.message, /已回滚/);
 });
 
-function valueInput(initial = "") {
+function valueInput(initial = "", tagName = "INPUT", type = null) {
   return {
-    tagName: "INPUT",
+    tagName,
     value: initial,
     isConnected: true,
-    getAttribute: () => null,
+    getAttribute: (name) => (name === "type" ? type : null),
     dispatchEvent() {},
   };
 }
@@ -745,6 +745,49 @@ test("single-field writer enforces the scrap field allowlist and collected value
   assert.equal(stale.ok, false);
   assert.match(stale.message, /当前值与采集时不同/);
   assert.equal(input.value, "VIN-OLD");
+});
+
+test("写回策略由后端下发的白名单决定：字段与控件类型两道闸", async () => {
+  const writer = loadWriter({ setTimeout });
+  const root = { defaultView: { Event: class Event {} } };
+  const text = valueInput("旧值");
+  const policy = {
+    fields: new Set(["new_vehicle.vin"]),
+    controlKinds: new Set(["text", "textarea", "number"]),
+  };
+
+  // 清单之外的字段一律拒绝，即使控件本身可写。
+  const denied = await writer.executeValue(
+    root, text, { field: "application.customer_name", value: "张三" }, undefined, policy,
+  );
+  assert.equal(denied.ok, false);
+  assert.match(denied.message, /不在允许回填范围内/);
+  assert.equal(text.value, "旧值");
+
+  // 清单内的文本框正常写入。
+  const written = await writer.executeValue(
+    root, text, { field: "new_vehicle.vin", value: "VIN-NEW", expectedValue: "旧值" }, undefined, policy,
+  );
+  assert.equal(written.ok, true);
+
+  // 下拉控件即使字段在清单里也不写：下拉和日期的写回还没有验证过。
+  const rejected = await writer.executeValue(
+    root, valueInput("", "SELECT"), { field: "new_vehicle.vin", value: "VIN-NEW" }, undefined, policy,
+  );
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /控件类型暂不支持/);
+
+  // 业务声明"不限制"（空集合）时按字段清单放行——历史口径不变。
+  const unrestrictedPolicy = { fields: policy.fields, controlKinds: new Set() };
+  const allowedField = await writer.executeValue(
+    root, valueInput("旧值"), { field: "new_vehicle.vin", value: "VIN-NEW", expectedValue: "旧值" },
+    undefined, unrestrictedPolicy,
+  );
+  assert.equal(allowedField.ok, true);
+
+  assert.equal(writer.controlKind(valueInput("x")), "text");
+  assert.equal(writer.controlKind(valueInput("", "SELECT")), "select");
+  assert.equal(writer.controlKind(valueInput("", "INPUT", "date")), "date");
 });
 
 test("single-field writer restores the original value after failed readback", async () => {

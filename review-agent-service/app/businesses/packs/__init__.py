@@ -12,11 +12,19 @@ from app.businesses.packs.model import (
     build_collect_manifest,
 )
 from app.businesses.packs.scrap_replacement import SCRAP_REPLACEMENT_PACK
+from app.businesses.packs.vehicle_source import VEHICLE_SOURCE_PACK
 from app.models.review import BusinessType
 
 # 业务类型 → 声明。同一业务的各地区共用一份声明，地区差异在 Profile 里。
 BUSINESS_PACKS: dict[BusinessType, BusinessExtensionPack] = {
     BusinessType.SCRAP_REPLACEMENT: SCRAP_REPLACEMENT_PACK,
+    BusinessType.VEHICLE_SOURCE: VEHICLE_SOURCE_PACK,
+}
+
+# 业务分区 → 声明。各业务的分区互不相同（旧车/新车 vs 车源车辆），
+# 因此按分区就能唯一确定声明，字段路由不必依赖调用方传业务类型。
+PACK_BY_SCOPE: dict[str, BusinessExtensionPack] = {
+    scope: pack for pack in BUSINESS_PACKS.values() for scope in pack.scopes
 }
 
 
@@ -25,9 +33,36 @@ def pack_for_business(business_type: BusinessType) -> BusinessExtensionPack | No
     return BUSINESS_PACKS.get(business_type)
 
 
+def pack_for_scope(business_scope: str) -> BusinessExtensionPack | None:
+    """按图片业务分区反查声明；未知分区返回 None。
+
+    分区在业务之间不重叠（由启动期校验保证），所以这里不需要业务类型参数。
+    字段路由只有分区可用时靠它选中正确的声明，否则会拿报废置换的路由表去
+    处理车源材料，把全部字段静默丢弃。
+    """
+    return PACK_BY_SCOPE.get(business_scope)
+
+
+def _validate_scope_ownership() -> None:
+    """分区归属于唯一业务；重叠会让按分区反查变成看声明顺序。"""
+    duplicated: dict[str, list[str]] = {}
+    for business_type, pack in BUSINESS_PACKS.items():
+        for scope in pack.scopes:
+            duplicated.setdefault(scope, []).append(business_type.value)
+    conflicts = {scope: owners for scope, owners in duplicated.items() if len(owners) > 1}
+    if conflicts:
+        detail = "；".join(f"{scope}：{'、'.join(owners)}" for scope, owners in conflicts.items())
+        raise ValueError(f"业务分区在多个业务之间重复：{detail}")
+
+
+_validate_scope_ownership()
+
+
 __all__ = [
     "BUSINESS_PACKS",
+    "PACK_BY_SCOPE",
     "SCRAP_REPLACEMENT_PACK",
+    "VEHICLE_SOURCE_PACK",
     "AuthorityRule",
     "BusinessExtensionPack",
     "EvidenceMode",
@@ -38,4 +73,5 @@ __all__ = [
     "SectionDeclaration",
     "build_collect_manifest",
     "pack_for_business",
+    "pack_for_scope",
 ]

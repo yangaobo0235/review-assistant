@@ -12,7 +12,7 @@ from app.businesses.material_policies import (
     MaterialPolicy,
     RetryPolicy,
 )
-from app.businesses.packs import SCRAP_REPLACEMENT_PACK
+from app.businesses.packs import SCRAP_REPLACEMENT_PACK, VEHICLE_SOURCE_PACK
 from app.businesses.replacement_policies import ReplacementPolicy
 from app.capabilities.specs import CapabilityBinding, CapabilitySpec, ExternalCheckSpec
 from app.models.review import BusinessType, Region
@@ -40,10 +40,16 @@ class BusinessProfile:
     rule_groups: tuple[str, ...] = ()
     page_actions: tuple[str, ...] = ()
     page_action_ids: tuple[str, ...] = ()
+    # 允许浏览器写回的控件类型；空元组表示不限制（历史口径，见扩展包声明）。
+    writable_control_kinds: tuple[str, ...] = ()
     replacement_policy: ReplacementPolicy | None = None
     capability_specs: tuple[CapabilitySpec, ...] = ()
     binding_declarations: tuple[CapabilityBinding, ...] = ()
     page_interaction: bool = False
+    # 页面字段 → 投影到它上面的规则检查项。
+    field_check_bindings: tuple[tuple[str, str], ...] = ()
+    # 审核字段就是声明的字段；页面上其他控件不进审核目录。
+    review_declared_fields_only: bool = False
 
     @property
     def capabilities(self) -> tuple[CapabilitySpec, ...]:
@@ -142,53 +148,63 @@ class BusinessProfile:
         """
         return self.page_action_ids or self.page_actions
 
+    def allows_field_write(self, control_type: str | None) -> bool:
+        """该控件类型是否允许审核员写回。
+
+        没声明过控件类型的业务不限制（历史口径）；声明过的业务只放开列出的
+        类型——写回器对下拉、日期这类复合控件的验证程度和文本框不同，没验证
+        过的一律交人工填写，而不是先写进去再看回读结果。
+        """
+        if not self.writable_control_kinds:
+            return True
+        return str(control_type or "").strip().lower() in self.writable_control_kinds
 
 
+
+
+
+def _build_profile(pack, region: Region) -> BusinessProfile:
+    """从业务声明生成某个地区的 Profile。
+
+    字段、材料、能力和页面动作在地区之间共用，只有地区政策不同。地区政策为
+    空时（如车源审核）不推导地区政策能力，`capabilities_for` 只返回共用部分。
+    """
+    declaration = pack.region(region)
+    if declaration is None:
+        raise ValueError(f"{pack.business_type} 声明中缺少地区：{region.value}")
+    titles = {section.key: section.title for section in pack.sections}
+    return BusinessProfile(
+        business_type=BusinessType(pack.business_type),
+        region=declaration.region,
+        version=declaration.version,
+        required_fields=pack.required_keys(),
+        sections=tuple(
+            SectionDefinition(key, titles.get(key, key), fields)
+            for key, fields in pack.section_field_keys().items()
+        ),
+        rules_configured=True,
+        material_policy=pack.material_policy,
+        retry_policy=pack.retry_policy,
+        page_action_ids=pack.page_action_ids,
+        writable_control_kinds=pack.writable_control_kinds,
+        replacement_policy=declaration.replacement_policy,
+        capability_specs=pack.capabilities_for(declaration),
+        binding_declarations=pack.bindings_for(declaration),
+        page_interaction=pack.page_interaction,
+        field_check_bindings=pack.field_check_bindings,
+        review_declared_fields_only=pack.review_declared_fields_only,
+    )
 
 
 def build_scrap_profile(region: Region) -> BusinessProfile:
-    """从业务声明生成某个地区的报废置换 Profile。
-
-    字段、材料、能力和页面动作在青岛与长春之间共用，只有地区政策不同。
-    """
-    declaration = SCRAP_REPLACEMENT_PACK.region(region)
-    if declaration is None:
-        raise ValueError(f"报废置换声明中缺少地区：{region.value}")
-    titles = {section.key: section.title for section in SCRAP_REPLACEMENT_PACK.sections}
-    return BusinessProfile(
-        business_type=BusinessType(SCRAP_REPLACEMENT_PACK.business_type),
-        region=declaration.region,
-        version=declaration.version,
-        required_fields=SCRAP_REPLACEMENT_PACK.required_keys(),
-        sections=tuple(
-            SectionDefinition(key, titles.get(key, key), fields)
-            for key, fields in SCRAP_REPLACEMENT_PACK.section_field_keys().items()
-        ),
-        rules_configured=True,
-        material_policy=SCRAP_REPLACEMENT_PACK.material_policy,
-        retry_policy=SCRAP_REPLACEMENT_PACK.retry_policy,
-        page_action_ids=SCRAP_REPLACEMENT_PACK.page_action_ids,
-        replacement_policy=declaration.replacement_policy,
-        capability_specs=SCRAP_REPLACEMENT_PACK.capabilities_for(declaration),
-        binding_declarations=SCRAP_REPLACEMENT_PACK.bindings_for(declaration),
-        page_interaction=SCRAP_REPLACEMENT_PACK.page_interaction,
-    )
+    """从业务声明生成某个地区的报废置换 Profile。"""
+    return _build_profile(SCRAP_REPLACEMENT_PACK, region)
 
 
 SCRAP_REPLACEMENT_QINGDAO = build_scrap_profile(Region.QINGDAO)
 
-VEHICLE_SOURCE_DEFAULT = BusinessProfile(
-    business_type=BusinessType.VEHICLE_SOURCE,
-    region=Region.DEFAULT,
-    version="1.0",
-    required_fields=(),
-    sections=(),
-    rules_configured=False,
-    unconfigured_message="车源审核规则尚未配置，请人工复核",
-    external_checks=(),
-    rule_groups=(),
-    page_actions=(),
-)
+# 车源审核不分地区，页面地址是 /vehicle-source，配置取默认地区。
+VEHICLE_SOURCE_DEFAULT = _build_profile(VEHICLE_SOURCE_PACK, Region.DEFAULT)
 
 CONSISTENCY_QINGDAO = BusinessProfile(
     business_type=BusinessType.CONSISTENCY,

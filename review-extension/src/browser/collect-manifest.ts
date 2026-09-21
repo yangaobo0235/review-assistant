@@ -36,6 +36,12 @@ export interface CollectManifest {
   page_groups: ManifestPageGroup[];
   fields: ManifestField[];
   materials: ManifestMaterial[];
+  /** 允许写回的字段键；缺省视为不允许任何写回。 */
+  writable_fields?: string[];
+  /** 允许写回的控件类型；缺省或空数组表示不限制（历史业务口径）。 */
+  writable_control_kinds?: string[];
+  /** 页面指纹锚点：能唯一标识这条审核记录的字段。缺省时退回内置表。 */
+  identity_anchors?: string[];
 }
 
 export interface ManifestImageProfile {
@@ -93,6 +99,9 @@ let appliedImageProfile: ManifestImageProfile | null = null;
 let appliedSlots: [string, string][] | null = null;
 let appliedFieldLabels: Record<string, string> | null = null;
 let appliedMaterialLabels: Record<string, string> | null = null;
+let appliedWritableFields: Set<string> | null = null;
+let appliedWritableKinds: Set<string> | null = null;
+let appliedIdentityAnchors: string[] | null = null;
 
 const isValid = (manifest: unknown): manifest is CollectManifest => {
   const candidate = manifest as CollectManifest | null;
@@ -116,6 +125,9 @@ export function applyCollectManifest(manifest: unknown): boolean {
     appliedSlots = null;
     appliedFieldLabels = null;
     appliedMaterialLabels = null;
+    appliedWritableFields = null;
+    appliedWritableKinds = null;
+    appliedIdentityAnchors = null;
     return false;
   }
   appliedFields = toFieldDefinitions(manifest);
@@ -132,6 +144,17 @@ export function applyCollectManifest(manifest: unknown): boolean {
   appliedMaterialLabels = Object.fromEntries(
     manifest.materials.map((item) => [item.document_type, item.label]),
   );
+  // 老版本后端不带这两项时保持 null：调用方退回内置表，而不是把"清单里
+  // 没有"当成"业务声明了不允许"，否则旧清单会让报废置换的回填全部失效。
+  appliedWritableFields = Array.isArray(manifest.writable_fields)
+    ? new Set(manifest.writable_fields)
+    : null;
+  appliedWritableKinds = Array.isArray(manifest.writable_control_kinds)
+    ? new Set(manifest.writable_control_kinds)
+    : new Set();
+  appliedIdentityAnchors = Array.isArray(manifest.identity_anchors) && manifest.identity_anchors.length
+    ? manifest.identity_anchors
+    : null;
   return true;
 }
 
@@ -168,6 +191,36 @@ export function manifestFieldLabels(): Record<string, string> | null {
 /** 已应用的材料显示名（材料类型 → 中文名）；没有应用清单时返回 null。 */
 export function manifestMaterialLabels(): Record<string, string> | null {
   return appliedMaterialLabels;
+}
+
+/**
+ * 已应用的写回字段白名单；没有应用清单时返回 null，调用方退回内置表。
+ *
+ * 写回是不可逆的页面操作，这份白名单是浏览器的硬边界：清单之外的字段
+ * 一律拒绝写入，即使消息里带了字段名。
+ */
+export function manifestWritableFields(): Set<string> | null {
+  return appliedWritableFields;
+}
+
+/**
+ * 已应用的写回控件类型白名单；没有应用清单时返回 null。
+ *
+ * 空集合表示"业务声明了不限制"（历史口径），与 null（没有清单）是两件事：
+ * 前者按清单执行，后者才退回内置表。
+ */
+export function manifestWritableControlKinds(): Set<string> | null {
+  return appliedWritableKinds;
+}
+
+/**
+ * 已应用的页面指纹锚点；没有应用清单时返回 null，调用方退回内置表。
+ *
+ * 锚点写死在浏览器里会让另一个业务永远拿不到指纹（车源页面上没有
+ * `old_vehicle.*`），而空指纹会让页面写回和原图定位全部拒绝执行。
+ */
+export function manifestIdentityAnchors(): string[] | null {
+  return appliedIdentityAnchors;
 }
 
 /** 拉取某个业务的采集清单；失败返回 null，调用方退回内置表。 */

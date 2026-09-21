@@ -26,6 +26,10 @@ class MaterialRequirement:
     minimum_count: int = 1
     required_pages: tuple[int, ...] = ()
     display_name: str = "审核材料"
+    # 同组材料互为替代：组内任一材料满足要求时，其余成员不再报缺失。
+    # 空字符串表示该材料不参与替代关系。车源审核的登记证书与车辆铭牌
+    # 属于同一组——两件材料只需要上传其中一件。
+    alternative_group: str = ""
 
 
 @dataclass(frozen=True)

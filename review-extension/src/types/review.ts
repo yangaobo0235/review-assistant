@@ -170,6 +170,10 @@ export type CheckResultStatus = "MATCH" | "CONFLICT" | "INSUFFICIENT";
 
 export interface CheckResultValue {
   differences?: DifferenceRange[];
+  /** 该值与页面侧取值是否不一致；`null`/`undefined` 表示没有比对过。 */
+  conflicting?: boolean | null;
+  /** 产出这条值的检查写下的比对说明；无投影的字段没有这一项。 */
+  check_reason?: string | null;
   source: string;
   value?: unknown;
   source_id?: string | null;
@@ -206,6 +210,10 @@ export interface ReviewTaskDetails {
   subject_requirements?: SubjectEvidenceRequirement[];
   auxiliary_checks?: AuxiliaryCheckSummary[];
   affiliation_subject_status?: CheckResultStatus;
+  /** 理由已就地表达（候选值标红、逐条说明）时不再重复整段显示。 */
+  reason_distributed?: boolean;
+  /** 「页面原始值」区块下面的一句话；由规则给出，前端不自己拼。 */
+  page_value_note?: string;
 }
 
 export interface AuxiliaryCheckSummary {

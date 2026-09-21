@@ -329,6 +329,39 @@
       "reviewable": true
     }
   ],
+  "writable_fields": [
+    "old_vehicle.type",
+    "old_vehicle.recycle_date",
+    "scrap_certificate.certificate_no",
+    "old_vehicle.vin",
+    "old_vehicle.plate_no",
+    "old_vehicle.owner",
+    "old_vehicle.engine_model",
+    "new_vehicle.fuel_type",
+    "invoice.code",
+    "invoice.invoice_no",
+    "invoice.amount",
+    "invoice.invoice_date",
+    "new_vehicle.vin",
+    "new_vehicle.plate_no",
+    "new_vehicle.owner",
+    "new_vehicle.registration_date",
+    "application.terminal_certificate_no",
+    "application.customer_name",
+    "application.terminal_phone",
+    "application.owner_type",
+    "page_ocr.new_vehicle_vin",
+    "old_vehicle.affiliation",
+    "new_vehicle.affiliation"
+  ],
+  "writable_control_kinds": [],
+  "identity_anchors": [
+    "application.id",
+    "old_vehicle.vin",
+    "new_vehicle.vin",
+    "old_vehicle.owner",
+    "new_vehicle.owner"
+  ],
   "materials": [
     {
       "document_type": "scrap_certificate",

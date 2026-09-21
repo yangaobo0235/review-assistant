@@ -1,4 +1,8 @@
-from app.businesses.profiles import SCRAP_REPLACEMENT_QINGDAO, VEHICLE_SOURCE_DEFAULT
+from app.businesses.profiles import (
+    CONSISTENCY_QINGDAO,
+    SCRAP_REPLACEMENT_QINGDAO,
+    VEHICLE_SOURCE_DEFAULT,
+)
 from app.workflow.planner import plan_capabilities
 
 
@@ -10,10 +14,18 @@ def test_configured_profile_plans_declared_capabilities_only():
         "qingdao_replacement_policy",
         "affiliation_subject",
         "verify_invoice",
+        "owner_consistency",
     }
 
 
+def test_vehicle_source_profile_plans_its_own_capabilities():
+    ids = {item.capability_id for item in plan_capabilities(VEHICLE_SOURCE_DEFAULT)}
+
+    assert ids == {"material_completeness", "vehicle_model_consistency"}
+    assert not any(item.endswith("_replacement_policy") for item in ids)
+
+
 def test_unconfigured_profile_is_explicitly_marked():
-    plan = plan_capabilities(VEHICLE_SOURCE_DEFAULT)
+    plan = plan_capabilities(CONSISTENCY_QINGDAO)
     assert [(item.capability_id, item.status) for item in plan] == [("profile", "NOT_CONFIGURED")]
 

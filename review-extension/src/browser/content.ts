@@ -1,4 +1,4 @@
-import { applyCollectManifest } from "./collect-manifest.ts";
+import { applyCollectManifest, manifestIdentityAnchors, manifestWritableControlKinds, manifestWritableFields } from "./collect-manifest.ts";
 import type { CollectManifest } from "./collect-manifest.ts";
 import { ReviewBusinessDetector } from "./business-detector.ts";
 import { ReviewBusinessScope } from "./business-scope.ts";
@@ -27,7 +27,9 @@ let activeCollectionId = "";
 let latestCollectionId = "";
 let collectionSequence = 0;
 const nextCollectionId = () => `${pageInstanceId}:${++collectionSequence}`;
-const pageFingerprint = buildPageFingerprint;
+// 指纹锚点来自本次业务的采集清单；没有清单时退回内置表。
+const pageFingerprint = (fields: Record<string, unknown>) =>
+  buildPageFingerprint(fields, manifestIdentityAnchors() ?? undefined);
 const MESSAGE_TYPES = Object.freeze({
   collectPageData: "COLLECT_PAGE_DATA",
   collectPageManifest: "COLLECT_PAGE_MANIFEST",
@@ -50,6 +52,10 @@ const classifyImage = (hint: string) => {
   const text = hint.toLowerCase();
   if (text.includes("身份证")) return "id_card";
   if (text.includes("营业执照")) return "business_license";
+  // 铭牌必须先于登记证书判断：上传说明常把“登记证书和铭牌二选一”写在同一句里，
+  // 先命中的关键词会决定图片类型。
+  if (text.includes("铭牌")) return "vehicle_nameplate";
+  if (text.includes("行驶证")) return "vehicle_license";
   if (text.includes("登记证书") || text.includes("机动车登记证")) return "registration_certificate";
   if (text.includes("回收证明") || text.includes("报废证明")) return "scrap_certificate";
   if (text.includes("发票")) return "invoice";
@@ -119,7 +125,9 @@ const readImageAsset = async (candidate: ImageSelection): Promise<PageImage> => 
   }
   return imageAsset;
 };
-const SCRAP_WRITABLE_FIELDS = new Set([
+// 采集清单不可用时的兜底白名单。清单一旦应用就以清单为准：允许写回哪些
+// 字段、哪些控件类型都是业务声明，不在浏览器里再维护一份。
+const BUILTIN_WRITABLE_FIELDS = new Set([
   "old_vehicle.recycle_date", "scrap_certificate.certificate_no", "old_vehicle.vin", "old_vehicle.plate_no", "old_vehicle.owner", "old_vehicle.engine_model",
   "invoice.code", "invoice.invoice_no", "invoice.amount", "invoice.invoice_date", "new_vehicle.vin", "new_vehicle.plate_no", "new_vehicle.owner",
   "page_ocr.new_vehicle_vin", "application.customer_name",
@@ -127,6 +135,12 @@ const SCRAP_WRITABLE_FIELDS = new Set([
   "application.terminal_phone", "application.terminal_certificate_no", "application.owner_type",
   "old_vehicle.affiliation", "new_vehicle.affiliation",
 ]);
+
+/** 本次清单允许写回的字段；没有清单时退回内置白名单。 */
+const writableFields = () => manifestWritableFields() ?? BUILTIN_WRITABLE_FIELDS;
+
+/** 本次清单允许写回的控件类型；没有清单时不限制。 */
+const writableControlKinds = () => manifestWritableControlKinds();
 
 const controlFields = (collection: CollectionSnapshot) => {
   const fields = { ...collection.pageFields };
@@ -179,14 +193,31 @@ const sameReviewIdentityExceptFields = (message: ReviewMessage, fields: string[]
 
 const sameReviewIdentityExceptField = (message: ReviewMessage, field: string) => sameReviewIdentityExceptFields(message, [field]);
 
+/**
+ * 找到要定位的 <img>。
+ *
+ * 采集时缓存的节点优先；框架重渲染会换掉 `<img>` 节点（上传组件刷新、
+ * Ant Design 重新挂载缩略图），此时按**采集时记录的图片地址**在页面上重新
+ * 找一次——地址没变就还是同一张图。地址也找不到才算原图消失。
+ */
+const resolveReviewImage = (imageId: unknown) => {
+  const snapshot = reviewImageElements.get(imageId);
+  const collected = snapshot?.image;
+  if (collected?.isConnected && (collected.currentSrc || collected.src) === snapshot.src) {
+    return collected;
+  }
+  const src = snapshot?.src;
+  if (!src) return null;
+  return Array.from(document.images).find((image) => (image.currentSrc || image.src) === src) || null;
+};
+
 const focusReviewImage = (message: ReviewMessage) => {
   if (!sameCollectedRecord(message) || !message.expectedCollectionId || message.expectedCollectionId !== activeCollectionId) {
     return { ok: false, error: "页面已变化，请重新采集" };
   }
-  const snapshot = reviewImageElements.get(message.imageId);
-  const image = snapshot?.image;
-  if (!image?.isConnected || (image.currentSrc || image.src) !== snapshot.src) {
-    return { ok: false, error: "原图已变化，请重新采集" };
+  const image = resolveReviewImage(message.imageId);
+  if (!image) {
+    return { ok: false, error: "原图已不在页面上，请重新采集" };
   }
   return ReviewImageFocus.focus(image);
 };
@@ -229,8 +260,8 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
       sendResponse({ ok: false, code: "PAGE_IDENTITY_CHANGED", message: "页面已变化，请重新审核", actions: [] });
       return true;
     }
-    if (!SCRAP_WRITABLE_FIELDS.has(action.field)) {
-      sendResponse({ ok: false, message: "该字段不在报废置换允许回填范围内", actions: [] });
+    if (!writableFields().has(action.field)) {
+      sendResponse({ ok: false, message: "该字段不在允许回填范围内", actions: [] });
       return true;
     }
     const entry = reviewFieldElements.get(action.field);
@@ -265,7 +296,10 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
         && message.expectedCollectionId === activeCollectionId
         && message.expectedPageFingerprint === pageFingerprint(expectedFields);
     };
-    ReviewPageFieldWriter.executeValue(document, entry.element, writeAction, writeGuard)
+    ReviewPageFieldWriter.executeValue(document, entry.element, writeAction, writeGuard, {
+      fields: writableFields(),
+      controlKinds: writableControlKinds(),
+    })
       .then((result) => {
         if (result.ok) verifiedFieldWrites.set(action.field, {
           original: verifiedFieldWrites.get(action.field)?.original ?? action.expectedValue,
@@ -297,7 +331,7 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
       expectedValue: action.expectedValues?.[field] ?? entry?.collectedValue,
       entry,
     }));
-    if (entries.some((item) => !item.element || item.entry?.collectionId !== activeCollectionId || !SCRAP_WRITABLE_FIELDS.has(item.field))) {
+    if (entries.some((item) => !item.element || item.entry?.collectionId !== activeCollectionId || !writableFields().has(item.field))) {
       sendResponse({ ok: false, message: "未找到组合字段的当前页面控件或字段不在允许范围内", actions: [] });
       return true;
     }

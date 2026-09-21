@@ -13,6 +13,7 @@ from app.businesses.fields import (
     PRIMARY_REVIEW_FIELDS,
 )
 from app.businesses.materials import DOCUMENT_POLICIES
+from app.businesses.packs import BUSINESS_PACKS
 from app.businesses.packs import SCRAP_REPLACEMENT_PACK as PACK
 from app.businesses.profiles import (
     SCRAP_REPLACEMENT_CHANGCHUN,
@@ -58,10 +59,14 @@ def test_every_field_is_declared_once_and_has_a_label() -> None:
 
 
 def test_evidence_policies_cover_exactly_the_declared_fields() -> None:
-    """有 `mode` 的字段自带策略；有 `material_field` 的字段共用材料侧策略。"""
+    """有 `mode` 的字段自带策略；有 `material_field` 的字段共用材料侧策略。
+
+    证据策略表按业务**合成**：各业务的字段键带自己的分区前缀，不会互相覆盖。
+    """
     declared = {
         item.key
-        for item in PACK.fields
+        for pack in BUSINESS_PACKS.values()
+        for item in pack.fields
         if item.mode is not None or item.material_field is not None
     }
 
@@ -97,7 +102,13 @@ def test_old_vehicle_vin_keeps_its_authority_chain() -> None:
 
 
 def test_every_material_declares_display_name_fields_guidance_and_hints() -> None:
-    assert len(PACK.materials) == len(DOCUMENT_POLICIES)
+    # 材料策略表按 `document_type` 合成：同一份材料被多个业务共用时合成一条，
+    # 各业务的材料类型合集必须与之一一对应，既不能丢也不能多。
+    declared = {
+        item.document_type for pack in BUSINESS_PACKS.values() for item in pack.materials
+    }
+
+    assert declared == set(DOCUMENT_POLICIES)
 
     for material in PACK.materials:
         assert material.display_name, material.document_type
@@ -196,6 +207,7 @@ def test_shared_capabilities_are_declared_once_for_all_regions() -> None:
         "scrap_certificate_qr",
         "affiliation_subject",
         "verify_invoice",
+        "owner_consistency",
     }
     # 地区政策能力不在共用清单里，由地区推导。
     assert not any(item.endswith("_replacement_policy") for item in shared)

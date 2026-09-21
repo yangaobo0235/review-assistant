@@ -2,8 +2,8 @@
 
 from collections.abc import Iterable
 
-from app.businesses.fields import SCRAP_PAGE_FIELD_LABELS
-from app.businesses.material_policies import SourceSelector
+from app.businesses.fields import PAGE_FIELD_LABELS
+from app.businesses.material_policies import MaterialRequirement, SourceSelector
 from app.businesses.profiles import BusinessProfile
 from app.businesses.routing import route_fields
 from app.models.review import FieldObservation, ReviewRequest
@@ -16,7 +16,7 @@ from app.workflow.models import (
 )
 
 FIELD_LABELS = {
-    **SCRAP_PAGE_FIELD_LABELS,
+    **PAGE_FIELD_LABELS,
     "registration.covered_pages": "登记证页码",
     "new_vehicle.origin": "新车发票产地",
     "identity_card.name": "身份证姓名",
@@ -34,6 +34,7 @@ MATERIAL_LABELS = {
     "scrap_certificate": "报废证明",
     "vehicle_license": "行驶证",
     "registration_certificate": "机动车登记证",
+    "vehicle_nameplate": "车辆铭牌",
     "invoice": "发票",
     "business_license": "营业执照",
     "identity_card": "身份证",
@@ -70,6 +71,23 @@ def _material_key(document_type: str, business_scope: str) -> str:
     return f"{business_scope}:{document_type}"
 
 
+def _satisfied_by_alternative(
+    requirements: tuple[MaterialRequirement, ...],
+    satisfied: list[bool],
+) -> dict[str, str]:
+    """替代材料组 → 已满足该组要求的材料名。
+
+    车源审核的“登记证书第 1、2 页”和“车辆铭牌”互为替代：两件材料只需要
+    上传一件。组内任一材料满足要求时，其余成员不再报缺失，检查项说明由
+    哪份材料替代提供。这里只报告“已满足”，不把缺失改成通过。
+    """
+    groups: dict[str, str] = {}
+    for requirement, ok in zip(requirements, satisfied, strict=True):
+        if requirement.alternative_group and ok:
+            groups.setdefault(requirement.alternative_group, requirement.display_name)
+    return groups
+
+
 def evaluate_collected(request: ReviewRequest, profile: BusinessProfile) -> MaterialCompletenessReport:
     policy = profile.material_policy
     if policy is None or policy.mode == "disabled":
@@ -82,6 +100,7 @@ def evaluate_collected(request: ReviewRequest, profile: BusinessProfile) -> Mate
     for field in diagnostics.ambiguous_fields:
         if field in profile.required_fields:
             issues.append(_issue("AMBIGUOUS_REQUIRED_FIELD", f"页面字段“{field}”存在多个冲突候选", "请人工确认页面字段", field=field))
+    collected: list[tuple[MaterialRequirement, list[object], list[object]]] = []
     for requirement in policy.materials:
         candidates = [
             image for image in request.images
@@ -89,9 +108,18 @@ def evaluate_collected(request: ReviewRequest, profile: BusinessProfile) -> Mate
             and image.category_hint == requirement.document_type
         ]
         matches = [image for image in candidates if not image.collection_error]
+        collected.append((requirement, candidates, matches))
+    alternatives = _satisfied_by_alternative(
+        policy.materials,
+        [len(matches) >= requirement.minimum_count for requirement, _, matches in collected],
+    )
+    for requirement, candidates, matches in collected:
         status = "PRESENT"
         reason = "页面已采集到对应材料图片"
-        if len(matches) < requirement.minimum_count:
+        if len(matches) < requirement.minimum_count and requirement.alternative_group in alternatives:
+            # 同组材料已满足要求，这一项不算缺失，也不产生问题条目。
+            reason = f"已提供同组替代材料：{alternatives[requirement.alternative_group]}"
+        elif len(matches) < requirement.minimum_count:
             if candidates and any(image.collection_error for image in candidates):
                 status = "UNCERTAIN"
                 reason_code = "image_unreadable"
@@ -223,10 +251,20 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
     issues: list[MaterialCompletenessIssue] = []
     checklist: list[MaterialChecklistItem] = []
     documents = [document for document in batch.recognized_documents if document.business_scope]
+    recognized: list[tuple[MaterialRequirement, list[object], list[str], list[str]]] = []
     for requirement in policy.materials:
         matching = [document for document in documents if document.document_type == requirement.document_type and document.business_scope == requirement.business_scope]
         present_pages = sorted({page for document in matching for page in document.covered_pages})
         missing_pages = sorted(set(requirement.required_pages) - set(present_pages))
+        recognized.append((requirement, matching, present_pages, missing_pages))
+    alternatives = _satisfied_by_alternative(
+        policy.materials,
+        [
+            len(matching) >= requirement.minimum_count and not missing_pages
+            for requirement, matching, _, missing_pages in recognized
+        ],
+    )
+    for requirement, matching, present_pages, missing_pages in recognized:
         candidate_images = [
             image for image in request.images
             if image.category_hint == requirement.document_type
@@ -234,9 +272,12 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
         ]
         image_ids = [str(image.image_id or image.index) for image in candidate_images]
         failed_ids = set(batch.failed_image_ids) | set(batch.timed_out_image_ids)
+        substituted = requirement.alternative_group in alternatives
         status = "PRESENT"
         reason = "材料类型和必需页码已确认"
-        if len(matching) < requirement.minimum_count:
+        if substituted:
+            reason = f"已提供同组替代材料：{alternatives[requirement.alternative_group]}"
+        elif len(matching) < requirement.minimum_count:
             status = "UNCERTAIN" if candidate_images else "MISSING"
             issue_code = (
                 "UNCERTAIN_MATERIAL" if status == "UNCERTAIN" else "MISSING_MATERIAL"
@@ -267,7 +308,7 @@ def evaluate_extracted(request: ReviewRequest, profile: BusinessProfile, batch: 
                 material_type=requirement.document_type,
                 business_scope=requirement.business_scope,
             ))
-        if missing_pages and matching:
+        if missing_pages and matching and not substituted:
             page_text = "、".join(str(page) for page in missing_pages)
             reason_code, reason_detail = _missing_pages_reason(
                 matching,

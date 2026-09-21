@@ -1,13 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import vm from "node:vm";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ts from "typescript";
+
+import { loadSource } from "./tsx-loader.mjs";
 
 /** 构造一个审核任务；页面字段由 step_id 前缀推导。 */
 const makeStep = (overrides) => ({
@@ -25,27 +22,7 @@ const makeStep = (overrides) => ({
 });
 
 
-const require = createRequire(import.meta.url);
-const cache = new Map();
-function loadComponent(file) {
-  if (cache.has(file)) return cache.get(file).exports;
-  const module = { exports: {} };
-  cache.set(file, module);
-  const output = ts.transpileModule(readFileSync(file, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const localRequire = (specifier) => {
-    if (!specifier.startsWith(".")) return require(specifier);
-    let target = path.resolve(path.dirname(file), specifier);
-    if (!path.extname(target)) target = [".ts", ".tsx"].map((extension) => target + extension).find(existsSync);
-    return loadComponent(target);
-  };
-  vm.runInNewContext(output, { require: localRequire, module, exports: module.exports });
-  return module.exports;
-}
-const { ScrapReplacementReview } = loadComponent(
-  fileURLToPath(new URL("../src/components/ScrapReplacementReview.tsx", import.meta.url)),
-);
+const { ScrapReplacementReview } = loadSource("components/ScrapReplacementReview.tsx");
 
 function workbenchReview(reviewSteps, overrides = {}) {
   return {
@@ -423,4 +400,78 @@ test("workbench hides affiliation auxiliary tasks together with the subject task
   assert.doesNotMatch(html, /新旧车挂靠主体关系|客户名称|页面或材料未取得可比较的明确值/);
   assert.doesNotMatch(html, /src="license.jpg"|src="registration.jpg"/);
   assert.match(html, /页面外核验 \(0\)/);
+});
+
+test("规则结论自带页面侧取值时，卡片上先摆「页面原始值」再看材料", () => {
+  const step = makeStep({
+    step_id: "BUSINESS-OWNER-CONSISTENCY-001",
+    label: "车辆所有人一致性",
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+    reason: "页面上的新旧车所有人不一致：甲公司 / 乙公司，请人工核对",
+    page_values: [
+      { source: "报废车辆所有人（页面）", value: "甲公司" },
+      { source: "新车所有人（页面）", value: "乙公司" },
+    ],
+    values: [
+      { source: "图片识别", value: "甲公司", detail: "旧车行驶证", document_type: "vehicle_license", image_id: "img-1" },
+      { source: "图片识别", value: "乙公司", detail: "新车行驶证", document_type: "vehicle_license", image_id: "img-2" },
+    ],
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([step]),
+    pageData: { pageFields: {}, images: [] },
+  }));
+  const text = html.replace(/<[^>]*>/g, "");
+
+  // 先页面原值，后材料提取值，两个区块的顺序不能颠倒。
+  assert.ok(text.indexOf("页面原始值") < text.indexOf("材料提取值"));
+  assert.match(text, /报废车辆所有人（页面）甲公司/);
+  assert.match(text, /新车所有人（页面）乙公司/);
+  assert.match(text, /甲公司/);
+});
+
+test("页面原始值不一致时在页面区块下面说一句，整段理由不再重复", () => {
+  const step = makeStep({
+    step_id: "BUSINESS-OWNER-CONSISTENCY-001",
+    label: "车辆所有人一致性",
+    result_status: "CONFLICT",
+    requires_reviewer_action: true,
+    reason: "页面上的新旧车所有人不一致：甲公司 / 乙公司",
+    details: { reason_distributed: true, page_value_note: "新旧车页面所有人不一致" },
+    page_values: [
+      { source: "报废车辆所有人（页面）", value: "南城瑞顺物流有限公司" },
+      { source: "新车所有人（页面）", value: "南城珺顺物流有限公司" },
+    ],
+    values: [{ source: "旧车行驶证", value: "南城珺顺物流有限公司", conflicting: true, differences: [] }],
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([step]),
+    pageData: { pageFields: {}, images: [] },
+  }));
+  const text = html.replace(/<[^>]*>/g, "");
+
+  assert.match(text, /新旧车页面所有人不一致/);
+  assert.ok(text.indexOf("新旧车页面所有人不一致") < text.indexOf("材料提取值"));
+  // 理由整段不再重复显示。
+  assert.doesNotMatch(text, /页面上的新旧车所有人不一致/);
+  // 材料侧的来源标签带新旧车前缀，两边才分得清。
+  assert.match(text, /旧车行驶证/);
+});
+
+test("没有页面侧取值的规则结论不会凭空多出一行「未采集」", () => {
+  const step = makeStep({
+    step_id: "BUSINESS-POLICY-NEW-ORIGIN",
+    label: "新车发票产地",
+    result_status: "INSUFFICIENT",
+    requires_reviewer_action: true,
+    values: [{ source: "图片识别", value: "青岛市", document_type: "invoice" }],
+  });
+  const html = renderToStaticMarkup(React.createElement(ScrapReplacementReview, {
+    review: workbenchReview([step]),
+    pageData: { pageFields: {}, images: [] },
+  }));
+
+  assert.doesNotMatch(html, /页面原始值/);
+  assert.match(html.replace(/<[^>]*>/g, ""), /青岛市/);
 });
