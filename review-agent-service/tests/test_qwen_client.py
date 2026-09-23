@@ -421,3 +421,63 @@ def test_qwen_parser_still_rejects_non_string_uncertain_field_values() -> None:
         }))
 
     assert captured.value.detail == "uncertain_fields:list_type"
+
+
+@pytest.mark.asyncio
+async def test_qwen_client_logs_duration_and_token_usage(caplog) -> None:
+    """每次模型调用留一行耗时与用量：没有它，"慢在网络还是慢在推理"无法判断。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        result = {"document_type": "invoice", "confidence": 0.98, "reason": "含发票标题"}
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": json.dumps(result)}}],
+            "usage": {
+                "prompt_tokens": 4210,
+                "completion_tokens": 186,
+                "prompt_tokens_details": {"image_tokens": 3980},
+            },
+        })
+
+    client = QwenClient(CONFIG, transport=httpx.MockTransport(handler))
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        await client.classify_document({**IMAGE, "image_id": "old_vehicle-03"})
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("review qwen call completed")
+    ]
+    assert len(lines) == 1
+    message = lines[0]
+    assert "stage=classification" in message
+    assert "image_id=old_vehicle-03" in message
+    assert "model=qwen3.7-plus" in message
+    assert "prompt_tokens=4210" in message
+    assert "image_tokens=3980" in message
+    assert "completion_tokens=186" in message
+    assert "rate_limited=false" in message
+    assert "result=ok" in message
+    assert int(message.split("duration_ms=", 1)[1].split()[0]) >= 0
+
+
+@pytest.mark.asyncio
+async def test_qwen_client_logs_rate_limited_failure_without_leaking_body(caplog) -> None:
+    """限流和失败同样要留耗时与原因码，但响应正文一个字都不能进日志。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": "含身份证号 110101199001011234"})
+
+    client = QwenClient(CONFIG, transport=httpx.MockTransport(handler))
+    with (
+        caplog.at_level("INFO", logger="uvicorn.error"),
+        pytest.raises(RuntimeError, match="HTTP 429"),
+    ):
+        await client.classify_document({**IMAGE, "image_id": "id_card-01"})
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("review qwen call completed")
+    ]
+    assert len(lines) == 1
+    assert "rate_limited=true" in lines[0]
+    assert "result=http_429" in lines[0]
+    assert "110101199001011234" not in lines[0]

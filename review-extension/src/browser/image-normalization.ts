@@ -15,7 +15,12 @@ interface NormalizationDependencies {
   const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
   const MAX_DIMENSION = 2048;
   const JPEG_QUALITY = 0.85;
-  const NORMALIZATION_CONCURRENCY = 2;
+  // 与 `useReviewWorkflow.ts` 的上传并发保持一致：worker 同步等压缩完成，
+  // 压缩并发低于上传并发时，多出来的 worker 只是在队列外干等。
+  // 不再往高提：service worker 里每一路都要跑 fetch→解码→缩放→JPEG 编码→
+  // base64，并把 2.7–6.8MB 的 dataURL 跨消息通道搬回内容脚本，代价落在
+  // 审核员自己的电脑上。
+  const NORMALIZATION_CONCURRENCY = 4;
   let activeNormalizations = 0;
   const normalizationQueue: Array<() => void> = [];
 

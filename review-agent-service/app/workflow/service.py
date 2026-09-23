@@ -98,7 +98,27 @@ def _covered_pages(value: Any) -> list[int]:
     return sorted(pages)
 
 
-def _expected_document_type(image: Any) -> str | None:
+def declared_material_types(business_type: Any) -> frozenset[str] | None:
+    """该业务扩展包声明的材料类型集合；没有扩展包时返回 None 表示不限制。
+
+    `_expected_document_type` 以前查的是跨业务合并的全局政策表，于是报废置换的
+    「机动车销售发票」会被过户页面上「二手车发票」的小标题命中：类型串了业务，
+    字段白名单跟着错，最后必然"材料类型不符"重试一次再失败。候选必须限制在
+    本业务自己声明的材料里。
+
+    返回 None 而不是空集合：尚未声明扩展包的业务没有这份名单，空集合会把它们
+    全部推进两阶段分类，那是行为回退而不是收紧。
+    """
+    pack = BUSINESS_PACKS.get(business_type)
+    if pack is None:
+        return None
+    return frozenset(material.document_type for material in pack.materials)
+
+
+def _expected_document_type(
+    image: Any,
+    allowed_document_types: frozenset[str] | None = None,
+) -> str | None:
     """Resolve a physical document type from an explicit label or fixed upload slot."""
     for raw_hint in (
         getattr(image, "document_type_hint", "unknown"),
@@ -108,7 +128,11 @@ def _expected_document_type(image: Any) -> str | None:
         if hint in GENERIC_SCOPE_HINTS:
             continue
         normalized = normalize_document_type(hint)
-        if normalized in DOCUMENT_POLICIES:
+        # 命中全局政策表还不够：它还得是本业务声明过的材料，否则就是拿别的
+        # 业务的白名单在提取这张图。
+        if normalized in DOCUMENT_POLICIES and (
+            allowed_document_types is None or normalized in allowed_document_types
+        ):
             return normalized
     return SLOT_DOCUMENT_TYPES.get(
         (getattr(image, "business_scope", "unknown"), getattr(image, "group_order", None))
@@ -152,6 +176,7 @@ class AgentService:
         retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY,
         absolute_deadline: float | None = None,
         initial_report: MaterialCompletenessReport | None = None,
+        allowed_document_types: frozenset[str] | None = None,
     ) -> AgentBatchResult:
         """并发处理一批图片，在单图或整单超时时保留已经完成的部分结果。"""
         result = AgentBatchResult(total_count=len(images), material_completeness=initial_report)
@@ -176,6 +201,7 @@ class AgentService:
                 result.limitations.append(f"图片 {image_name} 内容不可用")
                 await self._notify(on_progress, result)
                 return
+            started = loop.time()
             try:
                 async with semaphore:
                     first_error: RuntimeError | None = None
@@ -185,7 +211,10 @@ class AgentService:
                     retry_result = "-"
                     try:
                         extraction, policy = await asyncio.wait_for(
-                            self._extract_image(image),
+                            self._extract_image(
+                                image,
+                                allowed_document_types=allowed_document_types,
+                            ),
                             timeout=min(self.image_timeout, max(0.001, deadline - loop.time())),
                         )
                         reason = retry_reason_for_extraction(extraction, policy)
@@ -215,6 +244,7 @@ class AgentService:
                                         image,
                                         retry_reason=reason,
                                         focus_boxes=self._focus_boxes(extraction, reason),
+                                        allowed_document_types=allowed_document_types,
                                     ),
                                     timeout=min(self.image_timeout, remaining),
                                 )
@@ -235,7 +265,12 @@ class AgentService:
                 result.timed_out_count += 1
                 result.timed_out_image_ids.append(str(image_name))
                 result.limitations.append(f"图片 {image_name} Qwen 识别超时")
-                logger.warning("Agent image timed out: image=%s", image_name)
+                logger.warning(
+                    "Agent image timed out: image=%s type=%s duration_ms=%d",
+                    image_name,
+                    image.category_hint or "-",
+                    max(0, int((loop.time() - started) * 1000)),
+                )
                 await self._notify(on_progress, result)
                 return
             except RuntimeError as exc:
@@ -243,7 +278,16 @@ class AgentService:
                 result.failed_count += 1
                 result.failed_image_ids.append(str(image_name))
                 result.limitations.append(f"图片 {image_name} Qwen 处理失败（{error_code}）")
-                logger.warning("Agent image failed: image=%s error_type=%s error_code=%s error_detail=%s", image_name, type(exc).__name__, error_code, describe_qwen_error(exc) or "none")
+                logger.warning(
+                    "Agent image failed: image=%s type=%s error_type=%s error_code=%s"
+                    " error_detail=%s duration_ms=%d",
+                    image_name,
+                    image.category_hint or "-",
+                    type(exc).__name__,
+                    error_code,
+                    describe_qwen_error(exc) or "none",
+                    max(0, int((loop.time() - started) * 1000)),
+                )
                 await self._notify(on_progress, result)
                 return
 
@@ -313,10 +357,17 @@ class AgentService:
             result.completed_count += 1
             result.completed_image_ids.append(str(image_name))
             logger.info(
-                "Agent image completed: image=%s type=%s accepted_field_count=%d"
-                " uncertain_field_count=%d uncertain_fields=%s retry_attempts=%d retry_result=%s",
+                "Agent image completed: image=%s type=%s category_hint=%s"
+                " document_type_hint=%s accepted_field_count=%d"
+                " uncertain_field_count=%d uncertain_fields=%s retry_attempts=%d"
+                " retry_result=%s duration_ms=%d",
                 image_name,
                 policy.document_type,
+                # 前端从页面文案判出来的类型，和后端最终采用的政策并排打出来。
+                # 两者不一致就是材料类型串了业务——报废置换的「机动车销售发票」
+                # 和过户的「二手车销售统一发票」撞在一起时，只有这一行能看出来。
+                image.category_hint or "-",
+                image.document_type_hint or "-",
                 accepted,
                 len(extraction.uncertain_fields),
                 # 一票否决的直接线索：模型自己报了不确定，人工复核会在这里
@@ -326,6 +377,7 @@ class AgentService:
                 # 决定了下一步该改提示词还是该改图片质量。
                 retry_attempts,
                 retry_result,
+                max(0, int((loop.time() - started) * 1000)),
             )
             await self._notify(on_progress, result)
 
@@ -352,6 +404,7 @@ class AgentService:
         *,
         retry_reason: str | None = None,
         focus_boxes: Sequence[Sequence[float]] | None = None,
+        allowed_document_types: frozenset[str] | None = None,
     ) -> tuple[QwenExtraction, DocumentPolicy | None]:
         """已知槽位使用专属提示词；真正未知的图片先分类再专属提取。
 
@@ -364,7 +417,7 @@ class AgentService:
             if focused:
                 payload = {**payload, "data_url": focused}
 
-        expected_type = _expected_document_type(image)
+        expected_type = _expected_document_type(image, allowed_document_types)
         policy = DOCUMENT_POLICIES.get(expected_type or "")
         if policy is not None:
             extract_fields = self.client.extract_fields

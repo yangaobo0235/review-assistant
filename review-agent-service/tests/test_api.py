@@ -1,9 +1,11 @@
 import json
+import logging
+import os
 import time
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, configure_log_file
 from app.models.review import ReviewRequest
 from app.services.review import ReviewService
 
@@ -247,3 +249,86 @@ def test_collect_manifest_is_available_for_vehicle_source() -> None:
         "vehicle_nameplate",
     }
     assert "行驶证" in materials["vehicle_license"]["hints"]
+
+
+def test_configure_log_file_is_noop_without_env(monkeypatch) -> None:
+    """环境变量和 `.env` 都没配时，行为必须与现状完全一致：只输出控制台。
+
+    只 `delenv` 不够——开发机的 `.env` 里通常配了 `REVIEW_LOG_DIR`，
+    `configure_log_file` 会先加载它再读值。所以这里同时把加载动作空掉，
+    测的是"哪儿都没配"这一种真实情形。
+    """
+    monkeypatch.delenv("REVIEW_LOG_DIR", raising=False)
+    monkeypatch.setattr("app.main.load_dotenv", lambda *_a, **_k: None)
+    target = logging.getLogger("uvicorn.error.test_noop")
+    configure_log_file(target)
+    assert target.handlers == []
+
+
+def test_configure_log_file_loads_env_file_before_reading_it(tmp_path, monkeypatch) -> None:
+    """`.env` 里配的 REVIEW_LOG_DIR 必须生效。
+
+    装配日志发生在 `ReviewService()` 之前，而 dotenv 原本只在那里面加载；不先
+    加载环境文件，写在 `.env` 里的配置就会静默失效——本地调试最常踩的就是这种
+    "配了没反应，但也不报错"。
+    """
+    monkeypatch.delenv("REVIEW_LOG_DIR", raising=False)
+
+    def fake_load_dotenv(*_args, **_kwargs) -> None:
+        os.environ["REVIEW_LOG_DIR"] = str(tmp_path)
+
+    monkeypatch.setattr("app.main.load_dotenv", fake_load_dotenv)
+    target = logging.getLogger("uvicorn.error.test_dotenv_first")
+    try:
+        configure_log_file(target)
+        assert len(target.handlers) == 1
+    finally:
+        os.environ.pop("REVIEW_LOG_DIR", None)
+        for handler in list(target.handlers):
+            handler.close()
+            target.removeHandler(handler)
+
+
+def test_configure_log_file_writes_daily_rotated_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("REVIEW_LOG_DIR", str(tmp_path))
+    target = logging.getLogger("uvicorn.error.test_file")
+    # 生产里 uvicorn 的 dictConfig 把 uvicorn.error 设成 INFO；测试环境没有
+    # 那份配置，不显式设级别的话 INFO 会在到达文件 handler 之前就被过滤掉。
+    target.setLevel(logging.INFO)
+    configure_log_file(target)
+    try:
+        assert len(target.handlers) == 1
+        target.info("review log file probe")
+        target.handlers[0].flush()
+        written = list(tmp_path.glob("review-agent.log*"))
+        assert len(written) == 1
+        assert "review log file probe" in written[0].read_text(encoding="utf-8")
+        # 重复调用不得叠加处理器：否则同一条日志会写两遍。
+        configure_log_file(target)
+        assert len(target.handlers) == 1
+    finally:
+        for handler in list(target.handlers):
+            handler.close()
+            target.removeHandler(handler)
+
+
+def test_configure_log_file_degrades_when_dir_cannot_be_created(
+    tmp_path,
+    monkeypatch,
+    caplog,
+) -> None:
+    """容器根文件系统只读时不能让审核服务起不来：降级成一条告警。
+
+    用「已存在的文件」当目录前缀，makedirs 在 Windows 和 Linux 上都会抛
+    OSError 的子类，避免依赖某个平台特有的不可写路径。
+    """
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setenv("REVIEW_LOG_DIR", str(blocker / "nested"))
+    target = logging.getLogger("uvicorn.error.test_unwritable")
+    with caplog.at_level("WARNING", logger="uvicorn.error.test_unwritable"):
+        configure_log_file(target)
+    assert target.handlers == []
+    assert any(
+        "Review log file disabled" in record.getMessage() for record in caplog.records
+    )

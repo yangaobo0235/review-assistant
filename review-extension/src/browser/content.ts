@@ -1,4 +1,4 @@
-import { applyCollectManifest, manifestIdentityAnchors, manifestWritableControlKinds, manifestWritableFields } from "./collect-manifest.ts";
+import { applyCollectManifest, manifestHintType, manifestIdentityAnchors, manifestWritableControlKinds, manifestWritableFields } from "./collect-manifest.ts";
 import type { CollectManifest } from "./collect-manifest.ts";
 import { appliedPageCatalog, applyPageCatalog, explainPageIdentity } from "./page-catalog.ts";
 import type { PageCatalog } from "./page-catalog.ts";
@@ -7,6 +7,7 @@ import { ReviewBusinessScope } from "./business-scope.ts";
 import { ReviewImageCandidates } from "./image-candidates.ts";
 import { ReviewImageFocus } from "./image-focus.ts";
 import { ReviewImageNormalization } from "./image-normalization.ts";
+import { documentTypeForImageLabel, imageLabelFor, nearestAncestorText } from "./image-label.ts";
 import { ReviewPageFieldCollector } from "./page-field-collector.ts";
 import { ReviewPageFieldWriter } from "./page-field-writer.ts";
 import { buildPageFingerprint, createPageInstanceId } from "./page-identity.ts";
@@ -48,9 +49,14 @@ type ReviewMessage = {
   [key: string]: unknown;
 };
 type CollectionSnapshot = { pageFields?: Record<string, string>; fieldTargets?: Array<{ field: string; element: Element }> };
-type ImageSelection = { image: HTMLImageElement; index: number; imageId?: string; businessScope: string; groupOrder?: number; categoryHint?: string; groupTitle?: string };
+type ImageSelection = { image: HTMLImageElement; index: number; imageId?: string; businessScope: string; groupOrder?: number; categoryHint?: string; groupTitle?: string; labelHint?: string };
 
 const classifyImage = (hint: string) => {
+  // 先问清单：材料关键词和它对应的类型是业务声明，后端是唯一来源。
+  // 内置表只兜清单不可用的情况——过户的「二手车发票」在内置表里根本没有，
+  // 只会命中宽泛的"发票"，判成别的业务的材料类型。
+  const declared = manifestHintType(hint);
+  if (declared) return declared;
   const text = hint.toLowerCase();
   if (text.includes("身份证")) return "id_card";
   if (text.includes("营业执照")) return "business_license";
@@ -76,19 +82,25 @@ const blobToDataUrl = (blob: Blob): Promise<string> => new Promise((resolve, rej
 const imageAssetMetadata = (candidate: ImageSelection): PageImage => {
   const { image, index } = candidate;
   const src = image.currentSrc || image.src;
-  const hint = image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
+  const hint = candidate.labelHint || image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
+  const categoryHint = classifyImage(hint);
   return {
     imageId: candidate.imageId,
     index,
     src,
     alt: image.alt || "",
     group: hint.slice(0, 80) || "未分类",
-    categoryHint: classifyImage(hint),
-    documentTypeHint: ReviewBusinessScope.documentTypeFor?.(
-      candidate.businessScope,
-      candidate.groupOrder ?? 0,
-      candidate.categoryHint || "",
-    ) || candidate.categoryHint,
+    categoryHint,
+    // Use the image's own card label before positional slot fallback. This lets
+    // multi-material sections such as transfer and vehicle-source bypass model
+    // classification when their per-image labels are explicit.
+    documentTypeHint: documentTypeForImageLabel(candidate.labelHint || "")
+      || ReviewBusinessScope.documentTypeFor?.(
+        candidate.businessScope,
+        candidate.groupOrder ?? 0,
+        categoryHint,
+      )
+      || categoryHint,
     businessScope: candidate.businessScope,
     groupTitle: candidate.groupTitle,
     groupOrder: candidate.groupOrder,
@@ -498,7 +510,11 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
   const imageCandidates = pageImages.map((image, index) => {
     const rect = image.getBoundingClientRect();
     const style = window.getComputedStyle(image);
-    const hint = image.closest("section, article, li, div")?.textContent?.slice(0, 160) || image.alt || "";
+    const labelHint = imageLabelFor(image);
+    // 旧写法 `image.closest("section, article, li, div")?.textContent` 会停在
+    // 只包着 img 的空壳上，拿到空字符串，小标题和分组文本一起丢掉。改成向上找
+    // 最近的非空祖先文本。
+    const hint = labelHint || nearestAncestorText(image) || image.alt || "";
     const ownHint = [image.alt, image.title, image.getAttribute("aria-label")]
       .filter(Boolean)
       .join(" ");
@@ -528,10 +544,24 @@ chrome.runtime.onMessage.addListener((message: ReviewMessage, _sender, sendRespo
       ariaHidden: image.getAttribute("aria-hidden") === "true",
       emptySlot,
       hint,
-      categoryHint: classifyImage(hint)
+      categoryHint: classifyImage(hint),
+      labelHint,
     };
   });
   const selection = ReviewImageCandidates.select(imageCandidates, MAX_REVIEW_IMAGES);
+  // 类型提示是"直接提取还是先分类"的唯一开关：判成 unknown 就静默多烧一次分类
+  // 调用，页面上什么都看不出来。把每张图取到的文本和判定结果打出来，线上排查
+  // 不用再猜 DOM 结构。
+  log("images", {
+    scanned: selection.scannedCount,
+    eligible: selection.eligibleCount,
+    selected: selection.selected.map((candidate) => ({
+      imageId: candidate.imageId,
+      label: candidate.labelHint || "-",
+      hintLength: candidate.hint.length,
+      categoryHint: candidate.categoryHint,
+    })),
+  });
   const images = selection.selected;
   const imageAssetsPromise = message.type === MESSAGE_TYPES.collectPageManifest
     ? Promise.resolve(images.map(imageAssetMetadata))

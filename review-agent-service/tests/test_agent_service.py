@@ -4,11 +4,11 @@ import logging
 import httpx
 import pytest
 
-from app.models.review import ImageInput
+from app.models.review import BusinessType, ImageInput
 from app.workflow.config import QwenConfig
 from app.workflow.models import QwenClassification, QwenExtraction
 from app.workflow.qwen_client import QwenClient
-from app.workflow.service import AgentService
+from app.workflow.service import AgentService, declared_material_types
 
 
 class FakeQwenClient:
@@ -547,3 +547,65 @@ async def test_deadline_returns_completed_observations_and_marks_pending_timeout
     assert result.completed_count == 1
     assert result.timed_out_count == 1
     assert progress
+
+
+def _transfer_invoice_image() -> ImageInput:
+    return ImageInput(
+        index=0,
+        image_id="invoice-0",
+        src="https://example.test/0.jpg",
+        data_url="data:image/jpeg;base64,AA==",
+        business_scope="transfer",
+        category_hint="invoice",
+    )
+
+
+@pytest.mark.asyncio
+async def test_transfer_invoice_hint_does_not_borrow_scrap_invoice_policy() -> None:
+    """过户页面的「二手车发票」不得套用报废置换的机动车销售发票政策。
+
+    前端把含"发票"的小标题判成 invoice，而跨业务合并的全局政策表里 invoice
+    属于报废置换。限制候选到本业务声明的材料后，这张图必须改走"先分类、
+    再按 used_car_invoice 提取"，而不是直接拿报废的白名单提取。
+    """
+    client = FakeQwenClient(
+        classification=QwenClassification(
+            document_type="used_car_invoice", confidence=0.9
+        ),
+        extraction=QwenExtraction(
+            document_type="used_car_invoice",
+            fields={"transfer.invoice_no": "2637200000467264218"},
+            confidence=0.9,
+        ),
+    )
+
+    result = await AgentService(client).extract_async(
+        [_transfer_invoice_image()],
+        allowed_document_types=declared_material_types(BusinessType.TRANSFER),
+    )
+
+    assert client.classification_calls == [0]
+    assert client.extraction_calls == [(0, "used_car_invoice")]
+    assert result.completed_count == 1
+    assert result.failed_count == 0
+
+
+@pytest.mark.asyncio
+async def test_lookup_without_allowed_types_keeps_legacy_hint_path() -> None:
+    """对照组：不传候选集合时保持原行为，直接按提示类型提取。
+
+    尚未声明扩展包的业务没有材料名单，过滤不能把它们一起收紧成两阶段。
+    """
+    client = FakeQwenClient(
+        extraction=QwenExtraction(
+            document_type="invoice",
+            fields={"invoice.invoice_no": "123"},
+            confidence=0.9,
+        ),
+    )
+
+    result = await AgentService(client).extract_async([_transfer_invoice_image()])
+
+    assert client.classification_calls == []
+    assert client.extraction_calls == [(0, "invoice")]
+    assert result.completed_count == 1

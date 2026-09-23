@@ -276,3 +276,59 @@ def test_stream_job_rejects_duplicate_manifest_image_ids() -> None:
 
     with pytest.raises(ValueError, match="重复标识"):
         manager.create_stream(request)
+
+
+def test_stream_job_emits_phase_timing_line_for_reporting(caplog) -> None:
+    """一次审核必须留下一行四段耗时——性能改动的对照组全靠它。
+
+    缺锚点的段记 -1 而不是 0：拿 0 冒充"这一段没花时间"会把上传瓶颈
+    误判成识别瓶颈，正好把并发参数调到反方向。
+    """
+    service = StreamingReviewService()
+    manager = ReviewJobManager(service)
+    manifest = ReviewRequest(
+        page_url="https://example.test/review/timing",
+        images=[
+            {
+                "index": 0,
+                "imageId": "image-0",
+                "src": "https://example.test/0.jpg",
+                "businessScope": "old_vehicle",
+            }
+        ],
+    )
+
+    with caplog.at_level("INFO", logger="uvicorn.error"):
+        created = manager.create_stream(manifest)
+        manager.add_stream_image(
+            created.job_id,
+            manifest.images[0].model_copy(update={"data_url": "data:image/jpeg;base64,AA=="}),
+        )
+        manager.complete_stream(created.job_id)
+        assert manager.wait(created.job_id, timeout=2)
+
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("review job timing")
+    ]
+    assert len(lines) == 1
+    line = lines[0]
+    assert f"job_id={created.job_id}" in line
+    assert "status=COMPLETED" in line
+    assert "images=1" in line
+
+    durations = {}
+    for part in line.split():
+        key, _, value = part.partition("=")
+        if key.endswith("_ms") or key == "peak_rss_mb":
+            durations[key] = int(value)  # 值不是整数会抛 ValueError，测试即失败
+    assert set(durations) >= {
+        "upload_ms",
+        "recognize_ms",
+        "finalize_ms",
+        "total_ms",
+        "recognition_waited_ms",
+        "peak_rss_mb",
+    }
+    assert durations["total_ms"] >= 0

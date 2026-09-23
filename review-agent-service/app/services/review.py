@@ -38,7 +38,7 @@ from app.workflow.config import load_qwen_config
 from app.workflow.graph import ReviewWorkflow
 from app.workflow.models import AgentBatchResult, MaterialCompletenessReport
 from app.workflow.qwen_client import QwenClient
-from app.workflow.service import AgentService
+from app.workflow.service import AgentService, declared_material_types
 
 ReviewProgressCallback = Callable[[ReviewResponse, AgentBatchResult], Any]
 
@@ -144,6 +144,11 @@ class ReviewService:
                 batch_callback,
                 retry_policy=resolved_profile.retry_policy,
                 initial_report=initial_report,
+                # 材料类型候选限制在本业务声明的集合内：过户页面上的「二手车
+                # 发票」不得命中报废置换的机动车销售发票政策。
+                allowed_document_types=declared_material_types(
+                    resolved_profile.business_type
+                ),
             )
 
         unavailable_image_ids = [

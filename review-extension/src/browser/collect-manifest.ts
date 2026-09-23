@@ -51,6 +51,13 @@ export interface ManifestImageProfile {
   hintsPattern: RegExp;
   /** 业务认定的材料分区，用于给图片打分。 */
   scopes: Set<string>;
+  /**
+   * 关键词正则 → 材料类型，按关键词长度降序。
+   *
+   * `hintsPattern` 把所有关键词压成一个正则，只回答"这是不是材料"，丢掉了
+   * "这个关键词属于哪份材料"。判类型需要后者，所以单独留一份带归属的表。
+   */
+  hintTypes: Array<[RegExp, string]>;
 }
 
 const NEVER_MATCHES = /$^/;
@@ -66,6 +73,26 @@ function buildImageProfile(manifest: CollectManifest): ManifestImageProfile {
     ]),
     hintsPattern: hints.length ? new RegExp(hints.map(escapeRegExp).join("|")) : NEVER_MATCHES,
     scopes: new Set(manifest.scopes),
+    // 最具体的关键词优先：「二手车销售统一发票」必须赢过「发票」，否则宽泛词先
+    // 命中会把图片判成别的材料。和 content.ts 里"铭牌必须先于登记证书"是同一类
+    // 顺序问题——那份表就踩过这个坑。
+    //
+    // **排除页面分组名**：`hints` 的语义是「页面分组文字」，既包含材料名也包含
+    // 分区名。分区名不能用来定类型——报废置换把「旧车资料」同时声明给了回收证明
+    // 和行驶证，拿它定类型会让一张只写着分区名的图从 `old_vehicle` 漂移成
+    // `scrap_certificate`。定类型只用材料自己的名字。
+    hintTypes: (() => {
+      const groupLabels = new Set(manifest.page_groups.map((group) => group.label));
+      return manifest.materials
+        .flatMap((item) => item.hints
+          .filter((hint) => Boolean(hint) && !groupLabels.has(hint))
+          .map((hint) => [hint, item.document_type] as [string, string]))
+        .sort((left, right) => right[0].length - left[0].length)
+        .map(([hint, documentType]) => [
+          new RegExp(escapeRegExp(hint), "i"),
+          documentType,
+        ] as [RegExp, string]);
+    })(),
   };
 }
 
@@ -166,6 +193,21 @@ export function manifestSlotEntries(): [string, string][] | null {
 /** 已应用的图片筛选依据；没有应用清单时返回 null，调用方退回内置规则。 */
 export function manifestImageProfile(): ManifestImageProfile | null {
   return appliedImageProfile;
+}
+
+/**
+ * 用清单声明的材料关键词判断图片类型；没有清单或没命中时返回 null。
+ *
+ * 业务把「二手车发票 → used_car_invoice」这类映射声明在扩展包里，浏览器内置的
+ * 关键词表既不知道也不该知道——写死在浏览器里会让每新增一个业务都要改前端代码，
+ * 而且改漏不报错，只会静默判成别的材料。
+ */
+export function manifestHintType(text: string): string | null {
+  if (!appliedImageProfile || !text) return null;
+  for (const [pattern, documentType] of appliedImageProfile.hintTypes) {
+    if (pattern.test(text)) return documentType;
+  }
+  return null;
 }
 
 /** 已应用的字段定义；没有应用清单时返回 null，调用方退回内置表。 */

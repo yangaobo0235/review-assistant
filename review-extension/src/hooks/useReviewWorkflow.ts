@@ -39,7 +39,11 @@ import type {
 
 const reviewDeadlineMs = 120_000;
 const reviewPollIntervalMs = 1_000;
-const imageUploadConcurrency = 2;
+// 上传是"喂料速度"，识别是"加工能力"。并发 2 时 16 张要 8 批才能全部到达，
+// 后端 6 路识别大部分时间在等图，提识别并发并不会变快。提到 4 让喂料追上加工。
+// **必须与 `image-normalization.ts` 的压缩并发一起调**：worker 同步等压缩完成，
+// 压缩并发更低时多出来的 worker 只是在队列外干等。
+const imageUploadConcurrency = 4;
 
 /**
  * 拉取各业务的采集清单。某个业务拉不到就跳过——Content Script 会退回内置表，
@@ -60,11 +64,14 @@ async function collectPageData(selection: BusinessChoice): Promise<PageData> {
   if (!tab.id) {
     throw new Error("没有找到当前页面");
   }
-  const manifests = await loadCollectManifests();
   // 页面识别清单和采集清单一起拉：识别发生在按业务类型取采集清单之前，
   // 所以它必须一次下发全部业务，不能按业务类型查。拉不到时为 null，
   // Content Script 退回内置表并要求人工选择业务。
-  const pageCatalog: PageCatalog | null = await fetchPageCatalog(agentBaseUrl);
+  // 两者互不依赖，必须并发：串行 await 让每次审核在采集开始前先多等一个来回。
+  const [manifests, pageCatalog] = await Promise.all([
+    loadCollectManifests(),
+    fetchPageCatalog(agentBaseUrl) as Promise<PageCatalog | null>,
+  ]);
   const pageData = (await chrome.tabs.sendMessage(tab.id, {
     type: "COLLECT_PAGE_MANIFEST",
     businessSelection:
@@ -111,11 +118,17 @@ async function uploadPageImages(
 ) {
   let cursor = 0;
   let completed = 0;
+  // 每张图拆成"取图+压缩"和"跨公网上传"两段。没有这组数就分不清慢在哪一段，
+  // 也就不知道该提上传并发还是该提识别并发。只进控制台，不进上报协议。
+  const timings: Array<{ readMs: number; uploadMs: number }> = [];
   const worker = async () => {
     while (cursor < page.images.length) {
       const index = cursor;
       cursor += 1;
+      const readStartedAt = Date.now();
       const image = await readPageImage(page, page.images[index]);
+      const readMs = Date.now() - readStartedAt;
+      const uploadStartedAt = Date.now();
       let snapshot: ReviewJobSnapshot | null = null;
       let lastError: unknown;
       for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -127,6 +140,7 @@ async function uploadPageImages(
         }
       }
       if (!snapshot) throw lastError instanceof Error ? lastError : new Error("图片上传失败");
+      timings.push({ readMs, uploadMs: Date.now() - uploadStartedAt });
       completed += 1;
       // 保留压缩后的图片供结果页显示缩略图；data: 原地址则清空，避免
       // 在页面状态中同时保存原图和压缩图两份正文。
@@ -137,6 +151,16 @@ async function uploadPageImages(
   await Promise.all(
     Array.from({ length: Math.min(imageUploadConcurrency, Math.max(1, page.images.length)) }, worker),
   );
+  const sum = (pick: (item: { readMs: number; uploadMs: number }) => number) =>
+    timings.reduce((total, item) => total + pick(item), 0);
+  console.info("[ReviewAgent][panel] image upload timing", {
+    images: timings.length,
+    uploadConcurrency: imageUploadConcurrency,
+    totalReadMs: sum((item) => item.readMs),
+    totalUploadMs: sum((item) => item.uploadMs),
+    slowestReadMs: Math.max(0, ...timings.map((item) => item.readMs)),
+    slowestUploadMs: Math.max(0, ...timings.map((item) => item.uploadMs)),
+  });
 }
 
 export interface ReviewWorkflow {

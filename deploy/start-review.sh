@@ -48,6 +48,16 @@ if ! docker image inspect "${image_name}" >/dev/null 2>&1; then
   exit 1
 fi
 
+echo "Preparing the log directory..."
+# 日志目录和发布包放一起，排查时 cd 一次就够。
+#
+# 必须在这里放开写权限：容器以镜像内的 review-agent 用户运行，而本脚本以 ubuntu
+# 身份执行，ubuntu 无权把目录 chown 给别的 uid。不放开的后果是静默的——应用只会
+# 记一条 "Review log file disabled" 告警然后照常服务，你以为有日志文件其实没有。
+log_dir="${upload_dir}/logs"
+mkdir -p "${log_dir}"
+chmod 0777 "${log_dir}"
+
 echo "Starting Review Assistant..."
 cd "${runtime_dir}"
 docker compose -f "${compose_file}" up -d --no-build --force-recreate "${service_name}"

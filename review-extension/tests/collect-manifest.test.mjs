@@ -14,6 +14,7 @@ import test from "node:test";
 import {
   applyCollectManifest,
   manifestFieldDefinitions,
+  manifestHintType,
   manifestMaterialLabels,
 } from "../src/browser/collect-manifest.ts";
 import { ReviewBusinessScope } from "../src/browser/business-scope.ts";
@@ -261,4 +262,22 @@ test("应用清单后槽位表来自清单而不是内置表", () => {
     const [scope, order] = key.split(":");
     assert.equal(ReviewBusinessScope.documentTypeFor(scope, Number(order), "unknown"), expected, key);
   }
+});
+
+test("分区名不参与材料定类型，报废置换的判定结果与内置表一致", () => {
+  applyCollectManifest(manifest);
+
+  // 「旧车资料」是分区标题，同时声明给了回收证明和行驶证。拿它定类型会让一张只
+  // 写着分区名的图从 old_vehicle 漂移成 scrap_certificate——那是行为变更不是修复。
+  // 排除分组名之后它落回内置表，判定与改动前完全相同。
+  assert.equal(manifestHintType("旧车资料"), null);
+  assert.equal(manifestHintType("新车资料"), null);
+  assert.equal(manifestHintType("报废车辆资料"), null);
+  assert.equal(manifestHintType("身份证正面"), null);
+  assert.equal(manifestHintType("营业执照"), null);
+  // 材料自己的名字照常命中，且与内置表的判定结果一致。
+  assert.equal(manifestHintType("行驶证"), "vehicle_license");
+  assert.equal(manifestHintType("登记证书"), "registration_certificate");
+  assert.equal(manifestHintType("回收证明"), "scrap_certificate");
+  assert.equal(manifestHintType("机动车登记证"), "registration_certificate");
 });

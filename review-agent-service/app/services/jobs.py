@@ -54,6 +54,26 @@ class _StoredJob:
     upload_complete: bool = False
     finalize_started: bool = False
     cancelled: bool = False
+    # 各阶段的单调时钟锚点，用于拆出「上传 / 识别 / 汇总」各占多久。
+    # 只用于日志，不进快照：加进 ReviewJobSnapshot 就是公开协议变更。
+    timeline: dict[str, float] = field(default_factory=dict)
+
+
+def _peak_rss_mb() -> int:
+    """进程历史峰值驻留内存（MB）。读不到时返回 -1，不影响审核。
+
+    取 `VmHWM`（high water mark）而不是 `VmRSS`：容器只有 1 GB，要的是
+    「这一单最凶的时候占了多少」，当前值会在任务结束后回落，看不出风险。
+    非 Linux（本地 Windows 调试）没有 /proc，返回 -1 让日志继续打。
+    """
+    try:
+        with open("/proc/self/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith("VmHWM:"):
+                    return max(0, int(line.split()[1]) // 1024)
+    except (OSError, ValueError, IndexError):
+        return -1
+    return -1
 
 
 class ReviewJobManager:
@@ -153,13 +173,15 @@ class ReviewJobManager:
             groups=groups,
             phase=ReviewJobPhase.UPLOADING,
         )
+        created_monotonic = time.monotonic()
         stored = _StoredJob(
             request=request,
             snapshot=snapshot,
             done=threading.Event(),
-            updated_at=time.monotonic(),
+            updated_at=created_monotonic,
             streaming=True,
             batch=AgentBatchResult(total_count=len(request.images)),
+            timeline={"created_at": created_monotonic},
         )
         with self._lock:
             self._jobs[job_id] = stored
@@ -182,6 +204,9 @@ class ReviewJobManager:
             if image_id not in expected_ids:
                 raise ValueError("上传图片不属于该审核任务")
             stored.received_ids.add(image_id)
+            arrived_at = time.monotonic()
+            stored.timeline.setdefault("first_image_at", arrived_at)
+            stored.timeline["last_image_at"] = arrived_at
             stored.request = self._replace_image(stored.request, image)
             stored.snapshot.progress.uploaded_count = len(stored.received_ids)
             stored.snapshot.phase = ReviewJobPhase.RECOGNIZING
@@ -227,6 +252,7 @@ class ReviewJobManager:
             stored.upload_complete = True
             stored.snapshot.progress.uploaded_count = len(stored.received_ids)
             stored.updated_at = time.monotonic()
+            stored.timeline["upload_complete_at"] = stored.updated_at
             self._refresh_stream_snapshot(stored)
             should_finalize = self._begin_finalize_locked(stored)
             snapshot = stored.snapshot.model_copy(deep=True)
@@ -336,6 +362,8 @@ class ReviewJobManager:
             self._release_non_qr_image_payload(stored, image, batch)
             stored.pending_count = max(0, stored.pending_count - 1)
             stored.updated_at = time.monotonic()
+            stored.timeline.setdefault("first_done_at", stored.updated_at)
+            stored.timeline["last_done_at"] = stored.updated_at
             self._refresh_stream_snapshot(stored)
             should_finalize = self._begin_finalize_locked(stored)
         if should_finalize:
@@ -350,6 +378,7 @@ class ReviewJobManager:
             and not stored.cancelled
         ):
             stored.finalize_started = True
+            stored.timeline["finalize_started_at"] = time.monotonic()
             stored.snapshot.phase = ReviewJobPhase.FINALIZING
             return True
         return False
@@ -397,7 +426,45 @@ class ReviewJobManager:
                 if current is not None:
                     current.request = self._without_image_payloads(current.request)
                     current.updated_at = time.monotonic()
+                    current.timeline["finalize_done_at"] = current.updated_at
+                    # 先记日志再放行等待者：`wait()` 一返回调用方就会去读日志，
+                    # 顺序反了会让"任务已完成但 timing 行还没出现"的竞态成立。
+                    self._log_job_timing(current)
                     current.done.set()
+
+    def _log_job_timing(self, stored: _StoredJob) -> None:
+        """一次审核一行阶段分解：上传、识别、汇总各占多久。
+
+        `recognition_waited_ms` 是调并发参数的判据——它大于 0 说明图早就识别完了、
+        在等后面的图传上来，此时提高模型并发没有任何收益，该提的是上传并发。
+        """
+        timeline = stored.timeline
+
+        def span(start: str, end: str) -> int:
+            """两端都有锚点时才给时长；缺任何一端都是 -1，不拿 0 冒充"很快"。"""
+            if start not in timeline or end not in timeline:
+                return -1
+            return max(0, int((timeline[end] - timeline[start]) * 1000))
+
+        batch = stored.batch
+        logger.info(
+            "review job timing job_id=%s status=%s images=%d completed=%d"
+            " failed=%d timed_out=%d retries=%d upload_ms=%d recognize_ms=%d"
+            " finalize_ms=%d total_ms=%d recognition_waited_ms=%d peak_rss_mb=%d",
+            stored.snapshot.job_id,
+            stored.snapshot.status.value,
+            batch.total_count,
+            batch.completed_count,
+            batch.failed_count,
+            batch.timed_out_count,
+            len(batch.retry_summary.attempts),
+            span("created_at", "upload_complete_at"),
+            span("first_image_at", "last_done_at"),
+            span("finalize_started_at", "finalize_done_at"),
+            span("created_at", "finalize_done_at"),
+            span("last_done_at", "upload_complete_at"),
+            _peak_rss_mb(),
+        )
 
     def _refresh_stream_snapshot(self, stored: _StoredJob) -> None:
         uploaded = len(stored.received_ids)

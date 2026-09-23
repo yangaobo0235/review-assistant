@@ -7,7 +7,9 @@
 
 import asyncio
 import json
+import logging
 import re
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -20,6 +22,10 @@ from app.businesses.materials import (
 )
 from app.workflow.config import QwenConfig
 from app.workflow.models import QwenClassification, QwenExtraction
+
+# 与任务、调度、图片处理共用同一个 logger：Uvicorn 已给它挂好控制台处理器，
+# 换成 __name__ 会落到 root 上，日志级别和格式都跟现有事件行不一致。
+logger = logging.getLogger("uvicorn.error")
 
 
 class QwenResponseSyntaxError(ValueError):
@@ -56,6 +62,13 @@ FIELD_LABEL_ECHOES: dict[str, frozenset[str]] = {
     "vehicle.fuel_type": frozenset({"燃料种类", "燃料类型"}),
     "vehicle.registration_date": frozenset({"注册日期"}),
 }
+
+
+def _int_or_zero(value: Any) -> int:
+    """把用量字段读成整数；模型没返回或返回非数字时按 0 计，不影响审核结论。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return max(0, int(value))
 
 
 def _drop_field_name_echoes(normalized: dict[str, Any]) -> None:
@@ -185,7 +198,11 @@ class QwenClient:
 
     async def classify_document(self, image: dict[str, Any]) -> QwenClassification:
         """仅判断未知图片的材料类型，不提取业务字段。"""
-        content = await self._complete(image, build_classification_prompt())
+        content = await self._complete(
+            image,
+            build_classification_prompt(),
+            stage="classification",
+        )
         try:
             return QwenClassification.model_validate_json(content)
         except ValueError as exc:
@@ -208,6 +225,7 @@ class QwenClient:
                 business_scope,
                 retry_reason=retry_reason,
             ),
+            stage="extraction",
         )
         try:
             extraction = parse_qwen_extraction(content)
@@ -239,6 +257,7 @@ class QwenClient:
                 business_scope,
                 retry_reason=retry_reason,
             ),
+            stage="unknown_extraction",
         )
         try:
             return parse_qwen_extraction(content)
@@ -249,7 +268,13 @@ class QwenClient:
                 cause = exc
             raise RuntimeError(f"Qwen 未分类资料响应格式无效：{exc}") from cause
 
-    async def _complete(self, image: dict[str, Any], prompt: str) -> str:
+    async def _complete(
+        self,
+        image: dict[str, Any],
+        prompt: str,
+        *,
+        stage: str = "extraction",
+    ) -> str:
         """调用兼容 OpenAI 协议的 Qwen 接口并返回文本内容。"""
         if not self.config.available:
             raise RuntimeError("DASHSCOPE_API_KEY 未配置")
@@ -265,6 +290,13 @@ class QwenClient:
             "response_format": {"type": "json_object"},
         }
         headers = {"Authorization": f"Bearer {self.config.api_key}"}
+        image_id = image.get("image_id")
+        if image_id in (None, ""):
+            image_id = image.get("index")
+        if image_id is None:
+            image_id = "unknown"
+        started = perf_counter()
+        rate_limited = False
         try:
             async with httpx.AsyncClient(timeout=self.config.timeout, transport=self.transport) as client:
                 response = await client.post(
@@ -274,6 +306,7 @@ class QwenClient:
                 )
                 if response.status_code == 429:
                     # 对短时限流只做一次轻量重试，避免单图调用无限阻塞整批审核。
+                    rate_limited = True
                     await asyncio.sleep(0.25)
                     response = await client.post(
                         f"{self.config.base_url}/chat/completions",
@@ -281,16 +314,60 @@ class QwenClient:
                         headers=headers,
                     )
             response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
+            body = response.json()
+            content = body["choices"][0]["message"]["content"]
             if isinstance(content, list):
                 content = "".join(part.get("text", "") for part in content)
             if not isinstance(content, str):
                 raise TypeError("message.content 不是字符串")
+            self._log_call(stage, image_id, started, rate_limited, body.get("usage"), "ok")
             return content
         except httpx.HTTPStatusError as exc:
+            self._log_call(
+                stage,
+                image_id,
+                started,
+                rate_limited,
+                None,
+                f"http_{exc.response.status_code}",
+            )
             detail = exc.response.text[:500].replace("\n", " ")
             raise RuntimeError(
                 f"Qwen 调用失败：HTTP {exc.response.status_code} {detail}"
             ) from exc
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+            self._log_call(stage, image_id, started, rate_limited, None, type(exc).__name__)
             raise RuntimeError(f"Qwen 调用失败：{exc}") from exc
+
+    def _log_call(
+        self,
+        stage: str,
+        image_id: Any,
+        started: float,
+        rate_limited: bool,
+        usage: Any,
+        result: str,
+    ) -> None:
+        """记录一次模型调用的耗时与用量，失败也记——超时和限流同样要能统计。
+
+        只记标识、阶段、耗时和 token 计数。提示词、响应正文和任何字段值都不进
+        这一行：日志文件会被采集、备份、被更多人翻到，身份证号码一旦写进去，
+        泄露面比图片走公网大得多。
+        """
+        counts = usage if isinstance(usage, dict) else {}
+        details = counts.get("prompt_tokens_details")
+        details = details if isinstance(details, dict) else {}
+        logger.info(
+            "review qwen call completed stage=%s image_id=%s model=%s"
+            " duration_ms=%d prompt_tokens=%d image_tokens=%d"
+            " completion_tokens=%d rate_limited=%s result=%s",
+            stage,
+            image_id,
+            self.config.model,
+            max(0, int((perf_counter() - started) * 1000)),
+            _int_or_zero(counts.get("prompt_tokens")),
+            _int_or_zero(details.get("image_tokens")),
+            _int_or_zero(counts.get("completion_tokens")),
+            str(rate_limited).lower(),
+            result,
+        )

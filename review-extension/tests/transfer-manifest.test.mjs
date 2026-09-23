@@ -16,6 +16,7 @@ import test from "node:test";
 
 import {
   applyCollectManifest,
+  manifestHintType,
   manifestIdentityAnchors,
   manifestWritableControlKinds,
   manifestWritableFields,
@@ -107,10 +108,27 @@ test("过户资料归到过户分区，身份证和营业执照不上传", () =>
     { ...ReviewBusinessScope.scopeForLabel("过户资料") },
     { scope: "transfer", title: "过户资料" },
   );
-  // 业务只要求登记证书和二手车发票；这两类资料是否参与审核待确认，当前排除。
+  // 业务口径已确认：过户只审登记证书和二手车发票，身份证与营业执照不参审，
+  // 因此归到 other，在选图阶段就被淘汰、不采集不识别。
   for (const label of ["身份证正面", "身份证反面", "营业执照", "其他图片"]) {
     assert.notEqual(ReviewBusinessScope.scopeForLabel(label)?.scope, "transfer", label);
   }
+});
+
+test("材料类型优先按清单声明的关键词判定，不借用别的业务的类型", () => {
+  applyCollectManifest(manifest);
+
+  // 页面小标题「二手车发票」在浏览器内置关键词表里只会命中宽泛的"发票"，
+  // 判成报废置换的机动车销售发票，字段白名单跟着错。清单声明了归属，就必须先问清单。
+  assert.equal(manifestHintType("二手车发票"), "used_car_invoice");
+  assert.equal(manifestHintType("二手车销售统一发票"), "used_car_invoice");
+  assert.equal(manifestHintType("登记证书1、2页"), "registration_certificate");
+  // 整段容器文案里宽泛词和精确词同时出现时，最具体的那个赢。
+  assert.equal(manifestHintType("发票 二手车发票"), "used_car_invoice");
+  // 本业务没声明的材料不能凭空判出类型，交回内置表和后端分类处理。
+  assert.equal(manifestHintType("车身颜色"), null);
+  // 分区名不参与定类型：「过户资料」是分组标题，不是某一份材料。
+  assert.equal(manifestHintType("过户资料"), null);
 });
 
 test("写回只放开文本框，指纹用强锚点", () => {
